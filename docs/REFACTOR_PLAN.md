@@ -220,6 +220,8 @@ src/specmod/
     fft.py                 # FFTEstimator, WelchEstimator
     multitaper.py          # MultitaperEstimator (scipy dpss; optional pkg backend)
     wavelet.py             # CWTEstimator (Morlet, Torrence & Compo normalisation)
+    scalogram.py           # Scalogram surface + time_average() -> Spectrum
+    qc.py                  # ScalogramQC checks (COI coverage, concentration, ...)
     registry.py            # name -> estimator; entry-point plugin hook
   smoothing/
     base.py                # Smoother protocol
@@ -367,17 +369,80 @@ reverse-engineering them anyway. PyWavelets stays an optional extra for users
 who want other wavelet families; `ssqueezepy` is a possible later addition for
 synchrosqueezing if there is demand.
 
-Open question for you: for the CWT path, do you want a **single amplitude
-spectrum** per window (time-averaged, directly substitutable into the existing
-fitting pipeline), or the **full time-frequency surface** exposed as well? The
-first is a drop-in; the second is more useful for non-stationary source studies
-but needs new plotting and new storage. The plan assumes both, with the
-time-averaged reduction as the default.
+#### 4.4.1 Two outputs: the scalogram and its time average
+
+`CWTEstimator` produces **both**, from one transform:
+
+```python
+class Scalogram:
+    """Full time-frequency surface. |W(a,b)|, COI-masked."""
+    time: np.ndarray            # (n_times,)
+    freq: np.ndarray            # (n_scales,) Fourier-equivalent frequencies
+    power: np.ndarray           # (n_scales, n_times)
+    coi: np.ndarray             # (n_times,) e-folding frequency limit
+    motion: Motion
+    meta: TraceMeta
+
+    def time_average(self, *, mask_coi: bool = True) -> Spectrum: ...
+    def qc(self) -> ScalogramQC: ...
+```
+
+`Scalogram.time_average()` applies §4.4 steps 3–6 and returns an ordinary
+`Spectrum`, so the fitting pipeline is unchanged and the CWT is a drop-in
+alternative to the multitaper estimator. The scalogram itself is what you look
+at when a fit comes out wrong.
+
+**The normalisation contract holds at the `Spectrum` boundary, not the
+scalogram.** `Scalogram.power` is `|W(a,b)|²` in whatever the L2-Morlet
+convention gives, documented but not claimed to be an amplitude spectrum. The
+`C_δ` / `dj·dt` bridge is applied once, inside `time_average()`. This keeps one
+normalisation code path and one test — a second "already normalised" surface
+would be a second thing to get wrong.
+
+#### 4.4.2 QC gate
+
+The scalogram makes several failure modes visible that the current
+amplitude-only SNR test cannot see, and most of them are cheap to automate. The
+proposal is a `ScalogramQC` record attached to the `Spectrum` metadata, carrying
+both the numbers and a pass/fail per check:
+
+| Check | Catches |
+|---|---|
+| **COI coverage per frequency** — fraction of the window free of edge effects at each scale | The window is too short to resolve the low frequencies that constrain Ω₀ |
+| **Temporal energy concentration** — Gini/kurtosis of energy over time, per band | Spikes, glitches, dropouts masquerading as broadband signal |
+| **First-half vs. second-half spectral ratio** | Coda contamination, a second arrival inside the window, a mis-picked window |
+| **Fraction of window energy inside the picked window vs. at its edges** | Window mis-alignment — the arrival is clipped or the window started late |
+
+The COI check is worth singling out. **Window length imposes a hard
+low-frequency resolution limit that nothing in the current code enforces** — SNR
+bandwidth selection (§4.5) is purely amplitude-based, so a 2 s S-window can
+happily report a usable bandwidth down to 0.5 Hz where the transform has no
+support. Feeding the COI limit into `BandwidthSelector` as a lower bound is a
+genuine correctness improvement, and it applies to the FFT and multitaper paths
+too (where the equivalent bound is `~1/T`, just less visible).
+
+Default is compute-and-record, warn on failure, never silently drop a trace —
+the QC flags land in the fit flat-file as columns so they can be filtered
+downstream.
+
+#### 4.4.3 Storage
+
+A scalogram is `n_scales × n_times` floats — roughly 1 MB per trace for a 20 s
+window at 100 Hz with 60 scales, so ~20 MB for a typical event. Therefore:
+**scalograms are not persisted by default.** `io/` writes the derived `Spectrum`
+plus the `ScalogramQC` record (a few dozen scalars); the full surface is written
+only on `save(..., include_scalogram=True)`, into HDF5 with chunking and
+compression. This is a large part of why §4.6 moves off pickle.
 
 ### 4.5 SNR, bandwidth and noise rotation
 
 `find_optimal_signal_bandwidth` and `find_optimal_signal_bandwidth_2` become
 `BandwidthSelector` strategies selected by argument, not by `BW_METHOD` global.
+Both gain a **resolution floor** on the low-frequency end — the COI limit when
+the spectrum came from a CWT, `~1/T` otherwise (§4.4.2). At present the selection
+is purely amplitude-based and can return a usable band extending below what the
+window length can resolve.
+
 `rotate_noise_full` and `non_lin_boost_noise_func` move to `snr/rotation.py`
 unchanged in behaviour but as pure functions with the iteration limits and
 `print` diagnostics replaced by logging and a returned convergence flag — at
@@ -439,7 +504,8 @@ or use git-lfs. Coverage target: 80% overall, 95% on `transforms/` and `core/`.
 
 ## 6. Packaging, CI/CD and process
 
-**Packaging**
+### 6.1 Packaging
+
 - `pyproject.toml` (PEP 621), `hatchling` backend, `src/` layout.
 - Python 3.11–3.13. Floors not pins: `numpy>=1.26`, `scipy>=1.11`,
   `obspy>=1.4`, `lmfit>=1.2`, `pandas>=2.0`, `matplotlib>=3.7`.
@@ -448,28 +514,137 @@ or use git-lfs. Coverage target: 80% overall, 95% on `transforms/` and `core/`.
 - `uv` for dev environments and a committed lockfile for CI reproducibility.
 - Delete `requirements.txt`.
 
-**Quality gates**
-- `ruff` for lint **and** format (replaces black + flake8 + isort).
-- `mypy --strict` on `core/` and `transforms/`; permissive elsewhere initially.
-- `pre-commit` running ruff, mypy, and `nbstripout` on the tutorial notebook.
+### 6.2 Lint, format and types
 
-**CI (GitHub Actions)**
-- `test.yml`: matrix Python 3.11/3.12/3.13 × ubuntu/macos → ruff, mypy, pytest,
-  coverage upload.
-- `build.yml`: build sdist + wheel, `twine check`, install-from-wheel smoke test.
-- `release.yml`: on tag, publish to PyPI via Trusted Publishing (OIDC, no
-  long-lived token).
-- `docs.yml`: mkdocs-material → GitHub Pages, with the tutorial rendered via
-  `mkdocs-jupyter`.
-- Branch protection on `master`; require CI green.
+**Ruff** replaces black + flake8 + isort + pyupgrade in one tool. Proposed
+starting rule set, in `pyproject.toml`:
 
-**Versioning and release**
-- SemVer, `0.x` until the API settles. Tag `v0.2.0` at the end of Phase 2.
-- `CHANGELOG.md` in Keep a Changelog format.
-- `CITATION.cff` + Zenodo integration for a DOI — this is research software and
-  currently has no citable artefact beyond the Edwards et al. (2010) reference.
-- Deprecation policy: old public names live in `legacy.py` with
-  `DeprecationWarning` for one minor version, then removed.
+```toml
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "NPY", "RUF", "PL", "PT", "D"]
+ignore = ["D105", "D107", "PLR0913"]          # magic-method / __init__ docstrings, arg count
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+```
+
+Three of those rule families do real work on this codebase rather than just
+tidying it:
+
+- **`PLW0603`** (part of `PL`) flags every `global` statement — §2.3's
+  `Spectral.py:490`, `Models.py:58`, and the read-only `global
+  SUPPORTED_SAVE_METHODS` uses. It turns the de-globalisation work of Phase 2
+  into a checklist the linter maintains.
+- **`RUF012`** flags mutable class-attribute defaults — §2.4's entire pattern,
+  every occurrence, automatically.
+- **`NPY`** catches legacy NumPy calls that break on 2.x, and **`UP`** does the
+  syntax modernisation (3.11+ typing, f-strings) mechanically.
+- **`F821`** catches the four undefined-name bugs in §2.5 *statically*, before a
+  single test runs. Running ruff is the cheapest possible first step.
+
+`D` (docstring rules, numpydoc convention) is the scientific-Python norm and
+matches what Sphinx's `napoleon` extension expects, so docstrings and API docs
+stay in sync. Enable `D` last — it will produce a lot of findings.
+
+**Formatting the existing code:** one `ruff format` commit across the whole
+tree, on its own, touching nothing else. Add its SHA to `.git-blame-ignore-revs`
+and set `blame.ignoreRevsFile` in CI so `git blame` still reaches real authorship
+through it. Do this in Phase 1, before any logic changes, so reformatting never
+appears in a diff that also changes behaviour.
+
+**Module renames** (`Spectral.py` → `spectral.py` etc.) happen in the same phase.
+On a case-insensitive filesystem — likely, given the macOS `appnope` in
+`requirements.txt` — these need `git mv A.py tmp && git mv tmp a.py` to register.
+
+**mypy**, staged rather than all-at-once:
+
+```toml
+[tool.mypy]
+strict = true
+[[tool.mypy.overrides]]
+module = ["obspy.*", "lmfit.*", "mtspec.*"]
+ignore_missing_imports = true     # none of these ship type stubs
+[[tool.mypy.overrides]]
+module = ["specmod.legacy", "specmod.preprocess.*"]
+ignore_errors = true              # shrink this list each phase; target: empty
+```
+
+`strict` from the start on `core/` and `transforms/` — they are new code, and
+the typed `Motion`/`AmplitudeKind` enums of §4.2 only actually prevent the
+unit-mixing bugs if the type checker is enforcing them. The override list is the
+migration backlog, and CI can assert it never grows.
+
+**pre-commit** runs ruff (lint + format), mypy, `nbstripout` on the tutorial
+notebook, and `check-added-large-files` — the last one specifically to stop
+another 70 waveform files landing in git.
+
+### 6.3 Documentation (Sphinx)
+
+- **Sphinx** with `pydata-sphinx-theme` (the NumPy/SciPy/ObsPy house style —
+  familiar to this audience, good API-reference layout).
+- `myst-parser` so prose pages can stay Markdown; `myst-nb` to execute and render
+  the tutorial notebook as a docs page, which makes the tutorial a **tested**
+  artefact rather than a snapshot that silently rots.
+- `autodoc` + `napoleon` (numpydoc style) + `sphinx-autodoc-typehints`, so
+  signatures come from the annotations rather than being hand-maintained.
+- `intersphinx` to numpy, scipy, obspy, lmfit, matplotlib.
+- `sphinx.ext.doctest` — the units/normalisation examples in §4.2 and §4.4 are
+  exactly the kind of thing that should be executable in the docs.
+- `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference or an
+  undocumented public symbol fails the build.
+- Structure: Getting started → User guide (preprocessing, transforms, SNR,
+  fitting) → **Theory** (the normalisation conventions, one page, with the
+  Parseval contract stated explicitly) → Tutorial → API reference → Migration
+  guide from 0.x → Changelog.
+
+The theory page matters more than usual here. The units question that prompted
+this refactor is not obvious from the code, and if the conventions are only
+encoded in tests, the next person to add an estimator will not find them.
+
+### 6.4 Automated versioning and release
+
+Two pieces, deliberately separated:
+
+**Version derivation — `hatch-vcs`.** The version comes from the git tag; no
+version string is ever committed, so there is nothing to forget to bump and no
+`__version__`/tag skew. `__init__.py` reads it via
+`importlib.metadata.version("specmod")`.
+
+**Version *decision* — `release-please` (GitHub Action).** It parses
+[Conventional Commits](https://www.conventionalcommits.org) since the last
+release, works out the SemVer bump, and opens a standing "release PR" carrying
+the generated `CHANGELOG.md`. Merging that PR creates the tag; the tag triggers
+publication. Nothing is released until a human merges.
+
+That human gate is the reason to prefer `release-please` over
+`python-semantic-release` (which tags on every qualifying push to `master`)
+**specifically because of Zenodo**: every GitHub release mints a new DOI, and DOIs
+cannot be retracted. Fully-automatic tagging plus Zenodo means a typo fix can
+mint a citable version of the software. Use `python-semantic-release` only if you
+would rather have zero-touch releases and accept that.
+
+This does impose Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`,
+`feat!:` for breaking) on commit messages, enforced by a `commitlint` pre-commit
+hook. It is a small discipline and it is what makes the changelog automatic.
+
+### 6.5 CI (GitHub Actions)
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `test.yml` | PR, push | matrix 3.11/3.12/3.13 × ubuntu/macos → ruff check, ruff format --check, mypy, pytest + coverage → Codecov |
+| `docs.yml` | PR, push | `sphinx-build -W`; on `master`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
+| `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
+| `release-please.yml` | push to `master` | maintains the release PR; creates tag + GitHub Release on merge |
+| `publish.yml` | GitHub Release published | PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
+
+Zenodo is wired to the GitHub Release webhook, so the DOI is minted from the same
+event as the PyPI upload. Branch protection on `master`: require `test`, `docs`
+and `build` green.
+
+**Versioning policy:** SemVer, `0.x` until the API settles — tag `v0.2.0` at the
+end of Phase 2. `CITATION.cff` (validated in CI) plus the Zenodo DOI give the
+project a citable artefact, which it currently lacks entirely. Deprecation
+policy: old public names live in `legacy.py` with `DeprecationWarning` for one
+minor version, then removed.
 
 ---
 
@@ -480,38 +655,60 @@ Each phase ends green on CI and is independently mergeable.
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
 | **0. Safety net** | Reproducible legacy env (Docker/conda + gfortran); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
-| **1. Make it installable** | `pyproject.toml`, `src/` layout, `__init__.py` + `__version__`, ruff, pre-commit, CI skeleton, `.gitignore`, `CHANGELOG`, `CITATION.cff`; fix the three hard breakages (§1) and the §2.5 `NameError`s; data out of git | 0 | 2–3 days |
-| **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads; `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; `isinstance` checks; `logging` | 1 | 3–4 days |
-| **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests | 2 | 5–7 days |
-| **4. CWT** | `CWTEstimator`, COI handling, the Parseval/units calibration and its test; time-frequency plotting | 3 | 4–6 days |
-| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; `legacy.py` shims | 3 | 5–7 days |
-| **6. Ship** | Docs site, rewritten tutorial with no `os.chdir`, migration guide, PyPI + Zenodo release | 4, 5 | 2–3 days |
+| **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); data out of git | 0 | 3–4 days |
+| **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
+| **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
+| **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
+| **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
+| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; `legacy.py` shims; mypy override list → empty | 3 | 5–7 days |
+| **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, migration guide, **1.0 release** | 4, 5 | 2–3 days |
 
-Phases 4 and 5 are independent of each other and can run in parallel.
+Phases 2b, and later 4 and 5, can run in parallel with their siblings.
 
-Rough total: **4–6 weeks** of focused work. Phases 0–3 alone (≈2 weeks) get the
-package installable, tested, mtspec-free and CI-covered — that is the point at
-which the project stops decaying, and it is a reasonable place to cut if time is
-short.
+Rough total: **5–7 weeks** of focused work — up from the previous estimate,
+mostly Phase 4 (the scalogram, QC checks and their storage roughly double that
+phase's surface) plus the docs and release infrastructure now scoped in 2b.
+
+Phases 0–3 alone (≈2.5 weeks) get the package installable, formatted,
+type-checked, tested, mtspec-free, documented and publishing to PyPI. That is the
+point at which the project stops decaying, and it remains the sensible place to
+cut if time runs short — the CWT is the one genuinely new capability and it
+depends on nothing after Phase 3.
+
+Note the ordering choice: **release plumbing lands at 2b, well before there is
+anything worth releasing.** Publishing infrastructure is much easier to debug
+against a trivial package than against a finished one, and having `v0.2.0` go out
+end-to-end proves the pipeline while the stakes are zero.
 
 ---
 
-## 8. Decisions needed from you
+## 8. Decisions
+
+### Settled
+
+- **CWT output** — both. The full scalogram *and* the time-averaged `Spectrum`
+  from one transform (§4.4.1). Time-averaged feeds the fitting pipeline; the
+  surface is a QC gate (§4.4.2), not persisted by default (§4.4.3).
+- **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
+  automated versioning and publishing for both docs and package (§6).
+
+### Still open
 
 1. **Backwards compatibility.** Keep `legacy.py` shims for the 0.x API, or make a
    clean break at 1.0? A clean break is much less work; the shims matter only if
    there are downstream users or unpublished analysis scripts depending on the
    current names.
-2. **CWT output** (§4.4): time-averaged amplitude spectrum only, or also the full
-   time-frequency surface?
-3. **Default estimator.** Multitaper (matching current behaviour) or FFT +
+2. **Default estimator.** Multitaper (matching current behaviour) or FFT +
    Konno–Ohmachi (faster, more conventional in engineering seismology)?
-4. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
-5. **Tutorial data.** OK to rewrite history to drop the ~70 committed waveform
+3. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
+4. **Tutorial data.** OK to rewrite history to drop the ~70 committed waveform
    files, or keep history and just stop adding to it?
-6. **Golden snapshots.** Is it worth half a day standing up a legacy `mtspec`
+5. **Golden snapshots.** Is it worth half a day standing up a legacy `mtspec`
    environment to capture them? Strongly recommended, but it is the one task with
    no direct deliverable.
+6. **Conventional Commits.** Automated changelogs and version bumps (§6.4) need
+   structured commit messages. Acceptable, or would you rather tag releases by
+   hand and write the changelog manually?
 
 ---
 
