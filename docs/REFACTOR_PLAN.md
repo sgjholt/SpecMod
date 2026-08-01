@@ -931,12 +931,57 @@ trace that disagrees is diagnosable and 11,226 that disagree are not:
 | Target | Source | Scope |
 |---|---|---|
 | One spectrum + fit, US.DUG, mainshock | **Figure 2** | Single trace — the unit test |
-| Ω, `f_c`, `t*` per event-station | **Table S2** (11,226 rows) | Bulk statistical comparison |
-| Nine MT-constrained events, Mw 3.40–5.54 | **Table S1** | Absolute anchor |
+| Ω, `f_c`, `t*` for a broadband subset | **Table S2** rows | ~5–10 stations × ~5 events |
+| Nine MT-constrained events, Mw 3.40–5.54 | **Table S1** | Absolute anchor, if cheap |
 
 Figure 2 is the highest-value item in the whole validation story: one published,
 visually inspectable spectrum with its fitted model, for a named station and a
-known event. It should become the first Tier 3 test written.
+known event. It should be the first Tier 3 test written.
+
+**Do not attempt to reproduce all 96,169 waveforms or all 11,226 Ω
+measurements.** A handful is enough, and better:
+
+- A regression suite is for *localising* a change, and bulk statistics do the
+  opposite — "mean Ω shifted by 0.02 log units" tells you something moved but not
+  what or where. Ten traces with per-trace tolerances name the failure.
+- Bulk agreement can hide compensating errors. Ten diverse traces that each agree
+  individually is stronger evidence than an aggregate that happens to land.
+- Runtime and dataset size stay small enough that the fixtures live in git
+  (§5.1) and the suite runs in CI on every push.
+
+**Restrict the comparison set to broadband stations.** Of the 88 stations, 42 UU
+broadband plus 15 from IE/IW/N4/NN/RE are broadband; the other 31 UU channels are
+strong motion. Broadband is the right choice here because those are the
+instruments the coda method also used, so the two published magnitude estimates
+are comparable on the same traces, and because response correction is better
+behaved across the 0.6–35 Hz fit band. Strong-motion traces are worth one or two
+cases specifically to exercise the acceleration path in §4.2 — but as a distinct
+test, not as bulk.
+
+**Distance coverage is the selection criterion.** Station identity barely
+matters; spanning the hypocentral distance range does, because that is the axis
+along which the quantities under test actually vary — `t*` grows with path
+length, the SNR bandwidth narrows with distance as high frequencies attenuate,
+and the low-frequency end that constrains Ω is where the COI floor (§4.4.2)
+starts to bite. A subset clustered at one distance would agree perfectly and
+prove very little.
+
+So: pick broadband stations spread roughly evenly in **log distance across the
+paper's 4.5–400 km hypocentral range** — the paper's own NP selection rule asked
+each event to span at least a fifth of that range, which is the same instinct.
+Concretely, something like:
+
+- **US.DUG** — fixed, it is the published Figure 2 station and the single-trace test.
+- One near-source station (UU.NOQ, or UU.ASU4/ASU5 for post-mainshock events),
+  covering the few-km end.
+- Four or five UU/IW/US broadband stations at roughly 10, 30, 80, 200 and 400 km.
+- Mainshock plus three or four aftershocks spanning ML ~1 to ~4, so the
+  magnitude and distance axes are both covered without multiplying them out
+  fully — small events will simply drop out at the far stations, which is itself
+  the SNR gate behaving correctly and worth asserting.
+
+Roughly 20–40 spectra. Enough to cover the range, small enough that every
+disagreement gets looked at individually.
 
 > Not verified here: FDSN endpoints are blocked from the environment this plan
 > was written in (`CONNECT tunnel failed, response 403` for both USGS and
@@ -1106,6 +1151,35 @@ entirely.
 again — it becomes the permanent, named record of the pre-refactor code, doing
 the job a `v0.1.0` tag would have done.
 
+**Every pull request must target `sgjholt/SpecMod`, never `uofuseismo/SpecMod`.**
+This is not a matter of care — it is a GitHub default working against you.
+`uofuseismo/SpecMod` is the upstream repository (created 2020-02-27, the same day
+as this history's initial commit; not itself a fork; 3 forks, 11 open issues), and
+`sgjholt/SpecMod` does not appear in GitHub code search under `user:sgjholt`,
+which is what happens to forks. When a PR is opened from a branch in a fork,
+**GitHub pre-selects the parent repository as the base**. Accepting that default
+proposes the entire refactor to the upstream organisation.
+
+Two consequences worth acting on:
+
+1. **Check the base repo on every PR**, or make the mistake unavailable by
+   detaching the fork. GitHub Support can sever the fork relationship on request.
+   Given this repository is becoming the canonical line — its own releases, PyPI
+   package and DOI — detaching removes a recurring foot-gun rather than managing
+   it. It also restores the repo to code search, which matters for a package
+   people are meant to find.
+2. **GitHub Actions is disabled by default on forked repositories.** It must be
+   enabled explicitly in Settings → Actions before any of §6.5 runs at all. Worth
+   knowing before debugging a workflow that never triggers. (Push-triggered
+   workflows in the fork itself do get secrets normally once enabled; the
+   secrets restriction applies to PRs arriving *from* forks, not to this case.)
+
+**No Claude session URLs in commit messages, PR bodies, or any other published
+artifact.** The repository is public and those links are private session state. A
+`commit-msg` hook rejecting `Claude-Session:` trailers is installed locally; fold
+the same check into the `commitlint` pre-commit configuration (§6.4) so it is
+versioned and applies to every clone rather than one working copy.
+
 To make that real rather than aspirational, two GitHub settings changes are
 needed and neither can be made from a git client:
 
@@ -1147,7 +1221,8 @@ year.
 **Commit convention.** Conventional Commits (`feat:`, `fix:`, `refactor:`,
 `docs:`, `test:`, `chore:`; `feat!:` or a `BREAKING CHANGE:` trailer for
 breaks), enforced by a `commitlint` pre-commit hook. This is what makes the
-changelog and version bumps automatic.
+changelog and version bumps automatic. The same `commit-msg` stage should reject
+Claude session URLs (§6.6) — public repository, private links.
 
 **PyPI name.** `specmod` is unregistered (checked: 404 on `specmod`, `spec-mod`
 and `pyspecmod`). Worth claiming with the `v0.2.0` release at the end of Phase 2
@@ -1233,9 +1308,9 @@ end-to-end proves the pipeline while the stakes are zero.
 5. **Was noise rotation on for the published run?** `ROTATE_NOISE = True` ships
    as default but appears nowhere in the manuscript, and it changes the SNR
    bandwidth. This has to be settled before step 2 of §5.2.6 can be trusted.
-6. **Are Tables S1/S2 to hand?** The bulk comparison needs S2's 11,226 Ω rows. If
-   the supplement is not readily available, Figure 2 alone still supports the
-   single-trace regression test.
+6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
+   the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
+   readily available, Figure 2 alone still supports the single-trace test.
 
 ---
 
