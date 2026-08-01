@@ -2,12 +2,31 @@ import os
 import obspy
 import pickle
 import numpy as np
-import scipy.integrate as ig
+from scipy.integrate import cumulative_trapezoid
 import matplotlib.pyplot as plt
 from matplotlib.ticker import StrMethodFormatter, NullFormatter
-from mtspec import mtspec
 from . import utils as ut
 from . import config as cfg
+
+
+def _mtspec(*args, **kwargs):
+    """Call ``mtspec.mtspec``, which is an optional legacy dependency.
+
+    mtspec 0.3.2 is distributed as Fortran source with no wheels and does not
+    build without a Fortran compiler, so importing it eagerly makes the whole
+    package uninstallable. It is resolved on first use instead and replaced by
+    the pluggable estimators in ``specmod.transforms``.
+    """
+    try:
+        from mtspec import mtspec
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise ImportError(
+            "The mtspec backend is not installed. It is a legacy optional "
+            "dependency needing a Fortran compiler; install it with "
+            "`pip install specmod[mtspec]`, or use specmod.transforms instead."
+        ) from exc
+    return mtspec(*args, **kwargs)
+
 
 # VARIABLES READ FROM CONFIG
 
@@ -121,7 +140,7 @@ class Spectrum(object):
             self.event = None
 
     def __calc_spectra(self, **kwargs):
-        amp, freq = mtspec(self.__tr.data, self.meta['delta'], 3, **kwargs)
+        amp, freq = _mtspec(self.__tr.data, self.meta['delta'], 3, **kwargs)
         del self.__tr
         # forget the 0 frequency, probably just noise anyway
         self.amp, self.freq = amp[1:], freq[1:]
@@ -395,7 +414,7 @@ class SNP(object):
         function to a space between -1, 1 by subtracting the SNR
         threshold then taking the sign)  taking the integral
         """
-        inte = ig.cumtrapz((np.sign(bsnr-bsnr_thresh)))
+        inte = cumulative_trapezoid((np.sign(bsnr-bsnr_thresh)))
         inte /= inte.max()
         inte[inte<=0] = -1
         fh = np.abs(inte-pctl).argmin() - 1
@@ -455,7 +474,7 @@ class SNP(object):
         if not plot:
             return np.array([lfl, ufl])
         else:
-            plt.loglog(f, a, label=name)
+            plt.loglog(f, a, label=str(self.id))
             plt.hlines(SNR_TOLERENCE, f.min(), f.max())
             plt.vlines(f[a==a.max()], a.min(), a.max())
             plt.vlines(fh[np.where(a[indsgt]-SNR_TOLERENCE<=0)[0]-1][0], a.min()*2, a.max()/2)

@@ -2,7 +2,7 @@ import os
 import numpy as np
 import lmfit as lm
 import pandas as pd
-from . import Spectral as sp
+from . import spectral as sp
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from collections import defaultdict
@@ -77,7 +77,7 @@ class FitSpectrum(object):
             par.max = np.inf
 
     def __check_input(self, signal):
-        if type(signal) is not type(sp.Signal()):
+        if not isinstance(signal, sp.Signal):
             raise ValueError(
                 "Must be a signal object not {}".format(type(signal)))
         else:
@@ -243,7 +243,7 @@ class FitSpectra(object):
                 mod.reset()
         else:
             if name.upper() in self.models.keys():
-                self.model[name].reset()
+                self.models[name].reset()
             else:
                 print('WARNING: {} not in available channels.'.format(
                     name.upper()))
@@ -276,8 +276,7 @@ class FitSpectra(object):
 
     def __check_wm(self, wm):
         if wm not in ['log', 'none']:
-            print('WARNING: did not recognise weight method {}.'.format(
-                    weight_method))
+            print('WARNING: did not recognise weight method {}.'.format(wm))
             print('Setting to none...')
             wm = 'none'
         return wm
@@ -298,9 +297,9 @@ class FitSpectra(object):
             tmp.signal.set_model(mod)
 
     def __check_spectra(self, spectra):
-        if type(spectra) is not type(sp.Spectra()):
+        if not isinstance(spectra, sp.Spectra):
             raise ValueError(
-                "Must be a signal object not {}".format(type(signal)))
+                "Must be a spectra object not {}".format(type(spectra)))
         else:
             return True
 

@@ -1,7 +1,7 @@
 import os
 import glob
 import obspy
-import scipy
+from scipy.integrate import cumulative_trapezoid
 import numpy as np
 import matplotlib.pyplot as plt
 from . import utils as ut
@@ -163,8 +163,8 @@ def cut_p(st, bf=0, tafp=0.8, time_after='relative_time', sta_shift=dict(), refi
         if refine_window:
             rw_start, rw_end = signal_intensity(tr)
 
-            p_start = p_start + rw_start
             p_end = p_start + rw_end
+            p_start = p_start + rw_start
 
             tr.trim(p_start, p_end)
 
@@ -173,7 +173,7 @@ def cut_p(st, bf=0, tafp=0.8, time_after='relative_time', sta_shift=dict(), refi
 
 
 
-def cut_s(st, bf=2, rafp=0.8, tafs=20, time_after='absolute_time', sta_shift=dict(), refine_window=True):
+def cut_s(st, rafp=0.8, tafs=20, time_after='absolute_time', sta_shift=dict(), refine_window=True):
     """
     Function to cut a s wave window from an Obspy trace obeject.
 
@@ -228,7 +228,7 @@ def signal_intensity(tr, pctls=[1, 99], plot=False):
     delta = tr.stats.delta
     data = tr.data
 
-    inte = normalise(scipy.integrate.cumtrapz(data**2))*100
+    inte = normalise(cumulative_trapezoid(data**2))*100
 
 
     w_start = np.abs(inte-pctls[0]).argmin()*delta

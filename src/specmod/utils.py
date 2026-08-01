@@ -210,7 +210,7 @@ def get_avail(ranks, allpaths):
 
 
 def read_cat(path):
-    return pd.read_csv(path, delim_whitespace=True)
+    return pd.read_csv(path, sep=r"\s+")
 
 
 
@@ -221,7 +221,7 @@ def cat2kstyle(row):
 
 
 def keith2utc(row):
-    return obspy.UTCDateTime((*list(map(int, cat2kstyle(row).split(".")))))
+    return obspy.UTCDateTime(*map(int, cat2kstyle(row).split(".")))
 
 
 def path_to_utc(p):
