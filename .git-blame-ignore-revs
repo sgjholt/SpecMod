@@ -1,0 +1,6 @@
+# Revisions to skip in `git blame` — formatting-only, no behaviour change.
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply ruff format and autofixes across the tree
+b74ae4d632dffaafad9a440a624fd50f5c73274c

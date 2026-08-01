@@ -1,0 +1,60 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the paper below."
+title: "SpecMod: a Python toolbox for processing and modelling seismic spectra"
+type: software
+authors:
+  - family-names: Holt
+    given-names: James
+    email: holtj92@gmail.com
+repository-code: "https://github.com/sgjholt/SpecMod"
+license: MIT
+keywords:
+  - seismology
+  - spectral modelling
+  - moment magnitude
+  - source parameters
+
+references:
+  - type: article
+    title: "Towards Robust and Routine Determination of Mw for Small Earthquakes:
+      Application to the 2020 Mw 5.7 Magna, Utah, Seismic Sequence"
+    authors:
+      - family-names: Holt
+        given-names: James
+      - family-names: Whidden
+        given-names: Katherine M.
+      - family-names: Koper
+        given-names: Keith D.
+      - family-names: Pankow
+        given-names: Kristine L.
+      - family-names: Mayeda
+        given-names: Kevin
+      - family-names: Pechmann
+        given-names: James C.
+      - family-names: Edwards
+        given-names: Benjamin
+      - family-names: Gök
+        given-names: Rengin
+      - family-names: Walter
+        given-names: William R.
+    journal: "Seismological Research Letters"
+
+  - type: article
+    title: "Automatic computation of moment magnitudes for small earthquakes and
+      the scaling of local to moment magnitude"
+    authors:
+      - family-names: Edwards
+        given-names: Benjamin
+      - family-names: Allmann
+        given-names: Bettina
+      - family-names: Fäh
+        given-names: Donat
+      - family-names: Clinton
+        given-names: John
+    journal: "Geophysical Journal International"
+    volume: 183
+    issue: 1
+    start: 407
+    end: 420
+    year: 2010
+    doi: "10.1111/j.1365-246X.2010.04743.x"

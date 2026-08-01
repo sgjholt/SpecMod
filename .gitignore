@@ -1,4 +1,38 @@
+# Local, uncommitted configuration overrides (see docs/REFACTOR_PLAN.md §4.7).
+# Promote one deliberately with `specmod config freeze > studies/<name>.toml`.
+specmod.local.toml
+*.local.toml
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Docs
+docs/_build/
+
+# Editors / OS
 .ftpconfig
 .DS_Store
-*.pyc
+.idea/
+.vscode/
+*.swp
+
+# Notebook checkpoints
+.ipynb_checkpoints/
