@@ -67,3 +67,17 @@ jobs:
         with:
           files: coverage.xml
           fail_ci_if_error: false
+
+  floors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv venv
+      # Exercise the declared minimums. CI otherwise installs the newest of
+      # everything, so the floors are only ever tested by a user.
+      - run: uv pip install --resolution lowest-direct -e ".[dev]"
+      - run: uv run pytest -m "not dataset" -q
