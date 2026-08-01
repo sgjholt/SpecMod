@@ -284,7 +284,10 @@ src/specmod/
   preprocess/
     windows.py, picks.py, geometry.py
   io/
-    readers.py, writers.py # HDF5/npz + JSON sidecar; pickle behind opt-in flag
+    hdf5.py                # versioned array layout; no Python class identity
+    tables.py              # Parquet for fit results and catalogues
+    asdf.py                # optional export for interchange (§4.6.3)
+    schema.py              # format version + migration
   acquire/
     config.py              # dataset config schema (TOML)
     fetch.py               # config -> ObsPy FDSN -> raw waveforms + inventory
@@ -502,15 +505,95 @@ unchanged in behaviour but as pure functions with the iteration limits and
 present `find_rotation_angle_v2` prints `"Didn't ever meet."` and returns `0`,
 silently disabling the correction.
 
-### 4.6 I/O
+### 4.6 I/O — replacing pickle
 
-Pickle is the only persistence format, and `read_spectra` prompts on stdin
-before unpickling. Replace with:
+Pickle is the only persistence format today, and `read_spectra` prompts on stdin
+before unpickling. It fails on five counts at once, which is worth stating
+because they point at different replacements:
 
-- **Primary:** HDF5 (`h5py`) or `.npz` for arrays + JSON sidecar for metadata —
-  versioned, language-agnostic, diff-able metadata.
-- **Secondary:** the existing flat-file CSV export, kept as-is.
-- **Pickle:** dropped as a write format. See below for reads.
+| Problem | Consequence |
+|---|---|
+| Executes arbitrary code on load | Cannot safely accept a `.spec` from a collaborator |
+| Stores class *import paths* | Renaming a module breaks every existing file (§4.6.2) |
+| Python-only | Colleagues on MATLAB/Julia/R cannot read the outputs |
+| Opaque | Cannot inspect, diff, or query without SpecMod itself |
+| No schema version | No migration path — exactly how it got into this state |
+
+#### 4.6.1 Two access patterns, so two formats
+
+One format for everything is the wrong instinct here, because the data is used
+two genuinely different ways:
+
+1. *"Give me the spectrum for event X, station Y"* — random access into float
+   arrays, occasionally large (a scalogram is ~1 MB per trace, §4.4.3).
+2. *"Give me `f_c` and Ω for all 635 events and regress them"* — a columnar scan
+   over a table. The published Magna run produced **11,226 rows** of exactly
+   this, and a multi-event catalogue is bigger.
+
+**Arrays → HDF5** (`h5py`), with a documented, versioned layout of our own.
+Chunked, compressed, partial-read, cross-language, and the obvious scientific
+default.
+
+**Tables → Parquet** (`pyarrow`), replacing the CSV flat-file. This is a real
+upgrade rather than a fashion: CSV loses dtypes, round-trips floats through
+decimal text, and has to be read in full. Parquet is typed, compressed, and
+queryable with DuckDB or polars **without loading it** — which matters at
+11,226 rows and matters more at catalogue scale. CSV stays as an *export*, since
+journal supplements want it.
+
+**Provenance → both.** The §4.7 record goes into HDF5 attributes *and* a JSON
+sidecar, because the sidecar is greppable and diffable without opening the
+container.
+
+#### 4.6.2 Rules the layout must follow
+
+These are the lessons from how pickle failed, not general good practice:
+
+- **Never store class identity.** Plain arrays plus a documented layout. Pickle
+  broke because it recorded `specmod.Spectral` / `Spectra`; a schema that names
+  no Python types cannot be broken by renaming one.
+- **Every file carries `specmod_format_version`.** Readers check it and either
+  migrate or fail loudly. The absence of this is the whole problem.
+- **Self-describing units.** `motion`, `kind` and `duration` are stored
+  attributes, not conventions the reader has to know. This is §4.2's typing
+  expressed on disk, and it is what stops a file being silently misread as
+  displacement.
+- **One file per event, group per channel.** Matches how the science is done
+  and how it is re-examined. It also sidesteps HDF5's single-writer limitation
+  entirely if the 96,169-waveform workflow is ever parallelised.
+
+#### 4.6.3 ASDF as an export target, not the primary
+
+[ASDF](https://asdf-definition.readthedocs.io/) deserves consideration and is
+the closest thing to a domain-native answer: HDF5-based, community standard,
+embeds QuakeML and StationXML, carries SEIS-PROV provenance, and its docs
+name time-dependent power spectral densities as an auxiliary-data use case.
+`pyasdf` is maintained (0.8.2, August 2025).
+
+It is still the wrong **primary**, for two reasons. ASDF is waveform-centric —
+derived spectra live in the loose `auxiliary_data` bucket, so we would be
+fitting our data to a schema built for something else. And SEIS-PROV models
+*processing* provenance, not the *configuration* provenance of §4.7, so it does
+not remove the need for our own record.
+
+So: HDF5 with our own schema as primary, and `specmod export --format asdf`
+behind a `specmod[asdf]` extra for interchange and archival. That keeps the core
+dependency to `h5py` while still letting you hand a colleague a standard file.
+
+#### 4.6.4 Considered and rejected
+
+- **`.npz` + JSON.** Genuinely simpler and adequate for a single event's 1-D
+  spectra. Rejected because scalograms are 2-D and large, and npz offers no
+  chunking, no compression control, no attributes and no partial reads.
+- **Zarr.** Attractive for parallel writes and object storage. **Zarr 3.x
+  requires Python ≥3.12**, above this project's 3.11 floor, so it is not
+  available without moving the floor. Revisit if that changes.
+- **netCDF4 / xarray.** Labelled dimensions suit `(frequency,)` and
+  `(scale, time)` nicely, but it is a heavy dependency and CF conventions do not
+  describe spectra well. HDF5 attributes cover what is actually needed.
+
+Implementation lands with `core/spectrum.py` in phase 3 — the writer serialises
+that dataclass, so building it first would mean guessing at the schema.
 
 **Existing `.spec` files will not survive the clean break, and this is not
 optional.** A pickle stores the *import path* of every class it contains —
@@ -1107,8 +1190,9 @@ included; picks and event parameters in a JSON manifest alongside. Target under
 - `pyproject.toml` (PEP 621), `hatchling` backend, `src/` layout.
 - Python 3.11–3.13. Floors not pins: `numpy>=1.26`, `scipy>=1.11`,
   `obspy>=1.4`, `lmfit>=1.2`, `pandas>=2.0`, `matplotlib>=3.7`.
-- Extras: `[multitaper]`, `[wavelet]`, `[mcmc]` (emcee), `[mtspec]` (legacy,
-  temporary), `[dev]`, `[docs]`. `pooch` is a core dependency — `specmod.datasets`
+- Extras: `[multitaper]`, `[wavelet]`, `[mcmc]` (emcee), `[asdf]` (ASDF export,
+  §4.6.3), `[mtspec]` (legacy, temporary), `[dev]`, `[docs]`.
+- `h5py` and `pyarrow` are core dependencies — persistence is not optional. `pooch` is a core dependency — `specmod.datasets`
   (§5.2) is part of the public API, not a dev-only convenience.
 - `uv` for dev environments and a committed lockfile for CI reproducibility.
 - Delete `requirements.txt`.
@@ -1400,6 +1484,9 @@ end-to-end proves the pipeline while the stakes are zero.
 - **Data acquisition** — a general config-driven grabber (`specmod.acquire`),
   not a per-event script; artifacts pinned by SHA256 and served from GitHub
   Release assets via pooch (§5.2).
+- **Persistence** — pickle dropped. HDF5 for arrays with a versioned schema of
+  our own, Parquet for tables, JSON sidecar for provenance, ASDF as an optional
+  export (§4.6).
 - **Configuration** — semantic groups, layered overrides with local files
   gitignored by default, resolved config and version stamped into every output
   (§4.7). Current behaviour stays the default.
