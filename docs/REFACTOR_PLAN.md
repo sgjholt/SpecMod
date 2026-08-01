@@ -282,6 +282,10 @@ src/specmod/
     windows.py, picks.py, geometry.py
   io/
     readers.py, writers.py # HDF5/npz + JSON sidecar; pickle behind opt-in flag
+  acquire/
+    config.py              # dataset config schema (TOML)
+    fetch.py               # config -> ObsPy FDSN -> raw waveforms + inventory
+    manifest.py            # provenance record + --verify diffing
   datasets/
     registry.py            # name -> URL + SHA256 for pooch
     loaders.py             # load_magna_2020(), load_pnr_2019() -> Dataset
@@ -551,7 +555,7 @@ binning and fitting together, and it is the only way to know the mtspec removal
 did not change the science.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
-on Magna (§5.2.3), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
+on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
 table to `.npz`. Every subsequent change is diffed against those snapshots, so
 behaviour changes are visible and deliberate rather than discovered later.
 
@@ -559,7 +563,7 @@ behaviour changes are visible and deliberate rather than discovered later.
 > `mtspec` still builds — a one-off Docker image or conda env with `gfortran`,
 > `numpy<2`, `python 3.9`. Budget half a day; without it the refactor is
 > unverifiable. Magna makes this stronger still, because published values exist
-> for it — see the three-way comparison in §5.2.4.
+> for it — see the three-way comparison in §5.2.5.
 
 **Tier 4 — unit tests** for the bugs in §2.5, each written as a failing test
 first.
@@ -623,55 +627,123 @@ bandwidth, and allow up to 2 GB per file — far more than needed here. `pooch`
 fetches them by URL, verifies SHA256, and caches per-user, so the fetch happens
 once per machine.
 
-#### 5.2.1 Producing and consuming are separate, and this matters
+#### 5.2.1 A general, config-driven acquisition tool
+
+The acquisition step is **not** a bespoke Magna script. It is a general waveform
+grabber where every event-specific detail is declarative configuration, and
+Magna is one config file among several. Datasets then cost a config, not code,
+and the config *is* the provenance record.
 
 ```
-maintainer, rarely                published artifact          tests and users, always
-──────────────────────            ──────────────────          ───────────────────────
-scripts/build_dataset.py     →    GitHub Release asset   →    specmod.datasets.load_*()
-  obspy FDSN client                magna_2020_v1.tar.gz         via pooch, SHA256-pinned
-  trim, subset inventory           immutable, versioned         cached in os_cache()
-  write manifest + checksums                                    offline after first use
+specmod.acquire                   published artifact          tests and users
+───────────────                   ──────────────────          ───────────────
+datasets/magna_2020.toml     →    GitHub Release asset   →    datasets.load_*()
+  + specmod fetch <config>         magna_2020_v1.tar.gz         pooch, SHA256-pinned
+  → ObsPy FDSN client              config + manifest             cached, offline
+  → raw waveforms + inventory        embedded inside
+  → manifest with provenance
 ```
 
-**Tests must never call FDSN.** This is the load-bearing constraint, not a
-stylistic preference:
+A config declares the event (by FDSN `eventid` where possible, so the origin is
+resolved from the catalogue rather than retyped), the station selection
+(network/station/location/channel patterns plus a radius or distance range), the
+window relative to origin or to predicted arrivals, the pick source, and — the
+detail people forget — **which data centre**, since different centres serve
+different holdings for the same event.
 
-- Data centres have outages, maintenance windows and rate limits. A test suite
-  that queries EarthScope on every run is a test suite that goes red for reasons
-  unrelated to the code.
-- More seriously: **metadata gets revised.** Instrument responses are corrected
-  retroactively. A test that fetches live can silently change its own expected
-  answer, which is precisely the failure mode regression tests exist to prevent.
-  A SHA256-pinned tarball cannot.
-- Offline development, and CI that does not need network egress.
+Two design constraints worth fixing now:
 
-So `scripts/build_dataset.py` is a **maintainer tool**, run by hand when a
-dataset is added or revised, not part of the package or the test path. Plain
-`Client.get_waveforms` / `get_stations` is right here; `MassDownloader` is built
-for large restricted-data campaigns and adds complexity this does not need.
+- **Fetch raw, do not pre-process.** Store counts plus the response, not a
+  deconvolved trace. Baking `remove_response` into the artifact removes it from
+  test coverage and freezes one ObsPy version's behaviour into the fixture.
+- **Keep the wrapper thin.** ObsPy already has the client, the retry logic and
+  the chunking. The value added here is the declarative layer, the manifest, and
+  the event-relative windowing that `preprocess/windows.py` needs anyway — not a
+  reimplementation of `MassDownloader`, which is built for large restricted-data
+  campaigns and is more machinery than this needs.
 
-#### 5.2.2 A submodule, not a separate library
+TOML is suggested for the config, read by stdlib `tomllib` on 3.11+ and
+consistent with `pyproject.toml`. YAML is equally fine if it reads better for
+nested station rules; it costs one small dependency.
 
-Recommend `specmod.datasets` inside the package — the `sklearn.datasets` /
-`skimage.data` / `pyvista.examples` pattern:
+#### 5.2.2 Why a config still is not enough — and what closes the gap
+
+A config makes the **request** reproducible. It does not make the **response**
+reproducible, because FDSN is not content-addressed and the archive moves under
+you:
+
+- Instrument responses are corrected retroactively.
+- Waveform archives get backfilled and gaps repaired.
+- Catalogue solutions are revised — magnitudes and locations included.
+- Stations are added to holdings after the fact.
+
+So re-running `magna_2020.toml` in 2028 will not necessarily return the bytes it
+returns today. The config and the pinned artifact are **complementary, not
+alternatives**: the config records intent and makes the dataset regenerable and
+adaptable; the SHA256-pinned tarball is what tests actually consume, and it is
+the only thing that makes a regression test mean anything.
+
+That is also why **tests must never call FDSN.** Beyond outages and rate limits,
+a suite that fetches live can silently change its own expected answer — exactly
+the failure mode regression tests exist to catch.
+
+What makes this genuinely reproducible rather than merely repeatable is the
+**manifest**, written next to the data and embedded in the artifact:
+
+| Field | Why |
+|---|---|
+| The config, verbatim | The recipe |
+| Resolved query — exact `eventid`, channel list after wildcard expansion | Wildcards mean the config alone does not say what you got |
+| Data centre URL + FDSN service version | Different centres, different holdings |
+| ObsPy and SpecMod versions | Client behaviour changes |
+| Fetch timestamp | When this view of the archive was taken |
+| Per-file SHA256 | Integrity |
+
+With that, `specmod fetch --verify magna_2020.toml` can re-run the config and
+diff against the manifest. A clean diff means the archive is unchanged; a dirty
+one tells you **the data centre revised something**, which for a seismologist is
+a finding in its own right rather than bookkeeping — particularly if a response
+correction lands under a published result.
+
+#### 5.2.3 Where it lives: `specmod.acquire` + `specmod.datasets`
+
+Making the grabber general changes where it belongs. As a bespoke Magna script it
+was maintainer tooling; as a config-driven fetcher it is a **user-facing feature**
+— anyone studying their own sequence writes a config and gets a SpecMod-ready
+dataset, which is a good reason for the package to own it. Two modules, because
+they have genuinely different jobs and dependency profiles:
 
 ```python
-from specmod.datasets import load_magna_2020, load_pnr_2019
+# specmod.acquire — produces datasets. Needs network. Used rarely.
+from specmod.acquire import fetch
+fetch("datasets/magna_2020.toml", out="build/magna_2020")
+#   or: $ specmod fetch datasets/magna_2020.toml -o build/magna_2020
 
+# specmod.datasets — consumes published artifacts. Offline after first use.
+from specmod.datasets import load_magna_2020, load_pnr_2019
 ds = load_magna_2020()                    # Dataset(stream, inventory, event, picks)
 ds = load_magna_2020(aftershocks=True)
 ```
 
-with `pooch.os_cache("specmod")`, a `SPECMOD_DATA_DIR` override, and a registry
-mapping dataset name → URL + SHA256.
+`datasets` uses `pooch.os_cache("specmod")`, a `SPECMOD_DATA_DIR` override, and a
+registry mapping dataset name → URL + SHA256.
 
-A separate library is not worth it. The consuming side is a registry dict and
-~150 lines; splitting it out buys a second release cycle, second CI, second
-changelog and a compatibility matrix between `specmod` and `specmod-data`. What
-*does* need independent versioning is the **data artifacts**, and pooch's
-registry handles that within one package — `magna_2020_v1`, `_v2` as distinct
-entries, with old versions still fetchable.
+A separate library is still not worth it. Both halves are thin — a config reader
+over ObsPy calls, and a registry over pooch — and splitting them out buys a
+second release cycle, second CI, second changelog and a compatibility matrix
+between `specmod` and `specmod-data`. What *does* need independent versioning is
+the **data artifacts**, and pooch's registry handles that within one package:
+`magna_2020_v1`, `_v2` as distinct entries, old versions still fetchable.
+
+The configs themselves are small text files and live **in the repository**, under
+`datasets/*.toml`, versioned with the code. That is the piece that makes the
+whole thing regenerable, so it should not be hidden inside a release asset —
+though a copy also travels inside each artifact (§5.2.2) so a downloaded dataset
+is self-describing.
+
+`acquire`'s own tests must not hit the network either: mock the ObsPy client, or
+record cassettes. Its logic is config parsing, wildcard resolution, windowing and
+manifest generation — all testable against a fake client.
 
 > **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
 > and release-please must be configured to ignore them or it will read `data-v1`
@@ -685,7 +757,7 @@ Tests that need a fetched dataset get `@pytest.mark.dataset`, so
 `~/.cache/specmod` keyed on the registry hash, so the download happens once per
 registry change rather than once per job.
 
-#### 5.2.3 Magna, Mw 5.7, 2020-03-18 — the validation dataset
+#### 5.2.4 Magna, Mw 5.7, 2020-03-18 — the validation dataset
 
 This is the strongest available anchor for the whole refactor, for a reason that
 has nothing to do with data volume: **there are published results for this event
@@ -714,7 +786,7 @@ more strained than for the induced events, and finite-source or directivity
 effects may be visible. That is a property of the science, not the refactor, but
 it should not be discovered as a surprise.
 
-#### 5.2.4 The three-way comparison
+#### 5.2.5 The three-way comparison
 
 The published values were produced by code containing the bugs in §2.2 and
 §2.5. So agreement and disagreement are both ambiguous unless the comparison is
@@ -959,7 +1031,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); build the Magna dataset via `scripts/build_dataset.py` and publish as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce the published Magna values with 0.1.0 (§5.2.4 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce the published Magna values with 0.1.0 (§5.2.5 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
@@ -999,6 +1071,9 @@ end-to-end proves the pipeline while the stakes are zero.
   changes expected throughout `0.x`; `1.0` when the API settles.
 - **Commit convention** — Conventional Commits, `commitlint`-enforced, driving
   release-please (§6.4).
+- **Data acquisition** — a general config-driven grabber (`specmod.acquire`),
+  not a per-event script; artifacts pinned by SHA256 and served from GitHub
+  Release assets via pooch (§5.2).
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
 - **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.6). One of the three
@@ -1017,11 +1092,11 @@ end-to-end proves the pipeline while the stakes are zero.
    either way, **the recommendation is to leave history alone**: a one-time 15 MiB
    clone is a much smaller cost than an unrecoverable pre-refactor record. Only
    worth revisiting if the history genuinely becomes a burden.
-4. **Magna dataset scope.** Which stations, how many aftershocks, and which
-   published values are the comparison target? Needs the paper's station list and
-   processing parameters to be pinned down before `build_dataset.py` is written —
-   step 2 of §5.2.4 only works if the 0.1.0 re-run uses the same inputs the paper
-   did.
+4. **Magna config contents.** The grabber is general (§5.2.1), so this is no
+   longer a code question — but `datasets/magna_2020.toml` still needs the
+   paper's station list, distance range, window definition and pick source, and
+   the published values to compare against. Step 2 of §5.2.5 only works if the
+   0.1.0 re-run uses the same inputs the paper did.
 
 ---
 
