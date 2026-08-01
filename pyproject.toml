@@ -9,7 +9,7 @@ description = "A Python toolbox for processing and modelling seismic spectra"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "James Holt", email = "holtj92@gmail.com" }]
+authors = [{ name = "James Holt" }]
 keywords = ["seismology", "spectra", "moment magnitude", "source parameters"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,12 +22,12 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=1.26",
-    "scipy>=1.11",
-    "obspy>=1.4",
+    "numpy>=2.0",   # np.trapezoid; np.trapz was the pre-2.0 spelling
+    "scipy>=1.13",  # first release supporting numpy 2
+    "obspy>=1.5",   # 1.4.x imports pkg_resources, gone from setuptools 81+
     "lmfit>=1.2",
-    "pandas>=2.0",
-    "matplotlib>=3.7",
+    "pandas>=2.2.2",  # first release with numpy 2 ABI wheels
+    "matplotlib>=3.9",  # numpy 2 support
     "pooch>=1.8",
 ]
 
@@ -130,7 +130,10 @@ files = ["src/specmod"]
 
 [[tool.mypy.overrides]]
 # None of these ship type stubs.
-module = ["obspy.*", "lmfit.*", "mtspec.*", "multitaper.*", "pooch.*", "matplotlib.*"]
+module = [
+    "obspy.*", "lmfit.*", "mtspec.*", "multitaper.*",
+    "pooch.*", "matplotlib.*", "scipy.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
