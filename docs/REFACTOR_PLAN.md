@@ -678,7 +678,7 @@ the generated `CHANGELOG.md`. Merging that PR creates the tag; the tag triggers
 publication. Nothing is released until a human merges.
 
 That human gate is the reason to prefer `release-please` over
-`python-semantic-release` (which tags on every qualifying push to `master`)
+`python-semantic-release` (which tags on every qualifying push to `main`)
 **specifically because of Zenodo**: every GitHub release mints a new DOI, and DOIs
 cannot be retracted. Fully-automatic tagging plus Zenodo means a typo fix can
 mint a citable version of the software. Use `python-semantic-release` only if you
@@ -693,13 +693,13 @@ hook. It is a small discipline and it is what makes the changelog automatic.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `test.yml` | PR, push | matrix 3.11/3.12/3.13 × ubuntu/macos → ruff check, ruff format --check, mypy, pytest + coverage → Codecov |
-| `docs.yml` | PR, push | `sphinx-build -W`; on `master`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
+| `docs.yml` | PR, push | `sphinx-build -W`; on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
 | `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
-| `release-please.yml` | push to `master` | maintains the release PR; creates tag + GitHub Release on merge |
+| `release-please.yml` | push to `main` | maintains the release PR; creates tag + GitHub Release on merge |
 | `publish.yml` | GitHub Release published | PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
 
 Zenodo is wired to the GitHub Release webhook, so the DOI is minted from the same
-event as the PyPI upload. Branch protection on `master`: require `test`, `docs`
+event as the PyPI upload. Branch protection on `main`: require `test`, `docs`
 and `build` green.
 
 **Versioning policy.** SemVer. Stay on `0.x` for the whole refactor — breaking
@@ -709,24 +709,50 @@ is needed (§3.1). Tag `v0.2.0` at the end of Phase 2 to prove the pipeline;
 Zenodo DOI give the project a citable artefact, which it currently lacks
 entirely.
 
-**`v0.1.0` — the pre-refactor tag.** Before anything changes, tag the current
-`master` as `v0.1.0` so the pre-refactor code is permanently retrievable by name
-rather than by remembering a SHA. Cheap, and it gives the changelog a floor to
-generate from.
+### 6.6 Branch layout and preserving the pre-refactor state
 
-Worth being precise about what that tag does and does not preserve: it preserves
-the **code**, but the code is not **runnable** — `mtspec` no longer builds on any
-current toolchain (§2.1). Reproducing a 0.1.0 result needs three things
-committed together, which is what Phase 0 delivers:
+**`master` is frozen; `main` is the trunk.** `main` was branched from `master` at
+`453c77c` and is where all refactor work lands. `master` is never committed to
+again — it becomes the permanent, named record of the pre-refactor code, doing
+the job a `v0.1.0` tag would have done.
 
-1. `v0.1.0` — the source, tagged.
+To make that real rather than aspirational, two GitHub settings changes are
+needed and neither can be made from a git client:
+
+1. **Switch the repository default branch to `main`** (Settings → Branches), so
+   PRs target it by default and clones land on it.
+2. **Protect `master`**: no pushes, no force-pushes, no deletion. A branch is a
+   *movable* ref where a tag is not, so without protection "frozen" is a
+   convention rather than a guarantee — one absent-minded `git push origin
+   master` and the record is gone.
+
+Optionally also tag `453c77c` as `v0.1.0` for good measure; belt and braces, and
+it gives release-please an explicit floor to generate the first changelog from.
+The two are complementary — the tag is immutable, the branch is discoverable.
+
+> Note on tooling limits: tag pushes are blocked in the automation environment
+> this plan was written in (HTTP 403 on `push origin v0.1.0`, while branch
+> pushes to the same remote succeed), which is why `main` exists as a branch
+> rather than the state being pinned by a tag. **This does not affect the release
+> automation in §6.4** — release-please creates tags from inside GitHub Actions
+> using the workflow token with `contents: write`, which is a different and
+> unrestricted credential. Automated versioning is unaffected; only ad-hoc tag
+> pushes from this environment are.
+
+Worth being precise about what any of this does and does not preserve: it
+preserves the **code**, but the code is not **runnable** — `mtspec` no longer
+builds on any current toolchain (§2.1). Reproducing a 0.1.0 result needs three
+things, which is what Phase 0 delivers:
+
+1. `master` (and optionally `v0.1.0`) — the source.
 2. A `Dockerfile` pinning `gfortran`, `python 3.9`, `numpy<2` — the environment
    that can still build `mtspec`. Also the only place existing `.spec` pickles
    can be read (§4.6).
 3. The golden `.npz` snapshots — the outputs, for when even that image stops
    building.
 
-The tag alone is the weakest of the three. Archaeology gets harder every year.
+The source ref alone is the weakest of the three. Archaeology gets harder every
+year.
 
 **Commit convention.** Conventional Commits (`feat:`, `fix:`, `refactor:`,
 `docs:`, `test:`, `chore:`; `feat!:` or a `BREAKING CHANGE:` trailer for
@@ -746,7 +772,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Tag current `master` as **`v0.1.0`**; reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); data out of git | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
@@ -788,7 +814,7 @@ end-to-end proves the pipeline while the stakes are zero.
   release-please (§6.4).
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
-- **Pre-refactor tag** — `v0.1.0` on current `master`, as one of the three
+- **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.6). One of the three
   preservation layers in §6.5.
 
 ### Still open
