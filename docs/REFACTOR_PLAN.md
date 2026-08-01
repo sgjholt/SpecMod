@@ -249,7 +249,9 @@ regenerated with the 1.0 code, or the discrepancy understood.
 ```
 src/specmod/
   __init__.py              # public API + __version__
-  config.py                # Settings dataclasses; no module-level side effects
+  config/                  # one module per semantic group (§4.4.4)
+    layers.py              # defaults -> specmod.toml -> *.local.toml -> env -> kwargs
+    provenance.py          # resolved config + hash + version, stamped into outputs
   core/
     units.py               # Motion(DISP|VEL|ACC), AmplitudeKind(PSD|ASD|AMPLITUDE)
     spectrum.py            # Spectrum: freq, amp, motion, kind, meta, duration
@@ -533,6 +535,87 @@ Two ways out, and the first is much better:
 Recommendation: option 1, and run it over any `.spec` files you care about
 *during* Phase 0, while the image is fresh.
 
+### 4.7 Configuration: semantic groups, layered overrides, recorded provenance
+
+Scientific parameters are currently scattered across three places with no
+coherent story: a `config.py` of three flat dicts, function defaults in
+`PreProcess`, and values hardcoded past reach entirely — the multitaper
+time-bandwidth product is the literal `3` at `Spectral.py:124`, not exposed at
+all. The defaults have also drifted from the published run (§5.2.5), because
+they were tuned for later studies. Both problems have the same fix.
+
+**Principle: current behaviour stays the default; every study pins its own
+config; the resolved config travels with the output.**
+
+#### Semantic groups
+
+One section per stage of the pipeline, each a typed dataclass, each owned by the
+module that uses it:
+
+| Section | Covers | Currently lives in |
+|---|---|---|
+| `[acquire]` | Data centre, event query, station/channel selection, radius | *(new, §5.2)* |
+| `[windows]` | `p`/`s` group velocities, `bf`/`rafp`/`tafs`, `time_after`, `refine_window`, `pctls`, `bshift`, padding, `sta_shift`, `emergency_ratio` | `PreProcess` function defaults |
+| `[transform]` | Estimator choice, taper, `nfft`/padding, time-bandwidth, `number_of_tapers`, `quadratic`, DC-bin handling | mtspec `**kwargs` + the hardcoded `3` |
+| `[smoothing]` | Binning `smin`/`smax`/`bins`, Konno–Ohmachi bandwidth | `SPECTRAL.BIN_PARS` |
+| `[snr]` | `SNR_TOLERENCE`, `MIN_POINTS`, `ASSERT_BANDWIDTHS`, `S_BANDS`, `SCALE_PARSEVAL`, `BW_METHOD` + its `pctl`, `ROTATE_NOISE`, `ROT_METHOD`, `ROT_PARS`, noise interpolation | `SPECTRAL` + buried kwargs |
+| `[model]` | Source model, motion, γ/n | `MODELS` |
+| `[fitting]` | Minimiser, `fit_bins`, weighting, bounds, initial guesses (`ts=0.01`, `a=1e-5`) | `FITTING` + `ModelGuess` |
+| `[viz]` | `PLOT_COLUMNS` | duplicated in **both** `SPECTRAL` and `FITTING` |
+
+Note the last row: `PLOT_COLUMNS` is defined twice today and the two copies can
+disagree. Semantic grouping makes that structurally impossible.
+
+`config.py` becomes a `config/` package, one module per section, so each group
+lives next to the code it configures rather than in a central blob every module
+imports.
+
+#### Layering
+
+Resolution order, lowest to highest:
+
+1. **Package defaults** — typed dataclasses in code. **Set to today's shipped
+   behaviour**, not the paper's (`s=2.9`, `bshift=0.2`,
+   `ASSERT_BANDWIDTHS=False`, `ROTATE_NOISE=True`). Upgrading changes nothing.
+2. **Committed project config** — `specmod.toml` at the repo root. This is what
+   tutorials and published studies use.
+3. **Local override** — `specmod.local.toml`, **gitignored by default**. Personal
+   experimentation, never accidentally committed.
+4. **Environment** — `SPECMOD_SNR__TOLERANCE=4` and similar, for CI.
+5. **Explicit Python arguments** — always win.
+
+Same schema and same loader as the acquisition config in §5.2.1, so one config
+file can carry `[acquire]` *and* the processing sections. Fetch and process share
+one provenance record rather than two that can drift apart.
+
+#### Making "local and uncommitted" compatible with "reproducible"
+
+These pull against each other, and the resolution is that **reproducibility comes
+from what the output records, not from what the repository contains**:
+
+- Every output — spectra, fit tables, HDF5 — carries the **fully resolved
+  config**, plus a short **config hash**. Two runs that disagree get their hashes
+  compared first. Same mechanism as the acquisition manifest (§5.2.2).
+- The resolved config records the **SpecMod version**. Defaults may move between
+  releases; without the version stamp, "reproducible" fails silently across an
+  upgrade. This is precisely the failure that made the v0.1.1 archaeology in
+  §5.2.5 so painful.
+- `specmod config show` prints the resolved config **with the layer each value
+  came from**, so "why did this run differ" is answerable in one command.
+- `specmod config freeze > studies/my_study.toml` promotes a local config to a
+  committable one. That is the explicit opt-in — local stays local until you
+  deliberately publish it.
+- Regression tests pin an **explicit config file**, never the defaults, so
+  changing a default cannot silently move a golden test.
+
+#### What this resolves
+
+`studies/magna_2020_paper.toml` captures the published values — `s=3.4`,
+`bshift=0.5`, `ASSERT_BANDWIDTHS=true`, and whatever noise-rotation setting the
+0.1.1 re-run establishes. The paper's configuration becomes a committed artifact
+rather than a question, and later studies that moved the defaults get their own
+files alongside it. No archaeology, and every study reproducible from a named
+file.
 ---
 
 ## 5. Testing strategy
@@ -828,9 +911,15 @@ refactor, but better stated than discovered.
 #### 5.2.5 Published defaults do not match the shipped defaults
 
 Transcribing the workflow surfaced four places where `config.py` and the
-`PreProcess` defaults disagree with what the paper describes. Each is a trap for
-step 2 of §5.2.6 — running the current code with stock settings will **not**
-reproduce the paper.
+`PreProcess` defaults disagree with what the paper describes. The defaults were
+tuned for studies after the paper, so this is drift rather than a defect — but it
+is a trap for step 2 of §5.2.6, because running the current code with stock
+settings will **not** reproduce the paper.
+
+The fix is §4.7: keep the current values as defaults, and pin the published run
+in `studies/magna_2020_paper.toml`. Each later study gets its own file alongside
+it, so "which settings produced this" stops being a question anyone has to
+reconstruct.
 
 | Paper | Current default | Where |
 |---|---|---|
@@ -1254,7 +1343,7 @@ Each phase ends green on CI and is independently mergeable.
 |---|---|---|---|
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
-| **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
+| **2. De-globalise** | `config/` package per §4.7 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
@@ -1298,6 +1387,9 @@ end-to-end proves the pipeline while the stakes are zero.
 - **Data acquisition** — a general config-driven grabber (`specmod.acquire`),
   not a per-event script; artifacts pinned by SHA256 and served from GitHub
   Release assets via pooch (§5.2).
+- **Configuration** — semantic groups, layered overrides with local files
+  gitignored by default, resolved config and version stamped into every output
+  (§4.7). Current behaviour stays the default.
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
 - **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.6). One of the three
@@ -1322,7 +1414,9 @@ end-to-end proves the pipeline while the stakes are zero.
    history, if nothing better is available. Only you can make that call.
 5. **Was noise rotation on for the published run?** `ROTATE_NOISE = True` ships
    as default but appears nowhere in the manuscript, and it changes the SNR
-   bandwidth. This has to be settled before step 2 of §5.2.6 can be trusted.
+   bandwidth. Still needs settling for step 2 of §5.2.6 — but it is now a value
+   to determine and record in `studies/magna_2020_paper.toml`, not a blocker on
+   the design (§4.7).
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
