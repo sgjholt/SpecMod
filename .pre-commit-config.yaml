@@ -1,0 +1,37 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        # The repo carried 25 MB of data before this refactor; keep it out.
+        args: [--maxkb=1024]
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+        # The tutorial notebook was 4.4 MB of embedded PNGs. Under myst-nb the
+        # outputs are regenerated at docs build time.
+
+  - repo: local
+    hooks:
+      - id: no-session-links
+        name: reject Claude session URLs in commit messages
+        # This repository is public; session links are private state.
+        entry: >-
+          bash -c 'if grep -qiE "^Claude-Session:|claude\.ai/code/session_" "$1";
+          then echo "commit-msg: message contains a Claude session link"; exit 1; fi'
+        language: system
+        stages: [commit-msg]
