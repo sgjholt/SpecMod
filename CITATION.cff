@@ -5,7 +5,6 @@ type: software
 authors:
   - family-names: Holt
     given-names: James
-    email: holtj92@gmail.com
 repository-code: "https://github.com/sgjholt/SpecMod"
 license: MIT
 keywords:
