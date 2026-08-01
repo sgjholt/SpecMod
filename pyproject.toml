@@ -9,7 +9,7 @@ description = "A Python toolbox for processing and modelling seismic spectra"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-authors = [{ name = "James Holt", email = "holtj92@gmail.com" }]
+authors = [{ name = "James Holt" }]
 keywords = ["seismology", "spectra", "moment magnitude", "source parameters"]
 classifiers = [
     "Development Status :: 3 - Alpha",
