@@ -178,8 +178,11 @@ importantly, leaves no record of which domain you ended up in.
   (current: 1.5.0), `pandas==0.25.3` (current: 3.0.5).
 - No tests. `Tests/` contains an empty `__init__.py` and a duplicate of the
   tutorial tree.
-- ~70 binary waveform files plus a StationXML committed at `Tutorial/Data/`,
-  duplicated again under `Tests/Tutorial/`.
+- Repo weight is 14.7 MiB packed, but **not** because of the waveforms — those
+  are 224 KB. It is a 9.9 MB unreferenced Utah earthquake catalog in an
+  abandoned `Tests/Tutorial/` scaffold, 4.4 MB of PNG output embedded in the
+  tutorial notebook, and a 10.5 MB StationXML covering 501 channels where ~20
+  are used. All three are fixable in place; see §5.1.
 - `.gitignore` is three lines. No CI, no linting, no CHANGELOG, no tags, no
   releases, no `CITATION.cff` (this is academic software — it needs one).
 - Module names are `CapitalCase` (`Spectral.py`, `PreProcess.py`,
@@ -557,12 +560,62 @@ visible and deliberate rather than discovered later.
 **Tier 4 — unit tests** for the bugs in §2.5, each written as a failing test
 first.
 
-**Test data:** cut the committed tutorial data to one three-component station
-(~6 files) for the test fixtures. Move the full tutorial dataset out of git
-history entirely — host it as a GitHub Release asset and fetch it with `pooch`,
-or use git-lfs. Coverage target: 80% overall, 95% on `transforms/` and `core/`.
+**Test data:** see §5.1. Coverage target: 80% overall, 95% on `transforms/` and
+`core/`.
 
----
+### 5.1 Where the test data lives — it stays in git
+
+An earlier draft of this plan recommended moving the tutorial dataset out of git
+and fetching it with `pooch` or git-lfs. **That was wrong, and it was based on
+file count rather than file size.** Measured:
+
+| Path | Size | Verdict |
+|---|---|---|
+| `Tutorial/Data/` — 40 mseed waveforms | **224 KB** | **Keep in git.** These are the test fixtures. |
+| `Tutorial/MetaData/pnr_inventory.xml` | 10.5 MB | Keep, but subset — see below |
+| `Tests/Tutorial/Meta/UUSSeq.catalog` | 9.9 MB | **Delete** — unreferenced, and unrelated to this project |
+| `Tutorial/SpecModTutorial.ipynb` | 4.6 MB | Strip outputs — 4.4 MB of it is embedded PNGs |
+| `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable |
+
+Total pack size today is 14.7 MiB. That is a **small** repository, and the
+waveforms are not why. Three fixes, none of which needs external hosting:
+
+1. **`Tests/Tutorial/Meta/UUSSeq.catalog` — delete it.** 9.9 MB, referenced
+   nowhere in any `.py` or `.ipynb`. It is a fixed-format earthquake catalog for
+   Utah starting in 1962 (`620810` = 1962-08-10, lat ≈ 39 N, lon ≈ 111 W); the
+   tutorial is Preston New Road, UK, in 2019. Its parent directory is otherwise
+   four `.empty` placeholders and a zero-byte notebook — abandoned scaffolding
+   from another project. Deleting `Tests/Tutorial/` entirely removes 63% of the
+   repository.
+2. **Strip the notebook.** 4.4 MB of the 4.6 MB is base64 PNG output; the actual
+   source is 10 KB. `nbstripout` in pre-commit (already proposed in §6.2) fixes
+   this permanently. Under `myst-nb` (§6.3) outputs are regenerated at docs-build
+   time anyway, so storing them is pure waste.
+3. **Subset the inventory.** 501 channels across four networks (GB, LV, SD, UR)
+   with 1471 response stages, where the tutorial reads ~20 channels from LV and
+   UR only. `inv.select(...)` to the used channels and the event time window
+   should give roughly 400–500 KB at ~21 KB/channel. The response stages must be
+   kept — `remove_response` needs them — but GB and SD are entirely unused.
+
+After all three the repository is comfortably under 1 MB and the question of
+external hosting does not arise. **No `pooch`, no git-lfs, no Zenodo data
+deposit.** Every fixture stays versioned alongside the code that consumes it,
+which is what you want for regression tests — the data and the expected outputs
+move together or not at all.
+
+**If it does outgrow git later.** Adding more events for multi-event regression
+tests is a realistic prospect, so for the record: the threshold worth acting on
+is roughly 100 MB of pack, not 15 MB, and the right answer at that point is
+`pooch` fetching from **GitHub Release assets** (or a Zenodo data DOI, which also
+makes the dataset citable — a real benefit for research software). `pooch`
+verifies SHA256, caches per-user, and is already the convention across the
+scientific Python stack.
+
+git-lfs is the option to avoid: it still consumes repository storage, adds a
+bandwidth quota that CI burns through quickly, breaks plain `git clone` for
+anyone without the extension, and — most relevant here — GitHub Actions
+checkouts need explicit LFS handling that is easy to get wrong and fails
+confusingly.
 
 ## 6. Packaging, CI/CD and process
 
@@ -773,7 +826,7 @@ Each phase ends green on CI and is independently mergeable.
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
-| **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); data out of git | 0 | 3–4 days |
+| **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
@@ -822,9 +875,14 @@ end-to-end proves the pipeline while the stakes are zero.
 1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
    Konno–Ohmachi (faster, more conventional in engineering seismology)?
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
-3. **Tutorial data.** OK to rewrite history to drop the ~70 committed waveform
-   files, or keep history and just stop adding to it? (Note: rewriting history
-   would move the `v0.1.0` tag's commit — tag first, then decide.)
+3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook
+   (§5.1) shrinks the *working tree* but leaves both in history, so a fresh clone
+   still pulls ~15 MiB. Rewriting history with `git-filter-repo` would recover it
+   — but it rewrites every SHA, which moves what `master` and `main` currently
+   point at and invalidates any `v0.1.0` tag. Given the end state is a ~1 MB repo
+   either way, **the recommendation is to leave history alone**: a one-time 15 MiB
+   clone is a much smaller cost than an unrecoverable pre-refactor record. Only
+   worth revisiting if the history genuinely becomes a burden.
 4. **Golden snapshots.** Half a day standing up the legacy `mtspec` Docker image
    to capture them. Strongly recommended and more important under a clean break
    (§3.1) — but it is the one task with no direct deliverable, so it is the one
