@@ -49,7 +49,6 @@ def test_importable_without_mtspec() -> None:
 
 
 def test_mtspec_shim_raises_a_useful_error() -> None:
-    pytest.importorskip
     import specmod.spectral as sp
 
     try:

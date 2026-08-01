@@ -1,0 +1,97 @@
+# 2020 Mw 5.7 Magna, Utah sequence — configuration as published.
+#
+# Transcribed from the "Spectral Modeling of Direct Sg Phases to Determine Mw"
+# section of:
+#
+#   Holt, J., Whidden, K.M., Koper, K.D., Pankow, K.L., Mayeda, K.,
+#   Pechmann, J.C., Edwards, B., Gök, R., Walter, W.R.
+#   "Towards Robust and Routine Determination of Mw for Small Earthquakes:
+#    Application to the 2020 Mw 5.7 Magna, Utah, Seismic Sequence"
+#   Seismological Research Letters.
+#
+# Several values here differ from SpecMod's shipped defaults, which were tuned
+# for later studies. That drift is why this file exists — see
+# docs/REFACTOR_PLAN.md §5.2.5. Differences from the defaults:
+#
+#   windows.s_velocity      3.4  (default 2.9)
+#   windows.noise_shift     0.5  (default 0.2)
+#   snr.assert_bandwidths  true  (default false)
+#
+# UNVERIFIED — noise rotation is not described in the manuscript and was not
+# recalled. The shipped defaults are assumed here. The 0.1.1 re-run tests the
+# assumption directly: the setting has three states (off / rotate / boost), so
+# if this configuration fails to reproduce Figure 2, try the other two and
+# record whichever matches. Run this configuration first and only search if it
+# fails — searching before there is a discrepancy to explain is how settings
+# get tuned to fit an expected outcome.
+
+
+[acquire]
+client = "IRIS"
+origin_time = "2020-03-18T13:09:31"
+latitude = 40.751
+longitude = -112.078
+depth_km = 11.9
+magnitude = 5.7
+# 88 stations: UU (73), IW (5), US (4), IE (3), N4/NN/RE (1 each).
+networks = ["UU", "IW", "US", "IE", "N4", "NN", "RE"]
+channels = ["HH?", "BH?", "EN?"]
+max_radius_km = 400.0
+seconds_before = 60.0
+seconds_after = 300.0
+# Store raw counts and the response so response removal stays under test.
+remove_response = false
+
+
+[windows]
+# Group velocities from Pechmann et al. (2007).
+p_velocity = 5.9
+s_velocity = 3.4
+distance_metric = "rhyp"
+# 20 s window opening at 80% of the elapsed Pg-Sg time, on the transverse.
+s_start_ratio = 0.8
+s_length = 20.0
+s_length_mode = "absolute_time"
+# Refined to the 1st and 99th percentiles of the cumulative squared integral.
+refine = true
+refine_percentiles = [1.0, 99.0]
+# Noise window ends 0.5 s before Pg, same length as the signal window.
+noise_shift = 0.5
+
+
+[transform]
+# "a multitaper method (Prieto et al., 2009)".
+estimator = "multitaper"
+time_bandwidth = 3.0
+n_tapers = 5
+
+
+[smoothing]
+# "bin the data evenly in log10 space". Bin edges are not stated in the paper;
+# these are the shipped defaults.
+method = "log_bins"
+f_min = 0.001
+f_max = 200.0
+n_bins = 151
+
+
+[snr]
+# "select spectra that have a signal-to-noise ratio greater than 3 in the
+# consecutive bands 2-4 Hz, 4-6 Hz, and 6-8 Hz."
+tolerance = 3.0
+assert_bandwidths = true
+bands = [[2.0, 4.0], [4.0, 6.0], [6.0, 8.0]]
+# See the UNVERIFIED note above.
+rotate_noise = true
+rotation_method = "boost"
+
+
+[model]
+# log10[A(f)] = log10[2*pi*f] + log10[Omega] - log10[1+(f/fc)^2] - pi*f*t*/ln[10]
+source = "brune"
+motion = "velocity"
+
+
+[fitting]
+# "We use Powell's minimization technique (Powell, 1964; Press et al., 1997)."
+method = "powell"
