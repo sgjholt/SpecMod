@@ -130,7 +130,10 @@ files = ["src/specmod"]
 
 [[tool.mypy.overrides]]
 # None of these ship type stubs.
-module = ["obspy.*", "lmfit.*", "mtspec.*", "multitaper.*", "pooch.*", "matplotlib.*"]
+module = [
+    "obspy.*", "lmfit.*", "mtspec.*", "multitaper.*",
+    "pooch.*", "matplotlib.*", "scipy.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
