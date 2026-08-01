@@ -37,7 +37,8 @@ jobs:
       - run: uv python install 3.11
       - run: uv venv
       - run: uv pip install -e ".[dev]"
-      - run: mypy
+      - run: uv pip install mypy
+      - run: uvx mypy
 
   test:
     runs-on: ${{ matrix.os }}
@@ -56,10 +57,11 @@ jobs:
       - run: uv python install ${{ matrix.python-version }}
       - run: uv venv
       - run: uv pip install -e ".[dev]"
+      - run: uv pip install pytest pytest-cov
       - name: pytest
         # Dataset-marked tests need a network fetch; they are excluded here so
         # the suite stays hermetic. See docs/REFACTOR_PLAN.md §5.2.
-        run: pytest -m "not dataset" --cov=specmod --cov-report=xml --cov-report=term
+        run: uvx pytest -m "not dataset" --cov=specmod --cov-report=xml --cov-report=term
       - uses: codecov/codecov-action@v4
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         with:
