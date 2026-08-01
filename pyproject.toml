@@ -22,12 +22,12 @@ classifiers = [
 ]
 
 dependencies = [
-    "numpy>=1.26",
-    "scipy>=1.11",
-    "obspy>=1.4",
+    "numpy>=2.0",   # np.trapezoid; np.trapz was the pre-2.0 spelling
+    "scipy>=1.13",  # first release supporting numpy 2
+    "obspy>=1.5",   # 1.4.x imports pkg_resources, gone from setuptools 81+
     "lmfit>=1.2",
-    "pandas>=2.0",
-    "matplotlib>=3.7",
+    "pandas>=2.2.2",  # first release with numpy 2 ABI wheels
+    "matplotlib>=3.9",  # numpy 2 support
     "pooch>=1.8",
 ]
 
