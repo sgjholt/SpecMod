@@ -150,6 +150,7 @@ property at line 255 which overwrites the name — the assignment is dead code.
 | `Fitting.py:246` | `self.model[name].reset()` — attribute is `models`. `AttributeError`. |
 | `PreProcess.py:166-168` | `cut_p` refine: `p_start = p_start + rw_start` then `p_end = p_start + rw_end` uses the *already-shifted* start, so the window end is displaced by `rw_start`. `cut_s` (lines 220-221) computes the end **before** updating the start and is correct. The two functions disagree. |
 | `Fitting.py:270` | `os.makedirs(os.path.join(*path.split("/")[:-1]))` — `TypeError` on a bare filename, and POSIX-only. |
+| `PreProcess.py:176` | `cut_s(bf=2, ...)` — `bf` is never referenced in the body. A dead parameter that silently does nothing, on the function the published Magna workflow depends on. |
 | `Spectral.py:481` | `self.noise._Spectrum__bin_spectrum(...)` — reaching through name mangling into another object's private method. |
 | `Spectral.py:536` | `read_spectra` calls `input()`. A blocking interactive prompt inside library code; unusable in scripts, batch jobs or CI. |
 | `Spectral.py:141-157` | Log bins hardcoded to 0.001–200 Hz regardless of Nyquist. Empty bins produce `nan` (plus a `RuntimeWarning` per empty slice) and are then filtered out, so `bfreq` silently differs in length between traces. |
@@ -560,10 +561,10 @@ table to `.npz`. Every subsequent change is diffed against those snapshots, so
 behaviour changes are visible and deliberate rather than discovered later.
 
 > This must happen **before** any code changes, and it needs an environment where
-> `mtspec` still builds — a one-off Docker image or conda env with `gfortran`,
-> `numpy<2`, `python 3.9`. Budget half a day; without it the refactor is
+> `mtspec` still builds — a one-off Docker image with `gfortran` and the exact
+> versions the paper pins (§5.2.6). Budget half a day; without it the refactor is
 > unverifiable. Magna makes this stronger still, because published values exist
-> for it — see the three-way comparison in §5.2.5.
+> for it — see the three-way comparison in §5.2.6.
 
 **Tier 4 — unit tests** for the bugs in §2.5, each written as a failing test
 first.
@@ -759,53 +760,183 @@ registry change rather than once per job.
 
 #### 5.2.4 Magna, Mw 5.7, 2020-03-18 — the validation dataset
 
-This is the strongest available anchor for the whole refactor, for a reason that
-has nothing to do with data volume: **there are published results for this event
-produced with the 0.1.0 code.** That converts Tier 3 from "trust a snapshot we
-generated" into "reproduce a peer-reviewed number".
+Source: Holt *et al.*, "Towards Robust and Routine Determination of Mw for Small
+Earthquakes: Application to the 2020 Mw 5.7 Magna, Utah, Seismic Sequence",
+submitted to *SRL*. The paper's **Spectral Modeling of Direct Sg Phases** section
+specifies the workflow step by step, which makes `datasets/magna_2020.toml` and
+the validation targets a transcription exercise rather than a guess. Everything
+below is from the manuscript.
 
-It is also scientifically complementary to the existing PNR fixtures in exactly
-the way a test suite wants:
+**Scope.** Mainshock 2020-03-18 13:09:31 UTC, Mww 5.7. Catalogue period
+2020-03-18 → 2020-04-30, 2,103 UUSS-located events. 88 stations within a **400 km
+radius** of the epicentre:
+
+| Network | Count | Notes |
+|---|---|---|
+| UU | 73 | 42 broadband (100 Hz; 2 at 40 Hz) + 31 strong motion (100 Hz) |
+| IW | 5 | Intermountain West |
+| US | 4 | US National Seismic Network |
+| IE | 3 | INL |
+| N4, NN, RE | 1 each | CEUSN, Nevada, USBR |
+
+Data from IRIS/EarthScope FDSN, accessed with ObsPy 1.2.0.
+
+**The workflow, as published** — this is the config:
+
+| Step | Parameter |
+|---|---|
+| Component | **Transverse** (horizontals rotated to R/T) |
+| Motion | Ground velocity, response-corrected |
+| Phase arrivals | Group velocities **Pg 5.9**, **Sg 3.4 km/s** (Pechmann *et al.* 2007) |
+| Signal window | **20 s**, starting at **80% of the Pg–Sg time** |
+| Window refinement | 1st and 99th percentiles of the cumulative squared-amplitude integral |
+| Noise window | Ends **0.5 s before Pg**, same length as the signal window |
+| Transform | Multitaper (Prieto *et al.* 2009) |
+| Binning | Even bins in log10 space |
+| SNR gate | **> 3** in **all** of 2–4, 4–6, 6–8 Hz |
+| Model | Brune, velocity: `log10[2πf] + log10[Ω] − log10[1+(f/f_c)²] − πf t*/ln10` |
+| Minimiser | Powell |
+| Typical fit band | 0.6–35 Hz |
+
+Equation 1 maps exactly onto the existing `Models.simple_model` with
+`MODEL="BRUNE"` (γ=1, n=2) and `MOTION="velocity"` — the current defaults.
+
+**Complementary to PNR in exactly the way a test suite wants:**
 
 | | PNR 2019 | Magna 2020 |
 |---|---|---|
 | Setting | Induced, UK | Tectonic, Utah |
-| Magnitude | ~M 1–2 | **Mw 5.7** + aftershock sequence |
-| Corner frequency | ~10–30 Hz | ~0.3–0.5 Hz |
-| Stresses | High-frequency end, short windows | **Low-frequency end, long windows** |
+| Magnitude | ~M 1–2 | **Mw 5.7** down to ML 0.7 |
+| Fit band | High-frequency | 0.6–35 Hz, `f_c` ~0.3 Hz at the top end |
+| Stresses | Short windows | **20 s windows, low-frequency `f_c`** |
 
-Two orders of magnitude in `f_c` across the two datasets, and Magna lands
-squarely on the part of the new code that PNR cannot exercise: the COI /
-window-length resolution floor (§4.4.2) only bites when `f_c` approaches `1/T`.
-The aftershock sequence additionally gives many events over a magnitude range
-from one region on one station set — the natural basis for the multi-event
-regression set later.
+Magna lands squarely on what PNR cannot exercise: the COI / window-length
+resolution floor (§4.4.2) bites when `f_c` approaches `1/T`, and a 20 s window
+with `f_c` ~0.3 Hz is exactly that regime. The catalogue also spans ML 0.7 → 5.6
+on one station set, which is the natural multi-event regression basis.
 
-Caveat worth stating in the docs: at Mw 5.7 the point-source Brune assumption is
-more strained than for the induced events, and finite-source or directivity
-effects may be visible. That is a property of the science, not the refactor, but
-it should not be discovered as a surprise.
+**Performance baseline.** The paper reports **96,169 waveforms fit in ~4 hours on
+a single CPU core** (~6.7 waveforms/s) producing 11,226 Ω measurements. That is a
+concrete benchmark target — the refactor should not regress it, and `scipy.fft`
+with `workers=-1` (§4.1) should beat it.
 
-#### 5.2.5 The three-way comparison
+**Caveat for the docs:** at Mw 5.7 the point-source Brune assumption is more
+strained than for induced events, and directivity may be visible. The paper
+handles this by fitting an *apparent* `f_c`. Property of the science, not the
+refactor, but better stated than discovered.
 
-The published values were produced by code containing the bugs in §2.2 and
-§2.5. So agreement and disagreement are both ambiguous unless the comparison is
-staged:
+#### 5.2.5 Published defaults do not match the shipped defaults
 
-1. **Paper** — the published values.
-2. **0.1.0 re-run** in the legacy Docker image, on the same data and parameters,
-   → must reproduce (1). If it does not, the discrepancy is in parameters or
-   environment, and it has to be resolved *before* anything downstream is
-   interpretable.
+Transcribing the workflow surfaced four places where `config.py` and the
+`PreProcess` defaults disagree with what the paper describes. Each is a trap for
+step 2 of §5.2.6 — running the current code with stock settings will **not**
+reproduce the paper.
+
+| Paper | Current default | Where |
+|---|---|---|
+| Sg group velocity **3.4** km/s | `s=2.9` | `PreProcess.basic_set_theoreticals` |
+| Noise ends **0.5 s** before Pg | `bshift=0.2` | `PreProcess.get_noise_s` |
+| SNR gate in 2–4/4–6/6–8 Hz **enforced** | `ASSERT_BANDWIDTHS = False` | `config.SPECTRAL` |
+| No noise rotation described | `ROTATE_NOISE = True, ROT_METHOD = 2` | `config.SPECTRAL` |
+
+The first two are straightforward parameter differences. The last two matter more:
+
+- `ASSERT_BANDWIDTHS = False` means the three-band SNR gate the paper describes
+  as its selection criterion **is switched off by default** in the shipped code.
+- Noise rotation is not mentioned anywhere in the manuscript, yet it is on by
+  default and materially changes the SNR bandwidth. Either the published run had
+  it off, or it postdates the paper, or it was used and undocumented. This must
+  be resolved before any comparison means anything.
+
+Two further problems with reproducing the published run from this repository:
+
+1. **The paper cites "SpecMod (v0.1.1)". No such tag exists** — the repository has
+   no tags at all and no version string anywhere in the source, so the code that
+   produced the published numbers cannot be identified by name. Dating it against
+   the history turns up a genuine puzzle rather than an easy answer.
+
+   Only ten commits ever touched `specmod/`, and the workflow's step 5 — window
+   refinement by the 1st/99th percentiles of the cumulative squared-amplitude
+   integral — is implemented by `signal_intensity`, which **did not exist until
+   `ba3f7ec` on 2021-01-22**:
+
+   | Commit | Date | `signal_intensity` |
+   |---|---|---|
+   | `e98621f` | 2020-10-08 | absent |
+   | `ba3f7ec` "Cutting function updates" | 2021-01-22 | **introduced** |
+   | `09f57b9` "removed cython" | 2021-05-11 | present |
+   | `453c77c` (master HEAD) | 2021-08-12 | present |
+
+   But the manuscript records the repository as "last accessed November, 2020"
+   and its other weblinks as 2020-09-10 — both *before* that commit. So the
+   published run either used local code that was only pushed in January 2021, or
+   performed the refinement in analysis code that was later upstreamed. The
+   manuscript filename (`...SRL3`) suggests a third revision, which would also
+   explain a 2021 code state behind a 2020 access date.
+
+   Practical consequence: **the candidate is `ba3f7ec` or later, not the
+   pre-November-2020 commits**, because the earlier code cannot perform the
+   workflow the paper describes. Only `09f57b9` (removed cython) changes
+   `specmod/` after that, so the realistic candidates are `ba3f7ec` and
+   `453c77c`. Pick one, record the reasoning, and move on — this is the
+   strongest possible argument for the `v0.1.0` tag (§6.6) and for `hatch-vcs`
+   (§6.4): it must never be this hard again.
+2. **The full published pipeline is not in this repository.** The two-stage
+   inversion (fit Ω/`f_c`/`t*` free, then fix event `f_c` to the
+   inverse-hypocentral-distance-weighted mean of station `f_c` and refit) and the
+   entire non-parametric G(R)/site inversion live in analysis code that was never
+   part of SpecMod. `set_const` exists, but nothing orchestrates it.
+
+Consequence for scoping — and it is an important one: **the achievable target is
+reproducing the per-trace spectral fits (Ω, `f_c`, `t*`), not the published Mw
+values.** That is the right target anyway, because Ω/`f_c`/`t*` is precisely what
+SpecMod produces, and **Table S2 contains 11,226 of them**. Mw additionally
+depends on the NP inversion, `V_S`/ρ from the Herrmann *et al.* (2011) Western US
+model at source depth, `r₀ = 1000 m`, `F = 2` and `ΘλΦ = 0.55` — none of which
+SpecMod computes.
+
+The two-stage fit is, separately, a good candidate for the new API: it is the
+workflow the science actually uses, and it currently has to be rebuilt by hand
+by every user.
+
+#### 5.2.6 The three-way comparison
+
+The published values were produced by code containing the bugs in §2.2 and §2.5,
+under settings that differ from the shipped defaults (§5.2.5). So agreement and
+disagreement are both ambiguous unless the comparison is staged:
+
+1. **Paper** — Table S2's 11,226 Ω measurements, plus Figure 2 (US.DUG, mainshock).
+2. **0.1.1 re-run** in the legacy Docker image, on the same data with the
+   paper's parameters → must reproduce (1). If it does not, the discrepancy is in
+   parameters, version or environment, and must be resolved *before* anything
+   downstream is interpretable.
 3. **New code** → compared against (2), with each deliberate numerical change
    (padding normalisation, `cut_p` ordering, COI floor) accounted for
    individually and recorded in the changelog with its magnitude.
 
 Step 2 is the one that gets skipped, and it is the one that makes step 3 mean
-anything — without it, "the new code disagrees with my paper" has at least three
-possible causes and no way to distinguish them. **This resolves the open question
-about whether the legacy Docker image is worth half a day: it is, and Magna is
-why.**
+anything — without it, "the new code disagrees with my paper" has at least four
+possible causes (§5.2.5) and no way to distinguish them. **This settles the open
+question about the legacy Docker image: build it, and Magna is why.**
+
+The image is now precisely specifiable, since the paper's Data and Resources
+section pins every version: **ObsPy 1.2.0, SciPy 1.4.1, NumPy 1.18, pandas 1.0.0,
+matplotlib 3.2.1, SpecMod v0.1.1**, plus `gfortran` for `mtspec`. That is a far
+better basis than the guessed "python 3.9, numpy<2" this plan previously
+proposed.
+
+**Regression targets, narrowest first** — start at the top, because a single
+trace that disagrees is diagnosable and 11,226 that disagree are not:
+
+| Target | Source | Scope |
+|---|---|---|
+| One spectrum + fit, US.DUG, mainshock | **Figure 2** | Single trace — the unit test |
+| Ω, `f_c`, `t*` per event-station | **Table S2** (11,226 rows) | Bulk statistical comparison |
+| Nine MT-constrained events, Mw 3.40–5.54 | **Table S1** | Absolute anchor |
+
+Figure 2 is the highest-value item in the whole validation story: one published,
+visually inspectable spectrum with its fitted model, for a named station and a
+known event. It should become the first Tier 3 test written.
 
 > Not verified here: FDSN endpoints are blocked from the environment this plan
 > was written in (`CONNECT tunnel failed, response 403` for both USGS and
@@ -1031,7 +1162,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce the published Magna values with 0.1.0 (§5.2.5 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
@@ -1071,6 +1202,9 @@ end-to-end proves the pipeline while the stakes are zero.
   changes expected throughout `0.x`; `1.0` when the API settles.
 - **Commit convention** — Conventional Commits, `commitlint`-enforced, driving
   release-please (§6.4).
+- **Validation anchor** — Magna 2020, with the published workflow transcribed
+  into `datasets/magna_2020.toml` and Figure 2 / Tables S1–S2 as regression
+  targets (§5.2.4–§5.2.6).
 - **Data acquisition** — a general config-driven grabber (`specmod.acquire`),
   not a per-event script; artifacts pinned by SHA256 and served from GitHub
   Release assets via pooch (§5.2).
@@ -1092,11 +1226,16 @@ end-to-end proves the pipeline while the stakes are zero.
    either way, **the recommendation is to leave history alone**: a one-time 15 MiB
    clone is a much smaller cost than an unrecoverable pre-refactor record. Only
    worth revisiting if the history genuinely becomes a burden.
-4. **Magna config contents.** The grabber is general (§5.2.1), so this is no
-   longer a code question — but `datasets/magna_2020.toml` still needs the
-   paper's station list, distance range, window definition and pick source, and
-   the published values to compare against. Step 2 of §5.2.5 only works if the
-   0.1.0 re-run uses the same inputs the paper did.
+4. **Which commit is "v0.1.1"?** The paper cites SpecMod v0.1.1; no such tag
+   exists and the source carries no version string (§5.2.5). Reproducing the
+   published run needs that commit identified — by submission date against the
+   history, if nothing better is available. Only you can make that call.
+5. **Was noise rotation on for the published run?** `ROTATE_NOISE = True` ships
+   as default but appears nowhere in the manuscript, and it changes the SNR
+   bandwidth. This has to be settled before step 2 of §5.2.6 can be trusted.
+6. **Are Tables S1/S2 to hand?** The bulk comparison needs S2's 11,226 Ω rows. If
+   the supplement is not readily available, Figure 2 alone still supports the
+   single-trace regression test.
 
 ---
 
