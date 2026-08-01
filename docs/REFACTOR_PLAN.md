@@ -201,6 +201,43 @@ importantly, leaves no record of which domain you ended up in.
 6. **Plotting lives in `viz`.** Domain classes do not import matplotlib.
 7. **One normalisation contract, enforced by one test, for all backends.**
 
+### 3.1 Clean break — and the one thing that must *not* break
+
+There are no downstream users, so this is a full makeover: the 0.x API is
+removed rather than deprecated. No `legacy.py`, no shim layer, no deprecation
+cycle. Concretely, that buys:
+
+- Names chosen for clarity, not continuity — `SNP` → `SignalNoisePair`,
+  `Spectra` → `SpectrumSet`, `CapitalCase` modules → `snake_case`.
+- `Spectrum` can be a frozen dataclass immediately, rather than growing a
+  mutable compatibility facade.
+- Each phase may change signatures freely; no phase carries the previous
+  phase's API forward.
+- Simpler mypy migration — no untyped shim module to carve out.
+- Stay on `0.x` for the whole refactor, where SemVer permits breaking changes in
+  minor bumps. **1.0 is tagged when the API stops moving, not before.** Until
+  then breaking changes need only a changelog entry, which release-please
+  generates from `feat!:`/`BREAKING CHANGE:` commits automatically.
+
+**But "breaking" applies to the API only, not to the answers.** A refactored
+SpecMod that runs cleanly and returns a different corner frequency for the same
+waveform is a failure, and it is a failure that is very easy not to notice —
+`f_c` and `t*` trade off against each other, so a plausible-looking fit can be
+quietly wrong. Two consequences:
+
+- The golden snapshots (§5, Tier 3) are **more** important under a clean break,
+  not less. They are the only record of what the current code computes, and once
+  the `mtspec` build environment is gone they cannot be regenerated. This is the
+  argument for open question 4 below.
+- Where the new code *should* differ — the zero-padding normalisation (§2.2), the
+  `cut_p` window ordering (§2.5), the COI bandwidth floor (§4.4.2) — the change
+  must be deliberate, isolated in its own commit, and recorded in the changelog
+  as a numerical change with the before/after magnitude. These are bug fixes, and
+  they will move published numbers.
+
+Anything already computed with 0.x and headed for publication should be
+regenerated with the 1.0 code, or the discrepancy understood.
+
 ---
 
 ## 4. Target architecture
@@ -244,8 +281,11 @@ src/specmod/
     readers.py, writers.py # HDF5/npz + JSON sidecar; pickle behind opt-in flag
   viz/
     plots.py               # all matplotlib
-  legacy.py                # deprecation shims for the 0.x public names
 ```
+
+There is deliberately no compatibility shim layer. The 0.x public names
+(`Spectra`, `SNP`, `FitSpectra`, `mod.simple_model`, …) are removed outright —
+see §3.1.
 
 ### 4.1 The transform layer
 
@@ -457,8 +497,30 @@ before unpickling. Replace with:
 - **Primary:** HDF5 (`h5py`) or `.npz` for arrays + JSON sidecar for metadata —
   versioned, language-agnostic, diff-able metadata.
 - **Secondary:** the existing flat-file CSV export, kept as-is.
-- **Pickle:** retained behind `allow_pickle=True` with a `SecurityWarning`, no
-  interactive prompt. Old `.spec` files stay readable.
+- **Pickle:** dropped as a write format. See below for reads.
+
+**Existing `.spec` files will not survive the clean break, and this is not
+optional.** A pickle stores the *import path* of every class it contains —
+`specmod.Spectral` / `Spectra`. Once `Spectral.py` becomes `core/collection.py`
+and `Spectra` becomes `SpectrumSet`, `pickle.load` raises
+`ModuleNotFoundError` before any of our code runs. Renaming the modules is
+enough to break them; the dataclass conversion in §4.2 would finish the job. One
+such file is already committed at `Tutorial/Spectra/2019-08-26T07:30:47.0.spec`,
+and there are presumably more in your working directories.
+
+Two ways out, and the first is much better:
+
+1. **Convert in the old environment.** Phase 0 is already building a Docker image
+   where the 0.1.0 code runs (§6.5). Add a small
+   `scripts/convert_legacy_spec.py` to it that loads `.spec` files with the old
+   classes present and writes the new HDF5 format. This is a one-shot migration
+   with no lasting cost to the codebase.
+2. A custom `Unpickler` with a `find_class` remapping table in the new code —
+   works, but bakes the old class layout permanently into the new package, which
+   is exactly the kind of thing a clean break is supposed to avoid.
+
+Recommendation: option 1, and run it over any `.spec` files you care about
+*during* Phase 0, while the image is fresh.
 
 ---
 
@@ -564,7 +626,7 @@ strict = true
 module = ["obspy.*", "lmfit.*", "mtspec.*"]
 ignore_missing_imports = true     # none of these ship type stubs
 [[tool.mypy.overrides]]
-module = ["specmod.legacy", "specmod.preprocess.*"]
+module = ["specmod.preprocess.*", "specmod.viz.*"]
 ignore_errors = true              # shrink this list each phase; target: empty
 ```
 
@@ -640,11 +702,41 @@ Zenodo is wired to the GitHub Release webhook, so the DOI is minted from the sam
 event as the PyPI upload. Branch protection on `master`: require `test`, `docs`
 and `build` green.
 
-**Versioning policy:** SemVer, `0.x` until the API settles — tag `v0.2.0` at the
-end of Phase 2. `CITATION.cff` (validated in CI) plus the Zenodo DOI give the
-project a citable artefact, which it currently lacks entirely. Deprecation
-policy: old public names live in `legacy.py` with `DeprecationWarning` for one
-minor version, then removed.
+**Versioning policy.** SemVer. Stay on `0.x` for the whole refactor — breaking
+changes are expected and permitted in minor bumps there, so no deprecation cycle
+is needed (§3.1). Tag `v0.2.0` at the end of Phase 2 to prove the pipeline;
+`v1.0.0` when the API stops moving. `CITATION.cff` (validated in CI) plus the
+Zenodo DOI give the project a citable artefact, which it currently lacks
+entirely.
+
+**`v0.1.0` — the pre-refactor tag.** Before anything changes, tag the current
+`master` as `v0.1.0` so the pre-refactor code is permanently retrievable by name
+rather than by remembering a SHA. Cheap, and it gives the changelog a floor to
+generate from.
+
+Worth being precise about what that tag does and does not preserve: it preserves
+the **code**, but the code is not **runnable** — `mtspec` no longer builds on any
+current toolchain (§2.1). Reproducing a 0.1.0 result needs three things
+committed together, which is what Phase 0 delivers:
+
+1. `v0.1.0` — the source, tagged.
+2. A `Dockerfile` pinning `gfortran`, `python 3.9`, `numpy<2` — the environment
+   that can still build `mtspec`. Also the only place existing `.spec` pickles
+   can be read (§4.6).
+3. The golden `.npz` snapshots — the outputs, for when even that image stops
+   building.
+
+The tag alone is the weakest of the three. Archaeology gets harder every year.
+
+**Commit convention.** Conventional Commits (`feat:`, `fix:`, `refactor:`,
+`docs:`, `test:`, `chore:`; `feat!:` or a `BREAKING CHANGE:` trailer for
+breaks), enforced by a `commitlint` pre-commit hook. This is what makes the
+changelog and version bumps automatic.
+
+**PyPI name.** `specmod` is unregistered (checked: 404 on `specmod`, `spec-mod`
+and `pyspecmod`). Worth claiming with the `v0.2.0` release at the end of Phase 2
+rather than waiting for 1.0 — name squatting on PyPI is real and the name is a
+fairly obvious one.
 
 ---
 
@@ -654,14 +746,14 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Reproducible legacy env (Docker/conda + gfortran); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
+| **0. Safety net** | Tag current `master` as **`v0.1.0`**; reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); data out of git | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
-| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; `legacy.py` shims; mypy override list → empty | 3 | 5–7 days |
-| **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, migration guide, **1.0 release** | 4, 5 | 2–3 days |
+| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty | 3 | 4–6 days |
+| **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
 
 Phases 2b, and later 4 and 5, can run in parallel with their siblings.
 
@@ -689,26 +781,28 @@ end-to-end proves the pipeline while the stakes are zero.
 - **CWT output** — both. The full scalogram *and* the time-averaged `Spectrum`
   from one transform (§4.4.1). Time-averaged feeds the fitting pipeline; the
   surface is a QC gate (§4.4.2), not persisted by default (§4.4.3).
+- **Backwards compatibility** — clean break. No downstream users, so the 0.x API
+  is removed outright: no `legacy.py`, no deprecation cycle (§3.1). Breaking
+  changes expected throughout `0.x`; `1.0` when the API settles.
+- **Commit convention** — Conventional Commits, `commitlint`-enforced, driving
+  release-please (§6.4).
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
+- **Pre-refactor tag** — `v0.1.0` on current `master`, as one of the three
+  preservation layers in §6.5.
 
 ### Still open
 
-1. **Backwards compatibility.** Keep `legacy.py` shims for the 0.x API, or make a
-   clean break at 1.0? A clean break is much less work; the shims matter only if
-   there are downstream users or unpublished analysis scripts depending on the
-   current names.
-2. **Default estimator.** Multitaper (matching current behaviour) or FFT +
+1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
    Konno–Ohmachi (faster, more conventional in engineering seismology)?
-3. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
-4. **Tutorial data.** OK to rewrite history to drop the ~70 committed waveform
-   files, or keep history and just stop adding to it?
-5. **Golden snapshots.** Is it worth half a day standing up a legacy `mtspec`
-   environment to capture them? Strongly recommended, but it is the one task with
-   no direct deliverable.
-6. **Conventional Commits.** Automated changelogs and version bumps (§6.4) need
-   structured commit messages. Acceptable, or would you rather tag releases by
-   hand and write the changelog manually?
+2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
+3. **Tutorial data.** OK to rewrite history to drop the ~70 committed waveform
+   files, or keep history and just stop adding to it? (Note: rewriting history
+   would move the `v0.1.0` tag's commit — tag first, then decide.)
+4. **Golden snapshots.** Half a day standing up the legacy `mtspec` Docker image
+   to capture them. Strongly recommended and more important under a clean break
+   (§3.1) — but it is the one task with no direct deliverable, so it is the one
+   most likely to get skipped.
 
 ---
 
