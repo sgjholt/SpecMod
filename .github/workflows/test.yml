@@ -38,7 +38,7 @@ jobs:
       - run: uv venv
       - run: uv pip install -e ".[dev]"
       - run: uv pip install mypy
-      - run: uvx mypy
+      - run: uv run mypy
 
   test:
     runs-on: ${{ matrix.os }}
