@@ -1003,6 +1003,19 @@ disagreement are both ambiguous unless the comparison is staged:
    (padding normalisation, `cut_p` ordering, COI floor) accounted for
    individually and recorded in the changelog with its magnitude.
 
+**Noise rotation is a free variable in step 2, and a cheap one.** It is not
+recalled whether the published run used it, so the working assumption is the
+shipped default: `ROTATE_NOISE = true`, `ROT_METHOD = 2`. The assumption carries
+almost no risk, because the re-run *is* the experiment — the setting has only
+three states (off, method 1, method 2), and step 2 either reproduces Figure 2 or
+it does not. If the first attempt misses, try the other two; whichever matches is
+the answer, and it gets written into
+`studies/magna_2020_paper.toml` as a determined value rather than a guess.
+
+Worth doing in that order deliberately: run the assumed configuration first and
+only search if it fails. A search that starts before there is a discrepancy to
+explain is how you end up tuning settings to fit an outcome.
+
 Step 2 is the one that gets skipped, and it is the one that makes step 3 mean
 anything — without it, "the new code disagrees with my paper" has at least four
 possible causes (§5.2.5) and no way to distinguish them. **This settles the open
@@ -1412,11 +1425,11 @@ end-to-end proves the pipeline while the stakes are zero.
    exists and the source carries no version string (§5.2.5). Reproducing the
    published run needs that commit identified — by submission date against the
    history, if nothing better is available. Only you can make that call.
-5. **Was noise rotation on for the published run?** `ROTATE_NOISE = True` ships
-   as default but appears nowhere in the manuscript, and it changes the SNR
-   bandwidth. Still needs settling for step 2 of §5.2.6 — but it is now a value
-   to determine and record in `studies/magna_2020_paper.toml`, not a blocker on
-   the design (§4.7).
+5. ~~**Was noise rotation on for the published run?**~~ **Assumed on.** Not
+   recalled, so `studies/magna_2020_paper.toml` starts from the shipped values —
+   `ROTATE_NOISE = true`, `ROT_METHOD = 2`, `ROT_PARS = {inc = 0.05, space =
+   [1e-3, 1.001]}` — and step 2 of §5.2.6 tests the assumption rather than
+   depending on it.
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
