@@ -282,6 +282,9 @@ src/specmod/
     windows.py, picks.py, geometry.py
   io/
     readers.py, writers.py # HDF5/npz + JSON sidecar; pickle behind opt-in flag
+  datasets/
+    registry.py            # name -> URL + SHA256 for pooch
+    loaders.py             # load_magna_2020(), load_pnr_2019() -> Dataset
   viz/
     plots.py               # all matplotlib
 ```
@@ -548,14 +551,15 @@ binning and fitting together, and it is the only way to know the mtspec removal
 did not change the science.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
-snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit table to `.npz`. Every
-subsequent change is diffed against that snapshot, so behaviour changes are
-visible and deliberate rather than discovered later.
+on Magna (§5.2.3), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
+table to `.npz`. Every subsequent change is diffed against those snapshots, so
+behaviour changes are visible and deliberate rather than discovered later.
 
 > This must happen **before** any code changes, and it needs an environment where
 > `mtspec` still builds — a one-off Docker image or conda env with `gfortran`,
-> `numpy<2`, `python 3.9`. Budget half a day for this; without it the refactor is
-> unverifiable.
+> `numpy<2`, `python 3.9`. Budget half a day; without it the refactor is
+> unverifiable. Magna makes this stronger still, because published values exist
+> for it — see the three-way comparison in §5.2.4.
 
 **Tier 4 — unit tests** for the bugs in §2.5, each written as a failing test
 first.
@@ -573,20 +577,25 @@ file count rather than file size.** Measured:
 |---|---|---|
 | `Tutorial/Data/` — 40 mseed waveforms | **224 KB** | **Keep in git.** These are the test fixtures. |
 | `Tutorial/MetaData/pnr_inventory.xml` | 10.5 MB | Keep, but subset — see below |
-| `Tests/Tutorial/Meta/UUSSeq.catalog` | 9.9 MB | **Delete** — unreferenced, and unrelated to this project |
+| `Tests/Tutorial/Meta/UUSSeq.catalog` | 9.9 MB | **Remove from the working tree** — unreferenced, and cannot support the Magna work |
 | `Tutorial/SpecModTutorial.ipynb` | 4.6 MB | Strip outputs — 4.4 MB of it is embedded PNGs |
 | `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable |
 
 Total pack size today is 14.7 MiB. That is a **small** repository, and the
 waveforms are not why. Three fixes, none of which needs external hosting:
 
-1. **`Tests/Tutorial/Meta/UUSSeq.catalog` — delete it.** 9.9 MB, referenced
-   nowhere in any `.py` or `.ipynb`. It is a fixed-format earthquake catalog for
-   Utah starting in 1962 (`620810` = 1962-08-10, lat ≈ 39 N, lon ≈ 111 W); the
-   tutorial is Preston New Road, UK, in 2019. Its parent directory is otherwise
-   four `.empty` placeholders and a zero-byte notebook — abandoned scaffolding
-   from another project. Deleting `Tests/Tutorial/` entirely removes 63% of the
-   repository.
+1. **`Tests/Tutorial/Meta/UUSSeq.catalog` — remove from the working tree.**
+   9.9 MB, 120,482 events, referenced nowhere in any `.py` or `.ipynb`. It is the
+   UUSS regional catalogue for Utah, `1962-08-10` → `2019-02-28`.
+
+   > An earlier draft called this "from another project". That was overconfident
+   > — given the Magna work (§5.2) a UUSS catalogue is plausibly connected to this
+   > research. The disposition is unchanged for a more specific reason: **it ends
+   > 2019-02-28, thirteen months before the Magna mainshock**, so it cannot
+   > support that work, and it is a catalogue rather than waveforms, so it is not
+   > a test fixture either. It also stays reachable in git history and is
+   > regenerable from UUSS. Removing `Tests/Tutorial/` clears 63% of the
+   > repository.
 2. **Strip the notebook.** 4.4 MB of the 4.6 MB is base64 PNG output; the actual
    source is 10 KB. `nbstripout` in pre-commit (already proposed in §6.2) fixes
    this permanently. Under `myst-nb` (§6.3) outputs are regenerated at docs-build
@@ -597,25 +606,149 @@ waveforms are not why. Three fixes, none of which needs external hosting:
    should give roughly 400–500 KB at ~21 KB/channel. The response stages must be
    kept — `remove_response` needs them — but GB and SD are entirely unused.
 
-After all three the repository is comfortably under 1 MB and the question of
-external hosting does not arise. **No `pooch`, no git-lfs, no Zenodo data
-deposit.** Every fixture stays versioned alongside the code that consumes it,
-which is what you want for regression tests — the data and the expected outputs
-move together or not at all.
+After all three, the PNR fixtures are comfortably under 1 MB and stay in git,
+versioned alongside the code and expected outputs that consume them — which is
+what you want for regression tests. Larger datasets go via `pooch`; see §5.2.
 
-**If it does outgrow git later.** Adding more events for multi-event regression
-tests is a realistic prospect, so for the record: the threshold worth acting on
-is roughly 100 MB of pack, not 15 MB, and the right answer at that point is
-`pooch` fetching from **GitHub Release assets** (or a Zenodo data DOI, which also
-makes the dataset citable — a real benefit for research software). `pooch`
-verifies SHA256, caches per-user, and is already the convention across the
-scientific Python stack.
+git-lfs remains the option to avoid: it still consumes repository storage, adds
+a bandwidth quota that CI burns through quickly, breaks plain `git clone` for
+anyone without the extension, and GitHub Actions checkouts need explicit LFS
+handling that is easy to get wrong and fails confusingly.
 
-git-lfs is the option to avoid: it still consumes repository storage, adds a
-bandwidth quota that CI burns through quickly, breaks plain `git clone` for
-anyone without the extension, and — most relevant here — GitHub Actions
-checkouts need explicit LFS handling that is easy to get wrong and fails
-confusingly.
+### 5.2 Larger datasets: `specmod.datasets`, pooch, and the Magna 2020 event
+
+**GitHub Release assets are the right host and they are free.** On a public
+repository they do not count toward repository size, are not metered like LFS
+bandwidth, and allow up to 2 GB per file — far more than needed here. `pooch`
+fetches them by URL, verifies SHA256, and caches per-user, so the fetch happens
+once per machine.
+
+#### 5.2.1 Producing and consuming are separate, and this matters
+
+```
+maintainer, rarely                published artifact          tests and users, always
+──────────────────────            ──────────────────          ───────────────────────
+scripts/build_dataset.py     →    GitHub Release asset   →    specmod.datasets.load_*()
+  obspy FDSN client                magna_2020_v1.tar.gz         via pooch, SHA256-pinned
+  trim, subset inventory           immutable, versioned         cached in os_cache()
+  write manifest + checksums                                    offline after first use
+```
+
+**Tests must never call FDSN.** This is the load-bearing constraint, not a
+stylistic preference:
+
+- Data centres have outages, maintenance windows and rate limits. A test suite
+  that queries EarthScope on every run is a test suite that goes red for reasons
+  unrelated to the code.
+- More seriously: **metadata gets revised.** Instrument responses are corrected
+  retroactively. A test that fetches live can silently change its own expected
+  answer, which is precisely the failure mode regression tests exist to prevent.
+  A SHA256-pinned tarball cannot.
+- Offline development, and CI that does not need network egress.
+
+So `scripts/build_dataset.py` is a **maintainer tool**, run by hand when a
+dataset is added or revised, not part of the package or the test path. Plain
+`Client.get_waveforms` / `get_stations` is right here; `MassDownloader` is built
+for large restricted-data campaigns and adds complexity this does not need.
+
+#### 5.2.2 A submodule, not a separate library
+
+Recommend `specmod.datasets` inside the package — the `sklearn.datasets` /
+`skimage.data` / `pyvista.examples` pattern:
+
+```python
+from specmod.datasets import load_magna_2020, load_pnr_2019
+
+ds = load_magna_2020()                    # Dataset(stream, inventory, event, picks)
+ds = load_magna_2020(aftershocks=True)
+```
+
+with `pooch.os_cache("specmod")`, a `SPECMOD_DATA_DIR` override, and a registry
+mapping dataset name → URL + SHA256.
+
+A separate library is not worth it. The consuming side is a registry dict and
+~150 lines; splitting it out buys a second release cycle, second CI, second
+changelog and a compatibility matrix between `specmod` and `specmod-data`. What
+*does* need independent versioning is the **data artifacts**, and pooch's
+registry handles that within one package — `magna_2020_v1`, `_v2` as distinct
+entries, with old versions still fetchable.
+
+> **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
+> and release-please must be configured to ignore them or it will read `data-v1`
+> as a code release. Constrain it to `v*` and keep the data tags on a separate
+> prefix. If the release feed gets noisy, the fallback is a sibling
+> `sgjholt/specmod-data` repository holding only assets — a repo, not a package,
+> so no extra release cycle for code.
+
+Tests that need a fetched dataset get `@pytest.mark.dataset`, so
+`pytest -m "not dataset"` is a complete offline run. CI caches
+`~/.cache/specmod` keyed on the registry hash, so the download happens once per
+registry change rather than once per job.
+
+#### 5.2.3 Magna, Mw 5.7, 2020-03-18 — the validation dataset
+
+This is the strongest available anchor for the whole refactor, for a reason that
+has nothing to do with data volume: **there are published results for this event
+produced with the 0.1.0 code.** That converts Tier 3 from "trust a snapshot we
+generated" into "reproduce a peer-reviewed number".
+
+It is also scientifically complementary to the existing PNR fixtures in exactly
+the way a test suite wants:
+
+| | PNR 2019 | Magna 2020 |
+|---|---|---|
+| Setting | Induced, UK | Tectonic, Utah |
+| Magnitude | ~M 1–2 | **Mw 5.7** + aftershock sequence |
+| Corner frequency | ~10–30 Hz | ~0.3–0.5 Hz |
+| Stresses | High-frequency end, short windows | **Low-frequency end, long windows** |
+
+Two orders of magnitude in `f_c` across the two datasets, and Magna lands
+squarely on the part of the new code that PNR cannot exercise: the COI /
+window-length resolution floor (§4.4.2) only bites when `f_c` approaches `1/T`.
+The aftershock sequence additionally gives many events over a magnitude range
+from one region on one station set — the natural basis for the multi-event
+regression set later.
+
+Caveat worth stating in the docs: at Mw 5.7 the point-source Brune assumption is
+more strained than for the induced events, and finite-source or directivity
+effects may be visible. That is a property of the science, not the refactor, but
+it should not be discovered as a surprise.
+
+#### 5.2.4 The three-way comparison
+
+The published values were produced by code containing the bugs in §2.2 and
+§2.5. So agreement and disagreement are both ambiguous unless the comparison is
+staged:
+
+1. **Paper** — the published values.
+2. **0.1.0 re-run** in the legacy Docker image, on the same data and parameters,
+   → must reproduce (1). If it does not, the discrepancy is in parameters or
+   environment, and it has to be resolved *before* anything downstream is
+   interpretable.
+3. **New code** → compared against (2), with each deliberate numerical change
+   (padding normalisation, `cut_p` ordering, COI floor) accounted for
+   individually and recorded in the changelog with its magnitude.
+
+Step 2 is the one that gets skipped, and it is the one that makes step 3 mean
+anything — without it, "the new code disagrees with my paper" has at least three
+possible causes and no way to distinguish them. **This resolves the open question
+about whether the legacy Docker image is worth half a day: it is, and Magna is
+why.**
+
+> Not verified here: FDSN endpoints are blocked from the environment this plan
+> was written in (`CONNECT tunnel failed, response 403` for both USGS and
+> EarthScope), so station availability, channel coverage and total dataset size
+> for Magna are **estimates pending a real query**. The event parameters
+> themselves (2020-03-18 13:09 UTC, Mw 5.7, ≈40.75 N, 112.08 W, ~12 km depth,
+> UU network) are from general knowledge and should be confirmed against the
+> catalogue when `build_dataset.py` is first run.
+
+Suggested dataset scope, to be confirmed once the data can actually be queried:
+mainshock plus a handful of aftershocks spanning M 2–4; UU network with a
+distance spread, plus regional networks if coverage is thin; traces trimmed to
+roughly −60 s to +300 s about origin; inventory subset to exactly the channels
+included; picks and event parameters in a JSON manifest alongside. Target under
+50 MB packed so the first-use fetch stays quick.
 
 ## 6. Packaging, CI/CD and process
 
@@ -625,7 +758,8 @@ confusingly.
 - Python 3.11–3.13. Floors not pins: `numpy>=1.26`, `scipy>=1.11`,
   `obspy>=1.4`, `lmfit>=1.2`, `pandas>=2.0`, `matplotlib>=3.7`.
 - Extras: `[multitaper]`, `[wavelet]`, `[mcmc]` (emcee), `[mtspec]` (legacy,
-  temporary), `[dev]`, `[docs]`.
+  temporary), `[dev]`, `[docs]`. `pooch` is a core dependency — `specmod.datasets`
+  (§5.2) is part of the public API, not a dev-only convenience.
 - `uv` for dev environments and a committed lockfile for CI reproducibility.
 - Delete `requirements.txt`.
 
@@ -825,7 +959,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); capture golden outputs for the tutorial event; commit snapshots | — | 0.5 day |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile` + gfortran + `numpy<2`); build the Magna dataset via `scripts/build_dataset.py` and publish as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce the published Magna values with 0.1.0 (§5.2.4 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `Settings` dataclasses passed explicitly; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
@@ -883,10 +1017,11 @@ end-to-end proves the pipeline while the stakes are zero.
    either way, **the recommendation is to leave history alone**: a one-time 15 MiB
    clone is a much smaller cost than an unrecoverable pre-refactor record. Only
    worth revisiting if the history genuinely becomes a burden.
-4. **Golden snapshots.** Half a day standing up the legacy `mtspec` Docker image
-   to capture them. Strongly recommended and more important under a clean break
-   (§3.1) — but it is the one task with no direct deliverable, so it is the one
-   most likely to get skipped.
+4. **Magna dataset scope.** Which stations, how many aftershocks, and which
+   published values are the comparison target? Needs the paper's station list and
+   processing parameters to be pinned down before `build_dataset.py` is written —
+   step 2 of §5.2.4 only works if the 0.1.0 re-run uses the same inputs the paper
+   did.
 
 ---
 
