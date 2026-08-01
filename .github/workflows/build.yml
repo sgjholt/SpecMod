@@ -15,12 +15,14 @@ jobs:
           fetch-depth: 0   # hatch-vcs derives the version from tags
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.11
+      - run: uv venv
+      - run: uv install build twine
 
       - name: Build sdist and wheel
         run: uv build
 
       - name: Check metadata
-        run: uvx twine check dist/*
+        run: uv twine check dist/*
 
       - name: Install from the wheel in a clean env
         # Catches missing package data and bad entry points, which an editable
