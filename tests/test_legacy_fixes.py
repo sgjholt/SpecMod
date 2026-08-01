@@ -24,6 +24,7 @@ SRC = Path(sp.__file__).parent
 
 # --------------------------------------------------------------- §2.5 syntax
 
+
 def test_every_module_parses() -> None:
     """utils.py had a SyntaxError from the initial commit until this refactor."""
     for path in sorted(SRC.glob("*.py")):
@@ -52,6 +53,7 @@ def test_cat2kstyle_precision_assumption_is_documented() -> None:
 
 # ------------------------------------------------- §1 removed upstream APIs
 
+
 def test_signal_intensity_uses_current_scipy() -> None:
     """scipy.integrate.cumtrapz was removed in SciPy 1.14."""
     tr = obspy.Trace(np.concatenate([np.zeros(100), np.ones(100), np.zeros(100)]))
@@ -71,6 +73,7 @@ def test_read_cat_uses_current_pandas(tmp_path: Path) -> None:
 
 # ------------------------------------------------------ §2.5 undefined names
 
+
 @pytest.mark.parametrize(
     ("func", "bad_name"),
     [
@@ -82,7 +85,9 @@ def test_no_undefined_names_in_plot_branches(func, bad_name) -> None:
     """`plot=True` branches referenced names that did not exist (F821)."""
     tree = ast.parse(inspect.getsource(func).lstrip())
     loaded = {
-        n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        n.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
     }
     if bad_name is not None:
         assert bad_name not in loaded
@@ -98,6 +103,7 @@ def test_fit_spectra_reset_uses_the_right_attribute() -> None:
 
 
 # -------------------------------------------- §2.5 cut_p window ordering bug
+
 
 def _trace_with_picks() -> obspy.Trace:
     rng = np.random.default_rng(0)

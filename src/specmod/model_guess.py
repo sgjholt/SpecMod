@@ -7,7 +7,6 @@ import numpy as np
 
 
 def create_simple_guess(spectra):
-
     """
     This function creates the initial model parameter guesses for the
     function simple_model in Models.py.
@@ -21,31 +20,35 @@ def create_simple_guess(spectra):
     guess = {}
     for ID, spec in spectra.group.items():
         try:
-            inds = np.where((spec.signal.freq>=spec.signal.ubfreqs[0]) & (
-                 spec.signal.freq<=spec.signal.ubfreqs[1]))
+            inds = np.where(
+                (spec.signal.freq >= spec.signal.ubfreqs[0])
+                & (spec.signal.freq <= spec.signal.ubfreqs[1])
+            )
             # print(ID, inds)
             llpsp = np.log10(spec.signal.amp[inds].max())
             fc = spec.signal.freq[inds][spec.signal.amp[inds].argmax()]
-            guess.update({ ID : {'llpsp':llpsp, 'fc': fc, 'ts': 0.01}})
+            guess.update({ID: {"llpsp": llpsp, "fc": fc, "ts": 0.01}})
 
         except IndexError:
-            guess.update({ID: {'llpsp':None, 'fc': None, 'ts': None}})
+            guess.update({ID: {"llpsp": None, "fc": None, "ts": None}})
 
     return guess
+
 
 def create_simple_guess_fdep(spectra):
     guess = {}
     for ID, spec in spectra.group.items():
         try:
-            inds = np.where((spec.signal.freq>=spec.signal.ubfreqs[0]) & (
-                 spec.signal.freq<=spec.signal.ubfreqs[1]))
+            inds = np.where(
+                (spec.signal.freq >= spec.signal.ubfreqs[0])
+                & (spec.signal.freq <= spec.signal.ubfreqs[1])
+            )
             # print(ID, inds)
             llpsp = np.log10(spec.signal.amp[inds].max())
             fc = spec.signal.freq[inds][spec.signal.amp[inds].argmax()]
-            guess.update({ ID : {'llpsp':llpsp, 'fc': fc, 'ts': 0.01,
-                                 'a':0.00001}})
+            guess.update({ID: {"llpsp": llpsp, "fc": fc, "ts": 0.01, "a": 0.00001}})
 
         except IndexError:
-            guess.update({ID: {'llpsp':None, 'fc': None, 'ts': None, 'a': None}})
+            guess.update({ID: {"llpsp": None, "fc": None, "ts": None, "a": None}})
 
     return guess

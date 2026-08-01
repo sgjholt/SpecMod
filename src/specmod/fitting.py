@@ -1,19 +1,20 @@
 import os
-import numpy as np
-import lmfit as lm
-import pandas as pd
-from . import spectral as sp
-import matplotlib.pyplot as plt
 from copy import deepcopy
-from collections import defaultdict
-from matplotlib.ticker import StrMethodFormatter, NullFormatter
+
+import lmfit as lm
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.ticker import NullFormatter, StrMethodFormatter
+
 from . import config as cfg
+from . import spectral as sp
 
 # global variables
 PLOT_COLUMNS = cfg.FITTING["PLOT_COLUMNS"]
 
-class FitSpectrum(object):
 
+class FitSpectrum:
     """
     Takes an Spectral.Signal and fits an arbitrary model to the signal spectrum
     using the lmfit package.
@@ -25,18 +26,17 @@ class FitSpectrum(object):
     result = None
     mod_freq = np.array([])
     mod_amp = np.array([])
-    pass_fitting=True
-    fit_bins=False
+    pass_fitting = True
+    fit_bins = False
     meta = {}
 
     def __init__(self, signal, model, fit_bins=False, **params):
-        self.fit_bins=fit_bins
+        self.fit_bins = fit_bins
         self.set_signal(signal)
         self.set_model(model, **params)
 
     def fit_mod(self, **kwargs):
-        self.result = self.mod.fit(
-            self.mod_amp, self.params, f=self.mod_freq, **kwargs)
+        self.result = self.mod.fit(self.mod_amp, self.params, f=self.mod_freq, **kwargs)
         self.__set_results_to_meta()
         self.__determine_pass_or_fail()
 
@@ -65,7 +65,6 @@ class FitSpectrum(object):
     def __set_meta(self, meta):
         self.meta = deepcopy(meta)
 
-
     def __init_params(self, **params):
         self.params = self.mod.make_params(**params)
         # self.set_bounds('fc', min=0)
@@ -78,8 +77,7 @@ class FitSpectrum(object):
 
     def __check_input(self, signal):
         if not isinstance(signal, sp.Signal):
-            raise ValueError(
-                "Must be a signal object not {}".format(type(signal)))
+            raise ValueError(f"Must be a signal object not {type(signal)}")
         else:
             return True
 
@@ -96,8 +94,9 @@ class FitSpectrum(object):
             amp = self.sig.amp
 
         if self.sig.ubfreqs.size > 0:
-            inds = np.where((freq>=self.sig.ubfreqs[0]) & (
-                 freq<=self.sig.ubfreqs[1]))
+            inds = np.where(
+                (freq >= self.sig.ubfreqs[0]) & (freq <= self.sig.ubfreqs[1])
+            )
             self.mod_freq = freq[inds]
             self.mod_amp = amp[inds]
         else:
@@ -106,62 +105,68 @@ class FitSpectrum(object):
 
         self.mod_amp = np.log10(self.mod_amp)
 
-
     def __param_string(self):
         try:
-            pars = [[k.name, k.value, 2*k.stderr] for k in self.result.params.values()]
-            return ", ".join(['{}: {:.3f}+/-{:.3f}' for _ in pars]).format(
-                *[val for sublist in pars for val in sublist])
+            pars = [
+                [k.name, k.value, 2 * k.stderr] for k in self.result.params.values()
+            ]
+            return ", ".join(["{}: {:.3f}+/-{:.3f}" for _ in pars]).format(
+                *[val for sublist in pars for val in sublist]
+            )
         except Exception as msg:
             print(msg)
             return "NaN"
 
     def quick_vis(self, ax=None):
         import matplotlib.pyplot as plt
-        if ax is None:
-            fig, ax = plt.subplots(1,1)
 
-        ax.loglog(self.mod_freq, 10**self.mod_amp, color='grey', label=self.sig.id)
-        ax.loglog(self.mod_freq, 10**self.result.best_fit, 'k--', label='model')
-        ax.xaxis.set_major_formatter(StrMethodFormatter('{x:.2f}'))
+        if ax is None:
+            _fig, ax = plt.subplots(1, 1)
+
+        ax.loglog(self.mod_freq, 10**self.mod_amp, color="grey", label=self.sig.id)
+        ax.loglog(self.mod_freq, 10**self.result.best_fit, "k--", label="model")
+        ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.2f}"))
         ax.xaxis.set_minor_formatter(NullFormatter())
         ax.set_title(self.__param_string())
-        ax.set_xlabel('freq [Hz]')
-        ax.set_ylabel('spectral amp')
+        ax.set_xlabel("freq [Hz]")
+        ax.set_ylabel("spectral amp")
         ax.legend()
 
         if ax is not None:
             return ax
 
     def __get_pars(self):
-        p={}
+        p = {}
         for k in self.result.params.values():
             p.update({k.name: k.value})
-            p.update({k.name+"-stderr":k.stderr})
+            p.update({k.name + "-stderr": k.stderr})
         return p
 
     def __get_fit_stats(self):
         res = self.result
         s = {}
-        s.update({'aic':res.aic})
-        s.update({'bic':res.bic})
-        s.update({'chisqr':res.chisqr})
-        s.update({'redchi':res.redchi})
+        s.update({"aic": res.aic})
+        s.update({"bic": res.bic})
+        s.update({"chisqr": res.chisqr})
+        s.update({"redchi": res.redchi})
         return s
 
     def __get_test_results(self):
         t = {}
-        t.update({'pass_fitting': self.pass_fitting})
+        t.update({"pass_fitting": self.pass_fitting})
         return t
 
     def __set_results_to_meta(self):
         self.meta.update(self.__get_pars())
         self.meta.update(self.__get_fit_stats())
         self.meta.update(self.__get_test_results())
+
     def __determine_pass_or_fail(self):
         for par, vals in self.result.params.items():
             try:
-                if (vals.value-vals.stderr <= vals.min) or (vals.value+vals.stderr >= vals.max):
+                if (vals.value - vals.stderr <= vals.min) or (
+                    vals.value + vals.stderr >= vals.max
+                ):
                     # print(par, vals)
                     self.pass_fitting = False
             except TypeError:
@@ -170,8 +175,7 @@ class FitSpectrum(object):
                 self.pass_fitting = False
 
 
-
-class FitSpectra(object):
+class FitSpectra:
     spectra = sp.Spectra()
     models = {}
     guess = {}
@@ -181,7 +185,6 @@ class FitSpectra(object):
         self.set_spectra(spectra)
         if guess is not None:
             self.init_fitting(model, guess, fit_bins)
-
 
     def __len__(self):
         return len(self.models)
@@ -197,24 +200,23 @@ class FitSpectra(object):
         if id.upper() in self.models.keys():
             return self.models[id.upper()]
         else:
-            print("WARNING: {} not in group of available fits.".format(id.upper()))
+            print(f"WARNING: {id.upper()} not in group of available fits.")
 
-    def fit_spectra(self, weight_method='none', **kwargs):
+    def fit_spectra(self, weight_method="none", **kwargs):
         wm = self.__check_wm(weight_method)
         for name, mod in self.models.items():
             try:
-                if wm == 'log':
-                    mod.fit_mod(weights=1/mod.mod_freq, **kwargs)
+                if wm == "log":
+                    mod.fit_mod(weights=1 / mod.mod_freq, **kwargs)
                 else:
                     mod.fit_mod(**kwargs)
             except ValueError as msg:
                 print(msg)
-                print("-"*40)
-                print("Skipping {}".format(name))
+                print("-" * 40)
+                print(f"Skipping {name}")
 
         self.__set_fit_models_to_spectrum()
         self.__generate_group_fit_table()
-
 
     def init_fitting(self, model, guess, fit_bins):
         tmp = {}
@@ -223,7 +225,6 @@ class FitSpectra(object):
                 fit = FitSpectrum(spec.signal, model, **guess[id], fit_bins=fit_bins)
                 tmp.update({id: fit})
         self.models = tmp
-
 
     def set_const(self, pname, value, id=None):
         if id is None:
@@ -237,24 +238,23 @@ class FitSpectra(object):
         for mod in self.models.values():
             mod.set_bounds(pname, min, max)
 
-    def reset(self, name='all'):
-        if name.upper() == 'ALL':
+    def reset(self, name="all"):
+        if name.upper() == "ALL":
             for mod in self.models.values():
                 mod.reset()
         else:
             if name.upper() in self.models.keys():
                 self.models[name].reset()
             else:
-                print('WARNING: {} not in available channels.'.format(
-                    name.upper()))
+                print(f"WARNING: {name.upper()} not in available channels.")
 
     def quick_vis(self, save=None):
         l = self.__num_rows()
-        fig, axes = plt.subplots(l, PLOT_COLUMNS, figsize=(17, int(l*5)))
+        fig, axes = plt.subplots(l, PLOT_COLUMNS, figsize=(17, int(l * 5)))
         axes = axes.flatten()
         for ax, mod in zip(axes, self.models.values()):
             if mod.result is None or not mod.pass_fitting:
-                ax.set_title("Fitting Failed for {}".format(mod.sig.id))
+                ax.set_title(f"Fitting Failed for {mod.sig.id}")
             else:
                 ax = mod.quick_vis(ax)
 
@@ -263,7 +263,6 @@ class FitSpectra(object):
                 fig.savefig(save)
             else:
                 raise ValueError("Must provide valid path as str.")
-
 
     @staticmethod
     def write_flatfile(path, fits):
@@ -275,21 +274,20 @@ class FitSpectra(object):
         return pd.read_csv(path)
 
     def __check_wm(self, wm):
-        if wm not in ['log', 'none']:
-            print('WARNING: did not recognise weight method {}.'.format(wm))
-            print('Setting to none...')
-            wm = 'none'
+        if wm not in ["log", "none"]:
+            print(f"WARNING: did not recognise weight method {wm}.")
+            print("Setting to none...")
+            wm = "none"
         return wm
-
 
     def __generate_group_fit_table(self):
         ds = [m.meta for m in self.models.values()]
         df1 = pd.DataFrame([])
         for i, d in enumerate(ds):
-            df1 = pd.concat([df1, pd.DataFrame(d, index=[i])],
-                ignore_index=True, sort=False)
+            df1 = pd.concat(
+                [df1, pd.DataFrame(d, index=[i])], ignore_index=True, sort=False
+            )
         self.table = df1
-
 
     def __set_fit_models_to_spectrum(self):
         for id, mod in self.models.items():
@@ -298,8 +296,7 @@ class FitSpectra(object):
 
     def __check_spectra(self, spectra):
         if not isinstance(spectra, sp.Spectra):
-            raise ValueError(
-                "Must be a spectra object not {}".format(type(spectra)))
+            raise ValueError(f"Must be a spectra object not {type(spectra)}")
         else:
             return True
 
@@ -307,6 +304,6 @@ class FitSpectra(object):
         l = self.__len__()
         cols = PLOT_COLUMNS
         if l % cols > 0:
-            return int((cols * (int(l/cols)+1)) / cols)
+            return int((cols * (int(l / cols) + 1)) / cols)
         else:
-            return int(l/cols)
+            return int(l / cols)
