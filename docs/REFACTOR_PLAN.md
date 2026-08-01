@@ -1162,17 +1162,32 @@ proposes the entire refactor to the upstream organisation.
 
 Two consequences worth acting on:
 
-1. **Check the base repo on every PR**, or make the mistake unavailable by
-   detaching the fork. GitHub Support can sever the fork relationship on request.
-   Given this repository is becoming the canonical line — its own releases, PyPI
-   package and DOI — detaching removes a recurring foot-gun rather than managing
-   it. It also restores the repo to code search, which matters for a package
-   people are meant to find.
-2. **GitHub Actions is disabled by default on forked repositories.** It must be
-   enabled explicitly in Settings → Actions before any of §6.5 runs at all. Worth
-   knowing before debugging a workflow that never triggers. (Push-triggered
-   workflows in the fork itself do get secrets normally once enabled; the
-   secrets restriction applies to PRs arriving *from* forks, not to this case.)
+1. **Detach the fork** — decided. Settings → General → Danger Zone → **Leave
+   fork network**, then confirm and type the repository name. This is
+   self-service now; no support ticket. It is **permanent and cannot be undone**.
+
+   Detaching drops all GitHub-layer metadata: issues, pull requests, wikis,
+   stars, watchers, comments and child forks. Git commit history is fully
+   preserved. Audited before deciding, the cost here is negligible — **0 issues**
+   and **2 closed PRs** (#1 `removed cython`, 2021; #2 the plan merge). Nothing
+   in flight.
+
+   Worth it because this repository is becoming the canonical line, with its own
+   releases, PyPI package and DOI. It also restores the repo to GitHub code
+   search, which forks are excluded from — relevant for a package people are
+   meant to find.
+2. **GitHub Actions is disabled by default on forked repositories.** Confirm it
+   is enabled in Settings → Actions after detaching, before expecting any of §6.5
+   to run. Worth knowing before debugging a workflow that never triggers.
+
+**Post-detach checklist**, all browser-only:
+
+- [ ] Settings → Danger Zone → Leave fork network
+- [ ] Settings → Branches → default branch `master` → **`main`**
+- [ ] Settings → Actions → confirm workflows are enabled
+- [ ] Settings → Branches → protect `master` (no pushes, no deletion) so the
+      frozen record stays frozen
+- [ ] `git tag -a v0.1.0 453c77c -m "pre-refactor snapshot" && git push origin v0.1.0`
 
 **No Claude session URLs in commit messages, PR bodies, or any other published
 artifact.** The repository is public and those links are private session state. A
