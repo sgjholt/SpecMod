@@ -114,6 +114,9 @@ ignore = [
 #   PLW0602/PLW0603  import-time global state              (§2.3, phase 2)
 #   F811             `bsnr` class attr shadowed by the property (§2.4, phase 5)
 #   PLC0415          the deliberate lazy mtspec import      (§2.1)
+# Optional backend: the import is deferred so the package stays importable
+# without the extra installed.
+"src/specmod/transforms/prieto.py" = ["PLC0415"]
 "tests/**" = ["PLR2004", "PLR0913", "PLC0415"]
 
 [tool.ruff.lint.pydocstyle]

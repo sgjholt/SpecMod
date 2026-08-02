@@ -197,8 +197,20 @@ Worth having for three things the native estimator does not offer:
 - **Thomson's F-test for periodic components** — `f_test()`. Finds instrumental
   or cultural tones that would otherwise be read as source structure.
 
-Two things to know. Its variance normalisation is **baked in and cannot be
-disabled**, so `Spectrum.energy()` on its output is right by construction rather
+Prieto (2022) additionally describes a **quadratic** multitaper (`qiinv`) with
+better peak resolution than adaptive weighting — the estimate most relevant to
+measuring a corner frequency. It raises for every weighting under current numpy
+and is therefore not exposed. Verified working surface:
+
+| Method | adaptive | constant | eigenvalue |
+|---|---|---|---|
+| spectrum | works | works | works |
+| F-test | works | works | works |
+| jackknife | works | **fails** | works |
+| quadratic | **fails** | **fails** | **fails** |
+
+Two further things to know. Its variance normalisation is **baked in and cannot
+be disabled**, so `Spectrum.energy()` on its output is right by construction rather
 than as a check. And `confidence_interval()` raises for
 `weighting="constant"`: an upstream shape bug in `multitaper.utils.jackspec`
 leaves the degrees-of-freedom array two-dimensional, so the interval broadcasts

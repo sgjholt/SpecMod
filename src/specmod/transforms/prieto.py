@@ -14,6 +14,29 @@ author and pure Python. It is worth having alongside
 
 Installed with ``pip install specmod[multitaper]``.
 
+What actually works
+-------------------
+Verified against ``multitaper`` 1.2 on numpy 2. Several of the package's less
+travelled paths carry shape bugs that only surface under current numpy, so the
+usable surface is narrower than the documentation implies:
+
+============= ========= ========== ==============
+Method        adaptive  constant   eigenvalue
+============= ========= ========== ==============
+``spec``      works     works      works
+``ftest``     works     works      works
+``jackspec``  works     **fails**  works
+``qiinv``     **fails** **fails**  **fails**
+============= ========= ========== ==============
+
+``qiinv`` is the quadratic multitaper of Prieto *et al.* (2007) — the
+higher-resolution estimate the 2022 paper recommends over adaptive weighting
+for resolving peaks, and therefore the one that would most interest a corner
+frequency measurement. It raises ``ValueError`` in
+``multitaper.utils.qiinv`` for every weighting, so it is **not exposed here**.
+Both failures are upstream and neither is worked around; they are reported with
+their cause so the fix is obvious if upstream lands one.
+
 Normalisation
 -------------
 **This backend always rescales the spectrum to integrate to the record
