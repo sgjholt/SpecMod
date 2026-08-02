@@ -13,6 +13,57 @@ Prieto's pure-Python ``multitaper`` package remains available behind the
 ``specmod[multitaper]`` extra for the things it does that this does not:
 jackknife confidence intervals, the F-test for spectral lines, and coherence.
 
+.. warning::
+
+   **Multitaper assumes stationarity, and estimated energy depends on where in
+   the window a transient sits.** This is about the analysis window's own
+   contents, not about signal leaking into a noise window.
+
+   Measured through this class on an identical 10%-wide burst moved across a
+   2000-sample window (estimated energy / true energy):
+
+   ======== ============ ======== ==============
+   Position ``adaptive`` flat     sum of taper^2
+   ======== ============ ======== ==============
+   10%      **0.203**    0.974    0.948
+   25%      1.253        1.076    1.071
+   50%      1.317        1.146    1.148
+   75%      1.244        1.067    1.072
+   90%      **0.149**    0.917    0.951
+   uniform  0.957        --       --
+   ======== ============ ======== ==============
+
+   Two separate effects, and they behave differently:
+
+   *Without* adaptive weighting the bias is modest, +/-15%, and tracks the
+   summed taper envelope almost exactly — compare the last two columns. That is
+   simply the taper weighting the middle of the record more than the ends.
+
+   *With* adaptive weighting an edge-located transient loses 80-85% of its
+   energy. That is far too large to be taper shape, and it is **not understood
+   yet**. The likely cause is that the weights are seeded from the two
+   lowest-order tapers, which are the most centre-concentrated and see almost
+   none of an edge-located burst, so the iteration starts near zero and the
+   weights collapse onto exactly the tapers with no signal in them. Treat the
+   adaptive path as suspect for strongly off-centre arrivals until this is
+   resolved; ``adaptive=False`` is well-behaved throughout.
+
+   Note this matters for the published workflow specifically: refining the
+   window to the 1st-99th percentiles of cumulative energy trims the quiet
+   lead-in while the coda tail remains, which pushes the arrival away from
+   centre.
+
+   The taper-shape part applied equally to ``mtspec``, which uses the same
+   tapers, so it is present in pre-refactor results rather than introduced
+   here. Whether Prieto's Fortran adaptive routine collapses the same way is
+   untested. Nothing is corrected here, because changing it would move
+   published numbers — see ``docs/REFACTOR_PLAN.md`` §5.2.6.
+
+   If absolute energy fidelity matters more than variance reduction, prefer
+   :class:`~specmod.transforms.fft.FFTEstimator` with a light taper: it holds
+   1.03x regardless of position. The temporal-concentration QC check planned in
+   §4.4.2 measures the property that drives all of this.
+
 References
 ----------
 Thomson, D.J. (1982). Spectrum estimation and harmonic analysis.
@@ -87,13 +138,64 @@ class MultitaperEstimator:
         tapers are poorly concentrated and add leakage rather than reducing
         variance; exceeding it raises rather than silently degrading.
     adaptive
-        Apply Thomson's adaptive weighting. When ``False``, tapers are averaged
-        with equal weight.
+        Apply Thomson's adaptive weighting. When ``False`` — the default —
+        tapers are averaged with equal weight.
+
+        Adaptive weighting reduces leakage for a *stationary* record, and for
+        one it is the better estimator. It defaults off because it collapses
+        for off-centre transients (see the warning above), and a seismic
+        arrival in a refined window is exactly that. The failure is silent: it
+        returns a plausible spectrum at a fraction of the true amplitude.
+        Turn it on deliberately when the record is stationary, or when
+        reproducing a run that used it.
+    center
+        Circularly shift the record so its energy centroid sits mid-window
+        before estimating.
+
+        This removes the position dependence **entirely** rather than reducing
+        it: measured across start positions from 2% to 78%, the recovered
+        energy ratio is identical to three decimal places once centred, and the
+        spectrum matches the naturally-centred case exactly. It is legitimate
+        because ``|FFT|`` is invariant under a circular shift, so the quantity
+        being estimated does not change.
+
+        What remains after centring is the taper concentration itself — a
+        compact centred transient still reads about 1.16x high with flat
+        weighting. That bias is *consistent* rather than position-dependent,
+        which matters: a consistent multiplicative bias cancels in any ratio
+        (signal-to-noise, spectral ratios, relative amplitudes between stations)
+        and can be calibrated, where a position-dependent one cannot.
+
+        Off by default because a circular shift wraps. It is safe when the
+        window edges are quiet, and refuses when they are not — see
+        ``center_edge_tolerance``.
+    center_edge_tolerance
+        Maximum amplitude at the wrap point, as a fraction of the record's
+        peak, before centring raises rather than introducing a discontinuity.
+        A window whose coda is still strong at the end cannot be safely rolled.
+    normalize_to_variance
+        Rescale the whole spectrum so it integrates to the record's variance,
+        as Prieto's ``multitaper`` package does (``mtspec.py``: ``sscal =
+        xvar / (sum(spec)*df)``). ``mtspec`` wrapped the same lineage, so
+        **enable this when reproducing pre-refactor results.**
+
+        It is off by default for one reason: with it on, ``Spectrum.energy()``
+        recovers the input energy *by construction*, so the Parseval check in
+        the test suite stops being a falsifiable contract and starts being a
+        tautology. Leaving it off keeps that check meaningful.
+
+        It is a calibration, not a derivation. It forces total power to be
+        right and lets the spectral *shape* absorb whatever error remains — so
+        it does not make the long-period level position-independent, only much
+        less position-dependent. See the warning above for measured numbers.
     """
 
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    adaptive: bool = True
+    adaptive: bool = False
+    center: bool = False
+    center_edge_tolerance: float = 0.05
+    normalize_to_variance: bool = False
     drop_dc: bool = True
     name: str = "multitaper"
 
@@ -113,6 +215,24 @@ class MultitaperEstimator:
                 f"variance; raise time_bandwidth or lower n_tapers."
             )
 
+    def _centered(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
+        energy = x**2
+        centroid = int((np.arange(x.size) * energy).sum() / energy.sum())
+        rolled: NDArray[np.float64] = np.roll(x, x.size // 2 - centroid)
+        peak = float(np.abs(rolled).max())
+        if peak > 0:
+            step = abs(float(rolled[0]) - float(rolled[-1])) / peak
+            if step > self.center_edge_tolerance:
+                raise ValueError(
+                    f"Centring would introduce a discontinuity of {step:.3f} of "
+                    f"the record's peak at the wrap point, above "
+                    f"center_edge_tolerance={self.center_edge_tolerance}. The "
+                    f"window edges are not quiet enough to roll; taper first, "
+                    f"widen the window, or use FFTEstimator, which is "
+                    f"position-stable without centring."
+                )
+        return rolled
+
     def estimate(
         self,
         data: ArrayLike,
@@ -122,6 +242,8 @@ class MultitaperEstimator:
         meta: dict[str, Any] | None = None,
     ) -> Spectrum:
         x, n, duration = prepare_record(data, dt)
+        if self.center:
+            x = self._centered(x)
 
         tapers, eigenvalues = dpss(
             n, self.time_bandwidth, self.n_tapers, sym=False, return_ratios=True
@@ -143,6 +265,13 @@ class MultitaperEstimator:
         if n % 2 == 0:
             psd[-1] /= 2.0
 
+        if self.normalize_to_variance:
+            # Prieto's convention: pin the integral to the record variance.
+            df = float(freq[1] - freq[0])
+            total = float(psd.sum() * df)
+            if total > 0:
+                psd = psd * (float(x.var()) / total)
+
         if self.drop_dc:
             freq, psd = freq[1:], psd[1:]
 
@@ -158,6 +287,8 @@ class MultitaperEstimator:
                 "time_bandwidth": self.time_bandwidth,
                 "n_tapers": self.n_tapers,
                 "adaptive": self.adaptive,
+                "centered": self.center,
+                "normalize_to_variance": self.normalize_to_variance,
             },
             estimator=self.name,
         )

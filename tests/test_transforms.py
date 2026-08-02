@@ -48,7 +48,7 @@ ALL_ESTIMATORS = [
     pytest.param(FFTEstimator(taper="boxcar"), 1e-9, id="fft-boxcar"),
     pytest.param(FFTEstimator(), 0.02, id="fft-tukey"),
     pytest.param(MultitaperEstimator(), 0.03, id="multitaper"),
-    pytest.param(MultitaperEstimator(adaptive=False), 0.03, id="multitaper-flat"),
+    pytest.param(MultitaperEstimator(adaptive=True), 0.03, id="multitaper-adaptive"),
     pytest.param(WelchEstimator(), 0.03, id="welch"),
 ]
 
@@ -323,3 +323,201 @@ def test_band_selection_reports_the_available_range() -> None:
     assert s.band(1.0, 10.0).freq.max() <= 10.0
     with pytest.raises(ValueError, match="No samples in band"):
         s.band(200.0, 300.0)
+
+
+# ------------------------------------------------- stationarity and transients
+
+
+def transient(fraction: float = 0.07, seed: int = 3) -> np.ndarray:
+    """Energy concentrated in a small, central part of the window.
+
+    A crude stand-in for a seismic arrival after the window refinement the
+    published workflow applies, which deliberately tightens onto the energetic
+    part of the record.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.zeros(N)
+    width = int(N * fraction)
+    start = (N - width) // 2
+    x[start : start + width] = rng.normal(0.0, 1e-6, width)
+    return x
+
+
+def transient_at(position: float, width: float = 0.10, seed: int = 1) -> np.ndarray:
+    """A burst of fixed energy and width, placed anywhere in the window."""
+    rng = np.random.default_rng(seed)
+    x = np.zeros(N)
+    w = int(N * width)
+    start = max(0, min(N - w, int(N * position) - w // 2))
+    x[start : start + w] = rng.normal(0.0, 1e-6, w)
+    return x
+
+
+def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
+    """Without adaptive weighting the bias is modest and explicable.
+
+    It follows the summed DPSS envelope: the tapers weight the middle of the
+    record above the ends, so a centred transient reads high and an edge one
+    low, by roughly +/-15%.
+    """
+    est = MultitaperEstimator(adaptive=False)
+    ratios = {
+        p: est.estimate(transient_at(p), DT).energy()
+        / time_domain_energy(transient_at(p))
+        for p in (0.10, 0.50, 0.90)
+    }
+    assert 0.85 < ratios[0.10] < 1.05
+    assert 1.05 < ratios[0.50] < 1.30
+    assert ratios[0.50] > ratios[0.10], "centre should read higher than the edge"
+
+
+def test_adaptive_weighting_collapses_for_edge_transients() -> None:
+    """A known, unexplained deficiency — pinned so it cannot regress silently.
+
+    An edge-located burst loses 80-85% of its energy under adaptive weighting,
+    far more than taper shape accounts for. The suspected cause is the weights
+    being seeded from the two lowest-order tapers, which see almost none of it.
+    This is documented rather than fixed because changing it would move
+    published numbers; see the module docstring and REFACTOR_PLAN §5.2.6.
+    """
+    edge = transient_at(0.10)
+    centre = transient_at(0.50)
+
+    adaptive = MultitaperEstimator(adaptive=True)
+    edge_ratio = adaptive.estimate(edge, DT).energy() / time_domain_energy(edge)
+    centre_ratio = adaptive.estimate(centre, DT).energy() / time_domain_energy(centre)
+
+    assert edge_ratio < 0.35, "the collapse should be severe, not marginal"
+    assert centre_ratio > 1.15
+    # Turning adaptive off restores sane behaviour — which is why it is now
+    # the shipped default.
+    flat = MultitaperEstimator(adaptive=False).estimate(edge, DT).energy()
+    assert flat / time_domain_energy(edge) > 0.85
+    assert MultitaperEstimator().adaptive is False, "default must stay off"
+
+
+def test_light_taper_fft_tracks_transient_energy_far_better() -> None:
+    """The practical consequence: prefer FFT when energy fidelity matters."""
+    x = transient()
+    expected = time_domain_energy(x)
+    fft = FFTEstimator(taper="tukey", taper_alpha=0.05).estimate(x, DT).energy()
+    multitaper = MultitaperEstimator().estimate(x, DT).energy()
+    assert abs(fft / expected - 1.0) < abs(multitaper / expected - 1.0) / 2
+
+
+def test_the_bias_is_specific_to_transients() -> None:
+    """Stationary noise is recovered correctly, which is why §5's Parseval
+    tests use it — and why they did not catch this."""
+    x = noise()
+    ratio = MultitaperEstimator().estimate(x, DT).energy() / time_domain_energy(x)
+    assert ratio == pytest.approx(1.0, rel=0.03)
+
+
+def test_variance_normalisation_pins_energy_by_construction() -> None:
+    """Prieto's convention, offered explicitly because mtspec used it.
+
+    It makes energy recovery exact whatever the taper weighting does — which is
+    why it is off by default: with it on, the Parseval contract that holds
+    every backend to account becomes a tautology.
+    """
+    x = transient_at(0.10)
+    expected = time_domain_energy(x)
+    for adaptive in (False, True):
+        est = MultitaperEstimator(adaptive=adaptive, normalize_to_variance=True)
+        assert est.estimate(x, DT).energy() == pytest.approx(expected, rel=0.02)
+
+
+def test_variance_normalisation_is_off_by_default() -> None:
+    assert MultitaperEstimator().normalize_to_variance is False
+    assert (
+        MultitaperEstimator()
+        .estimate(transient_at(0.10), DT)
+        .meta["normalize_to_variance"]
+        is False
+    )
+
+
+def test_variance_normalisation_does_not_fix_the_plateau() -> None:
+    """The distinction the docs turn on: it pins energy, not spectral shape.
+
+    Omega is read off the low-frequency plateau, so a caller who enables this
+    should not assume the level is now position-independent.
+    """
+    est = MultitaperEstimator(normalize_to_variance=True)
+    band = (1.0, 4.0)
+    edge = float(np.median(est.estimate(transient_at(0.10), DT).band(*band).amp))
+    centre = float(np.median(est.estimate(transient_at(0.50), DT).band(*band).amp))
+    assert edge != pytest.approx(centre, rel=0.05), (
+        "if these agree, variance normalisation has become a full fix and the "
+        "documentation in docs/choosing_a_transform.md needs revisiting"
+    )
+
+
+# ---------------------------------------------------- centring the transient
+
+
+def test_centring_removes_position_dependence_entirely() -> None:
+    """The bias is positional, not phase-related, so centring is a complete fix.
+
+    Distinguishing the two mattered: a *symmetric* (zero-phase) envelope
+    collapses identically at 10% and 90%, so symmetry does not rescue it, and
+    the cause is where the energy sits relative to the tapers. A circular shift
+    to mid-window therefore fixes it exactly — and is legitimate because |FFT|
+    is invariant under circular shift, so the estimated quantity is unchanged.
+    """
+    rng = np.random.default_rng(3)
+    width = 400
+    burst = rng.normal(0.0, 1.0, width) * np.exp(-np.arange(width) / 60.0)
+
+    def at(start: int) -> np.ndarray:
+        x = np.zeros(N)
+        x[start : start + width] = burst
+        return x
+
+    centred = MultitaperEstimator(center=True)
+    ratios = [
+        centred.estimate(at(s), DT).energy() / time_domain_energy(at(s))
+        for s in (40, 200, 600, 1000, 1400, 1560)
+    ]
+    assert max(ratios) - min(ratios) < 1e-6, "centring should make position irrelevant"
+
+    # Without it, the same sweep spans a factor of three.
+    plain = MultitaperEstimator()
+    raw = [
+        plain.estimate(at(s), DT).energy() / time_domain_energy(at(s))
+        for s in (40, 200, 600, 1000, 1400, 1560)
+    ]
+    assert max(raw) / min(raw) > 2.5
+
+
+def test_what_remains_after_centring_is_the_taper_concentration() -> None:
+    """A consistent multiplicative bias, not a position-dependent one.
+
+    The distinction matters: a consistent factor cancels in any ratio — SNR,
+    spectral ratios, relative station amplitudes — and can be calibrated.
+    """
+    rng = np.random.default_rng(3)
+    width = 400
+    x = np.zeros(N)
+    x[600 : 600 + width] = rng.normal(0.0, 1.0, width) * np.exp(
+        -np.arange(width) / 60.0
+    )
+    ratio = MultitaperEstimator(center=True).estimate(
+        x, DT
+    ).energy() / time_domain_energy(x)
+    assert 1.05 < ratio < 1.30
+
+
+def test_centring_refuses_when_the_edges_are_not_quiet() -> None:
+    """A circular shift wraps. Rolling a record whose coda still runs at the
+    window edge would splice a discontinuity into the middle of the arrival."""
+    with pytest.raises(ValueError, match="discontinuity"):
+        MultitaperEstimator(center=True).estimate(noise(), DT)
+
+
+def test_centring_is_recorded_in_metadata() -> None:
+    rng = np.random.default_rng(3)
+    x = np.zeros(N)
+    x[600:1000] = rng.normal(0.0, 1.0, 400) * np.exp(-np.arange(400) / 60.0)
+    assert MultitaperEstimator(center=True).estimate(x, DT).meta["centered"] is True
+    assert MultitaperEstimator().estimate(x, DT).meta["centered"] is False

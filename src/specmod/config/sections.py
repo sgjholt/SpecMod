@@ -100,13 +100,21 @@ class WindowsConfig:
 class TransformConfig:
     """Time-to-frequency conversion. Consumed by :mod:`specmod.transforms`."""
 
-    estimator: Literal["multitaper", "fft", "welch", "cwt", "mtspec"] = "multitaper"
+    estimator: Literal["multitaper", "fft", "welch", "cwt", "prieto", "mtspec"] = (
+        "multitaper"
+    )
 
     #: Multitaper. ``time_bandwidth`` was previously the literal 3 passed
     #: positionally to mtspec, with no way to configure it.
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    adaptive: bool = True
+    #: Off by default: adaptive weighting collapses for off-centre transients.
+    #: See specmod.transforms.multitaper.
+    adaptive: bool = False
+    #: Rescale the spectrum to integrate to the record variance, as mtspec and
+    #: Prieto's multitaper do. Needed to reproduce pre-refactor results; off by
+    #: default because it makes the Parseval check circular.
+    normalize_to_variance: bool = False
 
     #: FFT / Welch.
     taper: Literal["hann", "tukey", "boxcar"] = "tukey"

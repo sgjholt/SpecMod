@@ -35,6 +35,9 @@ def test_defaults_preserve_pre_refactor_behaviour(isolated: Path) -> None:
     assert cfg.snr.assert_bandwidths is False
     assert cfg.snr.rotate_noise is True
     assert cfg.snr.tolerance == 3.0
+    # The one deliberate departure from pre-refactor behaviour: adaptive
+    # weighting collapses for off-centre transients, so it ships off.
+    assert cfg.transform.adaptive is False
     assert cfg.model.source == "brune"
     assert cfg.model.motion == "velocity"
 
@@ -192,6 +195,8 @@ def test_magna_study_config_matches_the_published_workflow() -> None:
     assert cfg.model.motion == "velocity"
     assert cfg.fitting.method == "powell"
     assert cfg.acquire.max_radius_km == 400.0
+    # Pinned in the file, not inherited: the package default is now False.
+    assert cfg.transform.adaptive is True
 
 
 def test_magna_study_config_differs_from_defaults() -> None:
