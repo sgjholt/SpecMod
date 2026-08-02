@@ -48,7 +48,7 @@ ALL_ESTIMATORS = [
     pytest.param(FFTEstimator(taper="boxcar"), 1e-9, id="fft-boxcar"),
     pytest.param(FFTEstimator(), 0.02, id="fft-tukey"),
     pytest.param(MultitaperEstimator(), 0.03, id="multitaper"),
-    pytest.param(MultitaperEstimator(adaptive=False), 0.03, id="multitaper-flat"),
+    pytest.param(MultitaperEstimator(adaptive=True), 0.03, id="multitaper-adaptive"),
     pytest.param(WelchEstimator(), 0.03, id="welch"),
 ]
 
@@ -383,18 +383,17 @@ def test_adaptive_weighting_collapses_for_edge_transients() -> None:
     edge = transient_at(0.10)
     centre = transient_at(0.50)
 
-    edge_ratio = MultitaperEstimator().estimate(edge, DT).energy() / time_domain_energy(
-        edge
-    )
-    centre_ratio = MultitaperEstimator().estimate(
-        centre, DT
-    ).energy() / time_domain_energy(centre)
+    adaptive = MultitaperEstimator(adaptive=True)
+    edge_ratio = adaptive.estimate(edge, DT).energy() / time_domain_energy(edge)
+    centre_ratio = adaptive.estimate(centre, DT).energy() / time_domain_energy(centre)
 
     assert edge_ratio < 0.35, "the collapse should be severe, not marginal"
     assert centre_ratio > 1.15
-    # Turning adaptive off restores sane behaviour, which is the workaround.
+    # Turning adaptive off restores sane behaviour — which is why it is now
+    # the shipped default.
     flat = MultitaperEstimator(adaptive=False).estimate(edge, DT).energy()
     assert flat / time_domain_energy(edge) > 0.85
+    assert MultitaperEstimator().adaptive is False, "default must stay off"
 
 
 def test_light_taper_fft_tracks_transient_energy_far_better() -> None:

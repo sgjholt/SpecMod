@@ -138,13 +138,21 @@ class MultitaperEstimator:
         tapers are poorly concentrated and add leakage rather than reducing
         variance; exceeding it raises rather than silently degrading.
     adaptive
-        Apply Thomson's adaptive weighting. When ``False``, tapers are averaged
-        with equal weight.
+        Apply Thomson's adaptive weighting. When ``False`` — the default —
+        tapers are averaged with equal weight.
+
+        Adaptive weighting reduces leakage for a *stationary* record, and for
+        one it is the better estimator. It defaults off because it collapses
+        for off-centre transients (see the warning above), and a seismic
+        arrival in a refined window is exactly that. The failure is silent: it
+        returns a plausible spectrum at a fraction of the true amplitude.
+        Turn it on deliberately when the record is stationary, or when
+        reproducing a run that used it.
     """
 
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    adaptive: bool = True
+    adaptive: bool = False
     drop_dc: bool = True
     name: str = "multitaper"
 

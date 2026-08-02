@@ -106,7 +106,9 @@ class TransformConfig:
     #: positionally to mtspec, with no way to configure it.
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    adaptive: bool = True
+    #: Off by default: adaptive weighting collapses for off-centre transients.
+    #: See specmod.transforms.multitaper.
+    adaptive: bool = False
 
     #: FFT / Welch.
     taper: Literal["hann", "tukey", "boxcar"] = "tukey"
