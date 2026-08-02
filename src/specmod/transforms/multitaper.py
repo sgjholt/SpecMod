@@ -13,6 +13,32 @@ Prieto's pure-Python ``multitaper`` package remains available behind the
 ``specmod[multitaper]`` extra for the things it does that this does not:
 jackknife confidence intervals, the F-test for spectral lines, and coherence.
 
+.. warning::
+
+   **Multitaper assumes stationarity, and a seismic arrival is not
+   stationary.** DPSS tapers concentrate their weight toward the middle of the
+   window, so a transient sitting there is weighted above average and the
+   estimated energy comes out high. Measured on a real S-window from the PNR
+   dataset, total energy is recovered at 1.28x with adaptive weighting and
+   1.10x without, against 1.03x for an FFT under a 5% Tukey taper. On
+   stationary noise all three sit within 2% of unity.
+
+   Adaptive weighting makes it worse because it favours the low-order tapers,
+   which are the most centre-concentrated.
+
+   Three things follow. The bias depends on *where* in the window the energy
+   sits, so it varies trace to trace rather than cancelling. It applied equally
+   to ``mtspec``, which uses the same tapers, so it is present in results
+   produced before this refactor rather than introduced by it. And it is not
+   corrected here, because silently changing it would move published numbers —
+   see ``docs/REFACTOR_PLAN.md`` §5.2.6.
+
+   Practically: multitaper still buys a large variance reduction, which is why
+   the published workflow uses it. But if absolute energy fidelity matters more
+   than variance, prefer :class:`~specmod.transforms.fft.FFTEstimator` with a
+   light taper. The temporal-concentration QC check planned in §4.4.2 measures
+   exactly the property that drives this.
+
 References
 ----------
 Thomson, D.J. (1982). Spectrum estimation and harmonic analysis.

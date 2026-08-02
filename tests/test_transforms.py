@@ -323,3 +323,57 @@ def test_band_selection_reports_the_available_range() -> None:
     assert s.band(1.0, 10.0).freq.max() <= 10.0
     with pytest.raises(ValueError, match="No samples in band"):
         s.band(200.0, 300.0)
+
+
+# ------------------------------------------------- stationarity and transients
+
+
+def transient(fraction: float = 0.07, seed: int = 3) -> np.ndarray:
+    """Energy concentrated in a small, central part of the window.
+
+    A crude stand-in for a seismic arrival after the window refinement the
+    published workflow applies, which deliberately tightens onto the energetic
+    part of the record.
+    """
+    rng = np.random.default_rng(seed)
+    x = np.zeros(N)
+    width = int(N * fraction)
+    start = (N - width) // 2
+    x[start : start + width] = rng.normal(0.0, 1e-6, width)
+    return x
+
+
+def test_multitaper_overestimates_transient_energy() -> None:
+    """Documents a property of the method, not a defect in this implementation.
+
+    DPSS tapers concentrate weight mid-window, so a transient sitting there is
+    weighted above average and total energy comes out high. mtspec used the
+    same tapers, so this bias is present in pre-refactor results too; it is
+    pinned here so it stays known rather than being rediscovered as a
+    discrepancy against the published Magna values.
+    """
+    x = transient()
+    expected = time_domain_energy(x)
+
+    adaptive = MultitaperEstimator().estimate(x, DT).energy() / expected
+    flat = MultitaperEstimator(adaptive=False).estimate(x, DT).energy() / expected
+
+    assert adaptive > 1.15, "expected a clear high bias for a centred transient"
+    assert flat < adaptive, "adaptive weighting favours the most concentrated tapers"
+
+
+def test_light_taper_fft_tracks_transient_energy_far_better() -> None:
+    """The practical consequence: prefer FFT when energy fidelity matters."""
+    x = transient()
+    expected = time_domain_energy(x)
+    fft = FFTEstimator(taper="tukey", taper_alpha=0.05).estimate(x, DT).energy()
+    multitaper = MultitaperEstimator().estimate(x, DT).energy()
+    assert abs(fft / expected - 1.0) < abs(multitaper / expected - 1.0) / 2
+
+
+def test_the_bias_is_specific_to_transients() -> None:
+    """Stationary noise is recovered correctly, which is why §5's Parseval
+    tests use it — and why they did not catch this."""
+    x = noise()
+    ratio = MultitaperEstimator().estimate(x, DT).energy() / time_domain_energy(x)
+    assert ratio == pytest.approx(1.0, rel=0.03)
