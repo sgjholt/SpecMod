@@ -65,7 +65,9 @@ spectrum.band(0.5, 25.0)
 Which estimator to use, and what each one does to your data — including
 measured position-dependence and the variance-normalisation convention `mtspec`
 used — is set out in
-[`docs/choosing_a_transform.md`](docs/choosing_a_transform.md).
+[`docs/choosing_a_transform.md`](docs/choosing_a_transform.md), with a
+worked walkthrough in
+[`docs/notebooks/choosing_a_transform.ipynb`](docs/notebooks/choosing_a_transform.ipynb).
 
 ### Why the units are typed
 

@@ -58,12 +58,42 @@ plausible-looking spectrum at a fraction of the true amplitude.
 
 This is why `adaptive` **defaults to `False`**.
 
-### It is position, not phase
+### It is the *linear* component of phase — that is, position
 
-Worth separating, because the two would have different fixes. A *symmetric*
-(zero-phase) envelope collapses identically at 10% and 90% — 0.322 at both — so
-symmetry does not rescue it. What matters is only where the energy sits
-relative to the tapers.
+Worth separating carefully, because the candidates have different fixes. Hold
+`|X(f)|` fixed and change only the phase, three ways:
+
+| Change | `|X|` altered? | Envelope moved? | Estimate |
+|---|---|---|---|
+| Linear ramp (= a time shift) | no | **yes** | **changes** |
+| Constant 90° rotation | no | no | unchanged |
+| Random phase | no | yes (spread) | changes |
+
+The constant rotation is decisive: phase *in general* does not matter. What
+matters is the **linear** component — the group delay — which is exactly where
+the envelope sits. Envelope symmetry is irrelevant: a symmetric, zero-phase
+envelope collapses identically at 10% and 90%.
+
+**Why, in two equivalent ways.**
+
+*Frequency domain.* Tapering is convolution, `Y(f) = V(f) * X(f)`. A DPSS taper
+is symmetric about the window centre, so `V` adds no phase of its own. But a
+signal at offset `τ` carries `X(f)·e^{-2πifτ}`, and convolving that with `V`'s
+kernel sums a term whose phase rotates *across the kernel width*. The further
+`τ` is from centre, the steeper the rotation and the more destructive
+interference — so `|Y|` reads low.
+
+*Time domain.* `Y_k(f) = Σ xₙ vₖ[n] e^{-2πifn·dt}`: the taper weights by
+absolute position, so a signal where `vₖ` is small contributes little.
+
+The same mechanism from either side. The frequency-domain view explains why
+centring works — it sets `τ ≈ 0`, leaving no phase ramp to cancel.
+
+And it pins down the asymmetry behind all of this: the **true** spectrum is
+shift-invariant, but the **estimate** is not, because tapering does not commute
+with shifting —
+
+> `v(t)·x(t−τ)  ≠  [v·x](t−τ)`
 
 Which means centring fixes it, and fixes it completely:
 
