@@ -100,7 +100,9 @@ class WindowsConfig:
 class TransformConfig:
     """Time-to-frequency conversion. Consumed by :mod:`specmod.transforms`."""
 
-    estimator: Literal["multitaper", "fft", "welch", "cwt", "mtspec"] = "multitaper"
+    estimator: Literal["multitaper", "fft", "welch", "cwt", "prieto", "mtspec"] = (
+        "multitaper"
+    )
 
     #: Multitaper. ``time_bandwidth`` was previously the literal 3 passed
     #: positionally to mtspec, with no way to configure it.

@@ -11,7 +11,8 @@ The short version:
 |---|---|
 | The long-period level `Omega`, and your arrival may sit near a window edge | `FFTEstimator` + a smoother |
 | A stable spectrum with low variance, arrival near window centre | `MultitaperEstimator` |
-| Reproducing pre-refactor or published SpecMod results | `MultitaperEstimator(adaptive=True, normalize_to_variance=True)` |
+| Reproducing pre-refactor or published SpecMod results | `PrietoMultitaperEstimator` — same lineage as `mtspec` |
+| Confidence intervals, or testing for instrumental tones | `PrietoMultitaperEstimator` |
 | A stationary record — noise windows, ambient measurements | `MultitaperEstimator` or `WelchEstimator` |
 
 ---
@@ -179,6 +180,29 @@ position dependence above.
 `n_tapers` must not exceed `2*NW - 1`; beyond that the tapers are poorly
 concentrated and add leakage rather than reducing variance. Exceeding it raises
 rather than silently degrading.
+
+### `PrietoMultitaperEstimator`
+
+Prieto's `multitaper` package, the direct successor to the Fortran library
+`mtspec` wrapped. Optional: `pip install specmod[multitaper]`.
+
+Worth having for three things the native estimator does not offer:
+
+- **The closest available proxy for pre-refactor behaviour.** Same author, same
+  lineage, so "did the old code do this?" is a pip install rather than a Docker
+  build.
+- **Jackknife confidence intervals** — `confidence_interval()` returns the two
+  bounds as spectra. Log-symmetric about the estimate, roughly 2.5x either way
+  at `nw=3, kspec=5`.
+- **Thomson's F-test for periodic components** — `f_test()`. Finds instrumental
+  or cultural tones that would otherwise be read as source structure.
+
+Two things to know. Its variance normalisation is **baked in and cannot be
+disabled**, so `Spectrum.energy()` on its output is right by construction rather
+than as a check. And `confidence_interval()` raises for
+`weighting="constant"`: an upstream shape bug in `multitaper.utils.jackspec`
+leaves the degrees-of-freedom array two-dimensional, so the interval broadcasts
+to `(nfft, nfft)`. `adaptive` and `eigenvalue` are unaffected.
 
 ### `WelchEstimator`
 

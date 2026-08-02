@@ -9,12 +9,14 @@ from __future__ import annotations
 from .base import SpectralEstimator, TaperCorrection
 from .fft import FFTEstimator, WelchEstimator
 from .multitaper import MultitaperEstimator
+from .prieto import PrietoMultitaperEstimator
 
 #: Name -> estimator, for resolving `TransformConfig.estimator`.
 ESTIMATORS: dict[str, type[SpectralEstimator]] = {
     "fft": FFTEstimator,
     "welch": WelchEstimator,
     "multitaper": MultitaperEstimator,
+    "prieto": PrietoMultitaperEstimator,
 }
 
 
@@ -34,6 +36,7 @@ __all__ = [
     "ESTIMATORS",
     "FFTEstimator",
     "MultitaperEstimator",
+    "PrietoMultitaperEstimator",
     "SpectralEstimator",
     "TaperCorrection",
     "WelchEstimator",
