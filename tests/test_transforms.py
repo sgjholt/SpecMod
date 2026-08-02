@@ -411,3 +411,43 @@ def test_the_bias_is_specific_to_transients() -> None:
     x = noise()
     ratio = MultitaperEstimator().estimate(x, DT).energy() / time_domain_energy(x)
     assert ratio == pytest.approx(1.0, rel=0.03)
+
+
+def test_variance_normalisation_pins_energy_by_construction() -> None:
+    """Prieto's convention, offered explicitly because mtspec used it.
+
+    It makes energy recovery exact whatever the taper weighting does — which is
+    why it is off by default: with it on, the Parseval contract that holds
+    every backend to account becomes a tautology.
+    """
+    x = transient_at(0.10)
+    expected = time_domain_energy(x)
+    for adaptive in (False, True):
+        est = MultitaperEstimator(adaptive=adaptive, normalize_to_variance=True)
+        assert est.estimate(x, DT).energy() == pytest.approx(expected, rel=0.02)
+
+
+def test_variance_normalisation_is_off_by_default() -> None:
+    assert MultitaperEstimator().normalize_to_variance is False
+    assert (
+        MultitaperEstimator()
+        .estimate(transient_at(0.10), DT)
+        .meta["normalize_to_variance"]
+        is False
+    )
+
+
+def test_variance_normalisation_does_not_fix_the_plateau() -> None:
+    """The distinction the docs turn on: it pins energy, not spectral shape.
+
+    Omega is read off the low-frequency plateau, so a caller who enables this
+    should not assume the level is now position-independent.
+    """
+    est = MultitaperEstimator(normalize_to_variance=True)
+    band = (1.0, 4.0)
+    edge = float(np.median(est.estimate(transient_at(0.10), DT).band(*band).amp))
+    centre = float(np.median(est.estimate(transient_at(0.50), DT).band(*band).amp))
+    assert edge != pytest.approx(centre, rel=0.05), (
+        "if these agree, variance normalisation has become a full fix and the "
+        "documentation in docs/choosing_a_transform.md needs revisiting"
+    )

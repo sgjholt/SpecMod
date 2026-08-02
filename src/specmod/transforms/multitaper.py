@@ -148,11 +148,27 @@ class MultitaperEstimator:
         returns a plausible spectrum at a fraction of the true amplitude.
         Turn it on deliberately when the record is stationary, or when
         reproducing a run that used it.
+    normalize_to_variance
+        Rescale the whole spectrum so it integrates to the record's variance,
+        as Prieto's ``multitaper`` package does (``mtspec.py``: ``sscal =
+        xvar / (sum(spec)*df)``). ``mtspec`` wrapped the same lineage, so
+        **enable this when reproducing pre-refactor results.**
+
+        It is off by default for one reason: with it on, ``Spectrum.energy()``
+        recovers the input energy *by construction*, so the Parseval check in
+        the test suite stops being a falsifiable contract and starts being a
+        tautology. Leaving it off keeps that check meaningful.
+
+        It is a calibration, not a derivation. It forces total power to be
+        right and lets the spectral *shape* absorb whatever error remains — so
+        it does not make the long-period level position-independent, only much
+        less position-dependent. See the warning above for measured numbers.
     """
 
     time_bandwidth: float = 3.0
     n_tapers: int = 5
     adaptive: bool = False
+    normalize_to_variance: bool = False
     drop_dc: bool = True
     name: str = "multitaper"
 
@@ -202,6 +218,13 @@ class MultitaperEstimator:
         if n % 2 == 0:
             psd[-1] /= 2.0
 
+        if self.normalize_to_variance:
+            # Prieto's convention: pin the integral to the record variance.
+            df = float(freq[1] - freq[0])
+            total = float(psd.sum() * df)
+            if total > 0:
+                psd = psd * (float(x.var()) / total)
+
         if self.drop_dc:
             freq, psd = freq[1:], psd[1:]
 
@@ -217,6 +240,7 @@ class MultitaperEstimator:
                 "time_bandwidth": self.time_bandwidth,
                 "n_tapers": self.n_tapers,
                 "adaptive": self.adaptive,
+                "normalize_to_variance": self.normalize_to_variance,
             },
             estimator=self.name,
         )

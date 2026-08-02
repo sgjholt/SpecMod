@@ -62,6 +62,11 @@ spectrum.to_kind("psd")              # A**2 / (2T)
 spectrum.band(0.5, 25.0)
 ```
 
+Which estimator to use, and what each one does to your data — including
+measured position-dependence and the variance-normalisation convention `mtspec`
+used — is set out in
+[`docs/choosing_a_transform.md`](docs/choosing_a_transform.md).
+
 ### Why the units are typed
 
 A spectrum carries its ground-motion domain and amplitude convention as

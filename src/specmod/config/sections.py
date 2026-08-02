@@ -109,6 +109,10 @@ class TransformConfig:
     #: Off by default: adaptive weighting collapses for off-centre transients.
     #: See specmod.transforms.multitaper.
     adaptive: bool = False
+    #: Rescale the spectrum to integrate to the record variance, as mtspec and
+    #: Prieto's multitaper do. Needed to reproduce pre-refactor results; off by
+    #: default because it makes the Parseval check circular.
+    normalize_to_variance: bool = False
 
     #: FFT / Welch.
     taper: Literal["hann", "tukey", "boxcar"] = "tukey"

@@ -70,6 +70,10 @@ n_tapers = 5
 # written explicitly here so that changing the package default can never move
 # what this file means. If the 0.1.1 re-run disagrees, try false.
 adaptive = true
+# mtspec rescaled the spectrum to integrate to the record variance (the same
+# `sscal = xvar / (sum(spec)*df)` that Prieto's multitaper package still does),
+# so pre-refactor results carry that convention and reproducing them needs it.
+normalize_to_variance = true
 
 
 [smoothing]
