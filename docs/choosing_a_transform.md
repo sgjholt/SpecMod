@@ -58,6 +58,43 @@ plausible-looking spectrum at a fraction of the true amplitude.
 
 This is why `adaptive` **defaults to `False`**.
 
+### It is position, not phase
+
+Worth separating, because the two would have different fixes. A *symmetric*
+(zero-phase) envelope collapses identically at 10% and 90% — 0.322 at both — so
+symmetry does not rescue it. What matters is only where the energy sits
+relative to the tapers.
+
+Which means centring fixes it, and fixes it completely:
+
+| Burst start | `center=False` | `center=True` |
+|---|---|---|
+| 2% | 0.389 | 1.162 |
+| 10% | 1.053 | 1.162 |
+| 30% | 1.153 | 1.162 |
+| 50% | 1.159 | 1.162 |
+| 70% | 1.126 | 1.162 |
+| 78% | 1.053 | 1.162 |
+
+Identical to three decimals at every position. `MultitaperEstimator(center=True)`
+circularly shifts the record so its energy centroid sits mid-window. This is
+legitimate rather than a fudge: `|FFT|` is invariant under a circular shift, so
+the quantity being estimated does not change — only its alignment with the
+tapers.
+
+**What remains is the taper concentration itself**: a compact centred transient
+still reads about 1.16× high under flat weighting. That is a *consistent*
+multiplicative bias rather than a position-dependent one, and the distinction
+matters — a consistent factor cancels in any ratio (signal-to-noise, spectral
+ratios, relative amplitudes between stations) and can be calibrated. A
+position-dependent one cannot.
+
+Off by default because a circular shift wraps. It refuses, rather than
+silently splicing a discontinuity into the arrival, when the window edges are
+not quiet — controlled by `center_edge_tolerance`. A cut S-window whose coda is
+still running at the end cannot be safely rolled; taper first, widen the
+window, or use `FFTEstimator`.
+
 ---
 
 ## Where arrivals actually land

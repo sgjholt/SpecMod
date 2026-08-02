@@ -451,3 +451,73 @@ def test_variance_normalisation_does_not_fix_the_plateau() -> None:
         "if these agree, variance normalisation has become a full fix and the "
         "documentation in docs/choosing_a_transform.md needs revisiting"
     )
+
+
+# ---------------------------------------------------- centring the transient
+
+
+def test_centring_removes_position_dependence_entirely() -> None:
+    """The bias is positional, not phase-related, so centring is a complete fix.
+
+    Distinguishing the two mattered: a *symmetric* (zero-phase) envelope
+    collapses identically at 10% and 90%, so symmetry does not rescue it, and
+    the cause is where the energy sits relative to the tapers. A circular shift
+    to mid-window therefore fixes it exactly — and is legitimate because |FFT|
+    is invariant under circular shift, so the estimated quantity is unchanged.
+    """
+    rng = np.random.default_rng(3)
+    width = 400
+    burst = rng.normal(0.0, 1.0, width) * np.exp(-np.arange(width) / 60.0)
+
+    def at(start: int) -> np.ndarray:
+        x = np.zeros(N)
+        x[start : start + width] = burst
+        return x
+
+    centred = MultitaperEstimator(center=True)
+    ratios = [
+        centred.estimate(at(s), DT).energy() / time_domain_energy(at(s))
+        for s in (40, 200, 600, 1000, 1400, 1560)
+    ]
+    assert max(ratios) - min(ratios) < 1e-6, "centring should make position irrelevant"
+
+    # Without it, the same sweep spans a factor of three.
+    plain = MultitaperEstimator()
+    raw = [
+        plain.estimate(at(s), DT).energy() / time_domain_energy(at(s))
+        for s in (40, 200, 600, 1000, 1400, 1560)
+    ]
+    assert max(raw) / min(raw) > 2.5
+
+
+def test_what_remains_after_centring_is_the_taper_concentration() -> None:
+    """A consistent multiplicative bias, not a position-dependent one.
+
+    The distinction matters: a consistent factor cancels in any ratio — SNR,
+    spectral ratios, relative station amplitudes — and can be calibrated.
+    """
+    rng = np.random.default_rng(3)
+    width = 400
+    x = np.zeros(N)
+    x[600 : 600 + width] = rng.normal(0.0, 1.0, width) * np.exp(
+        -np.arange(width) / 60.0
+    )
+    ratio = MultitaperEstimator(center=True).estimate(
+        x, DT
+    ).energy() / time_domain_energy(x)
+    assert 1.05 < ratio < 1.30
+
+
+def test_centring_refuses_when_the_edges_are_not_quiet() -> None:
+    """A circular shift wraps. Rolling a record whose coda still runs at the
+    window edge would splice a discontinuity into the middle of the arrival."""
+    with pytest.raises(ValueError, match="discontinuity"):
+        MultitaperEstimator(center=True).estimate(noise(), DT)
+
+
+def test_centring_is_recorded_in_metadata() -> None:
+    rng = np.random.default_rng(3)
+    x = np.zeros(N)
+    x[600:1000] = rng.normal(0.0, 1.0, 400) * np.exp(-np.arange(400) / 60.0)
+    assert MultitaperEstimator(center=True).estimate(x, DT).meta["centered"] is True
+    assert MultitaperEstimator().estimate(x, DT).meta["centered"] is False
