@@ -343,23 +343,58 @@ def transient(fraction: float = 0.07, seed: int = 3) -> np.ndarray:
     return x
 
 
-def test_multitaper_overestimates_transient_energy() -> None:
-    """Documents a property of the method, not a defect in this implementation.
+def transient_at(position: float, width: float = 0.10, seed: int = 1) -> np.ndarray:
+    """A burst of fixed energy and width, placed anywhere in the window."""
+    rng = np.random.default_rng(seed)
+    x = np.zeros(N)
+    w = int(N * width)
+    start = max(0, min(N - w, int(N * position) - w // 2))
+    x[start : start + w] = rng.normal(0.0, 1e-6, w)
+    return x
 
-    DPSS tapers concentrate weight mid-window, so a transient sitting there is
-    weighted above average and total energy comes out high. mtspec used the
-    same tapers, so this bias is present in pre-refactor results too; it is
-    pinned here so it stays known rather than being rediscovered as a
-    discrepancy against the published Magna values.
+
+def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
+    """Without adaptive weighting the bias is modest and explicable.
+
+    It follows the summed DPSS envelope: the tapers weight the middle of the
+    record above the ends, so a centred transient reads high and an edge one
+    low, by roughly +/-15%.
     """
-    x = transient()
-    expected = time_domain_energy(x)
+    est = MultitaperEstimator(adaptive=False)
+    ratios = {
+        p: est.estimate(transient_at(p), DT).energy()
+        / time_domain_energy(transient_at(p))
+        for p in (0.10, 0.50, 0.90)
+    }
+    assert 0.85 < ratios[0.10] < 1.05
+    assert 1.05 < ratios[0.50] < 1.30
+    assert ratios[0.50] > ratios[0.10], "centre should read higher than the edge"
 
-    adaptive = MultitaperEstimator().estimate(x, DT).energy() / expected
-    flat = MultitaperEstimator(adaptive=False).estimate(x, DT).energy() / expected
 
-    assert adaptive > 1.15, "expected a clear high bias for a centred transient"
-    assert flat < adaptive, "adaptive weighting favours the most concentrated tapers"
+def test_adaptive_weighting_collapses_for_edge_transients() -> None:
+    """A known, unexplained deficiency — pinned so it cannot regress silently.
+
+    An edge-located burst loses 80-85% of its energy under adaptive weighting,
+    far more than taper shape accounts for. The suspected cause is the weights
+    being seeded from the two lowest-order tapers, which see almost none of it.
+    This is documented rather than fixed because changing it would move
+    published numbers; see the module docstring and REFACTOR_PLAN §5.2.6.
+    """
+    edge = transient_at(0.10)
+    centre = transient_at(0.50)
+
+    edge_ratio = MultitaperEstimator().estimate(edge, DT).energy() / time_domain_energy(
+        edge
+    )
+    centre_ratio = MultitaperEstimator().estimate(
+        centre, DT
+    ).energy() / time_domain_energy(centre)
+
+    assert edge_ratio < 0.35, "the collapse should be severe, not marginal"
+    assert centre_ratio > 1.15
+    # Turning adaptive off restores sane behaviour, which is the workaround.
+    flat = MultitaperEstimator(adaptive=False).estimate(edge, DT).energy()
+    assert flat / time_domain_energy(edge) > 0.85
 
 
 def test_light_taper_fft_tracks_transient_energy_far_better() -> None:
