@@ -257,16 +257,25 @@ average away across stations at similar distance.
 > the original and are not directly comparable to it; this table is the one
 > `tools/measure_docs.py` reproduces.
 
-### It makes the Parseval check circular
+### It costs you a diagnostic
 
 SpecMod's estimators are held to a contract: `Spectrum.energy()` must recover
 `sum(x**2) * dt`. That is a real, falsifiable check that the normalisation is
 sound, and it is what lets one test suite cover every backend.
 
 With `normalize_to_variance=True` that check passes *by construction*, for any
-estimator, however wrong the shape is. The contract stops being a contract.
+estimator, however wrong the shape is. That matters to you and not just to the
+test suite: `energy()` on your own record stops being a measurement you can
+act on. If a window is mis-cut or a response is mis-removed, an unnormalised
+spectrum shows it and a normalised one does not.
 
 Hence: off by default, on deliberately.
+
+Note what it is *not*. It is a single scalar multiply — the ratio between the
+normalised and unnormalised spectra is constant across frequency to machine
+precision. So it cannot change any ratio *within* a spectrum, which is exactly
+why it cannot fix the plateau above: `Omega` moves with the rest of the
+spectrum or not at all.
 
 ### When to turn it on
 

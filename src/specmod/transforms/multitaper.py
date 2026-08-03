@@ -240,15 +240,17 @@ class MultitaperEstimator:
         xvar / (sum(spec)*df)``). ``mtspec`` wrapped the same lineage, so
         **enable this when reproducing pre-refactor results.**
 
-        It is off by default for one reason: with it on, ``Spectrum.energy()``
-        recovers the input energy *by construction*, so the Parseval check in
-        the test suite stops being a falsifiable contract and starts being a
-        tautology. Leaving it off keeps that check meaningful.
+        Off by default because it costs you a diagnostic. With it on,
+        ``Spectrum.energy()`` returns the input energy whatever else is wrong,
+        so it can no longer tell you whether the normalisation is sound — the
+        one check that would catch a mis-scaled spectrum always passes. Left
+        off, ``energy()`` is a live measurement of your own record.
 
-        It is a calibration, not a derivation. It forces total power to be
-        right and lets the spectral *shape* absorb whatever error remains — so
-        it does not make the long-period level position-independent, only much
-        less position-dependent. See the warning above for measured numbers.
+        It is a calibration, not a derivation: a single scalar chosen to force
+        the integral, which is why it cannot change spectral *shape*. Total
+        power comes out right and the shape absorbs whatever error remains, so
+        it does not make the long-period level position-independent — see the
+        warning above, and ``center`` for something that does.
     """
 
     time_bandwidth: float = 3.0

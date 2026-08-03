@@ -444,18 +444,34 @@ def test_the_bias_is_specific_to_transients() -> None:
     assert ratio == pytest.approx(1.0, rel=0.03)
 
 
-def test_variance_normalisation_pins_energy_by_construction() -> None:
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_variance_normalisation_is_exactly_a_scalar_multiply(adaptive: bool) -> None:
     """Prieto's convention, offered explicitly because mtspec used it.
 
-    It makes energy recovery exact whatever the taper weighting does — which is
-    why it is off by default: with it on, the Parseval contract that holds
-    every backend to account becomes a tautology.
+    Asserting that it recovers the input energy would be worthless — it pins
+    the integral by construction, so that check cannot fail while the feature
+    exists at all. What *is* falsifiable is that it does so by scaling the
+    whole spectrum uniformly: a frequency-dependent normalisation would pass an
+    energy check and still be wrong.
+
+    This is also what makes the next test true rather than merely observed. A
+    scalar multiply cannot change any ratio *within* a spectrum, so it cannot
+    move the low-frequency plateau relative to the rest, and so it cannot fix
+    the position dependence that plateau inherits.
     """
     x = transient_at(0.10)
-    expected = time_domain_energy(x)
-    for adaptive in (False, True):
-        est = MultitaperEstimator(adaptive=adaptive, normalize_to_variance=True)
-        assert est.estimate(x, DT).energy() == pytest.approx(expected, rel=0.02)
+    raw = MultitaperEstimator(adaptive=adaptive).estimate(x, DT)
+    normalised = MultitaperEstimator(
+        adaptive=adaptive, normalize_to_variance=True
+    ).estimate(x, DT)
+
+    assert normalised.freq == pytest.approx(raw.freq)
+    ratio = normalised.amp / raw.amp
+    assert ratio.std() / ratio.mean() < 1e-12, "normalisation must not reshape"
+    # ...and the constant is the one that corrects total energy, which is the
+    # only thing the caller is actually buying.
+    expected = np.sqrt(time_domain_energy(x) / raw.energy())
+    assert float(ratio.mean()) == pytest.approx(expected, rel=0.02)
 
 
 def test_variance_normalisation_is_off_by_default() -> None:
