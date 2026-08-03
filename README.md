@@ -106,14 +106,33 @@ outputs.
 
 ```sh
 uv venv && uv pip install -e ".[dev]"
-pytest                 # test suite
-ruff check src/ tests/ # lint
-ruff format src/ tests/
-mypy                   # strict on the rewritten modules
+pytest                       # test suite
+ruff check src/ tests/ tools/  # lint
+ruff format src/ tests/ tools/
+mypy                         # strict on the rewritten modules
 ```
 
 The `mypy` override list in `pyproject.toml` is the migration backlog: modules
 leave it as they are rewritten, and the target is an empty list.
+
+Command-line entry points are built on [`click`](https://click.palletsprojects.com),
+including internal tooling — one convention across the whole surface.
+
+### Measured numbers in the docs
+
+The documentation quotes a lot of measurements, and stale numbers are worse
+than no numbers. Every table that came out of a measurement is generated:
+
+```sh
+python tools/measure_docs.py show     # print the tables
+python tools/measure_docs.py write    # refresh the docs in place
+python tools/measure_docs.py check    # fail if any table is stale
+```
+
+`tests/test_docs_are_current.py` runs `check`, so a change that moves a
+published number fails the suite rather than quietly leaving the prose wrong.
+Measurements that read `Tutorial/Data` are slower and opt-in via `--field`;
+refresh those by hand after changing an estimator.
 
 ## References
 

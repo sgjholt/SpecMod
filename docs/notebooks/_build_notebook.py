@@ -180,19 +180,58 @@ plt.show()
 """)
 
 md("""
-Two distinct effects, and they behave very differently.
+One effect, and both multitaper curves show it: **the taper envelope**. A
+gentle arch of about ±15% across the middle, falling away hard at the extreme
+edges, tracking the summed taper shape. It is unavoidable for any tapered
+method, and because `mtspec` used the same DPSS tapers it is present in
+pre-refactor results rather than introduced here.
 
-**The taper envelope** (flat weighting, blue). A gentle arch of about ±15%,
-tracking the summed taper shape. Unavoidable for any tapered method.
+The FFT curve (green) is the contrast: a 5% Tukey window is nearly flat across
+the record, so it barely cares where the burst sits.
 
-**Adaptive collapse** (orange). An edge-located burst loses most of its energy.
-The weights are seeded from the two lowest-order tapers — the most
-centre-concentrated — which see almost none of an off-centre arrival, so the
-iteration starts near zero and converges onto exactly the tapers with no signal
-in them. It fails **silently**, returning a plausible-looking spectrum at a
-fraction of the true amplitude.
+> **This changed.** Until recently the adaptive curve collapsed at both edges,
+> losing 80–95% of the energy, and `adaptive` shipped `False` because of it.
+> That was a bug in SpecMod, not a property of Thomson's method. His Eq. 5.1b
+> regularises each weight with `(1 − λₖ)·σ²`, where `σ²` must be in the units
+> of the spectrum being weighted; SpecMod passed the record's time-domain
+> variance against PSD-scaled eigenspectra, overstating it by `1/dt` — 100× at
+> 100 sps. The regularisation swamped the signal term, every weight collapsed,
+> and it was worst exactly where the tapers saw least of the burst.
+>
+> Stationary noise passed cleanly throughout, which is why it hid: the bug only
+> showed for records that violate the stationarity assumption in the first
+> place. `adaptive` now defaults to `True`, matching `mtspec`.
+""")
 
-This is why `adaptive` defaults to `False` in SpecMod.
+md("""
+### Why adaptive weighting is worth having
+
+Leakage suppression is the whole reason to reach for multitaper, and flat
+weighting does not do it. Put a strong low-frequency line over a weak
+broadband background — a mild caricature of a real seismic spectrum — and
+measure the recovered noise floor well away from the line.
+""")
+
+code("""
+weak = rng.normal(0, 1e-9, N)
+x = 1e-3 * np.sin(2 * np.pi * 2.0 * np.arange(N) * DT) + weak
+
+truth = FFTEstimator().estimate(weak, DT).band(20, 49)
+for name, est in [("flat", MultitaperEstimator(adaptive=False)),
+                  ("adaptive", MultitaperEstimator(adaptive=True))]:
+    s = est.estimate(x, DT).band(20, 49)
+    print(f"{name:<10} recovered floor is {np.median(s.amp / truth.amp):7.1f}x the truth")
+""")
+
+md("""
+`t*` and `f_c` are both read off the high-frequency decay, so a floor nearly
+three orders of magnitude too high is not cosmetic — it flattens the tail and
+biases both parameters.
+
+The cost is resolution: adaptive weighting downweights the higher-order tapers
+wherever leakage would dominate, so it spends fewer effective degrees of freedom
+and is noisier where the signal is strong. Turn it off for a well-conditioned
+record with little dynamic range.
 """)
 
 md("""
@@ -227,7 +266,7 @@ for pos in (0.10, 0.50, 0.90):
 """)
 
 md("""
-The symmetric envelope collapses at 10% and 90% just as the causal one does, so
+The symmetric envelope is biased at 10% and 90% just as the causal one is, so
 envelope *symmetry* buys nothing.
 
 But "not phase" would be too quick. Let us separate phase properly: keep
@@ -242,17 +281,25 @@ X = np.fft.rfft(base)
 
 shifted = np.roll(base, 800)                   # (A) LINEAR ramp = a time shift
 rotated = np.imag(hilbert(base))               # (B) CONSTANT 90 degree rotation
-phi = rng.uniform(0, 2 * np.pi, X.size); phi[0] = 0
+phi = rng.uniform(0, 2 * np.pi, X.size)
+phi[0] = phi[-1] = 0                           # DC and Nyquist must stay real
 scrambled = np.fft.irfft(np.abs(X) * np.exp(1j * phi), n=N)   # (C) RANDOM phase
 
-flat = MultitaperEstimator()
+# DC and Nyquist are constrained to be real for a real signal, so any phase
+# manipulation necessarily disturbs them. They carry no meaningful power here,
+# and including them would let an edge-bin artefact masquerade as a genuine
+# change in |X| -- which is exactly the claim this table has to rule out.
+interior = slice(1, -1)
+mag = np.abs(X)[interior]
+
+est = MultitaperEstimator()
 print(f"{'case':<32}{'|X| changed':>13}{'centroid':>11}{'estimate':>11}")
 for name, y in (("base", base), ("(A) linear ramp = shift", shifted),
                 ("(B) constant 90 deg", rotated), ("(C) random phase", scrambled)):
-    dm = np.abs(np.abs(np.fft.rfft(y)) - np.abs(X)).max() / np.abs(X).max()
+    dm = np.abs(np.abs(np.fft.rfft(y))[interior] - mag).max() / mag.max()
     e = (y - y.mean()) ** 2
     print(f"{name:<32}{dm:>13.1e}{(np.arange(N) * e).sum() / e.sum() / N:>11.1%}"
-          f"{flat.estimate(y, DT).energy() / energy(y):>11.3f}")
+          f"{est.estimate(y, DT).energy() / energy(y):>11.3f}")
 """)
 
 md("""
@@ -385,16 +432,21 @@ md("""
 the integral does not pin the plateau. Measured spread of the recovered plateau
 across positions:
 
+<!-- measured: plateau_table -->
 | Method | Plateau spread |
 |---|---|
-| FFT, light taper | **4%** |
-| Prieto, constant weights | 28% |
-| Prieto, adaptive | 33% |
-| multitaper, flat, no renormalisation | 89% |
-| multitaper, adaptive, no renormalisation | 650% |
+| FFT, light taper | 7% |
+| Prieto, constant weights | 8% |
+| Prieto, adaptive | 8% |
+| ours, flat, no renormalisation | 15% |
+| ours, adaptive, no renormalisation | 15% |
+| ours, adaptive, renormalised | 10% |
+| ours, adaptive, `center=True` | 0% |
+<!-- /measured -->
 
-So it takes the adaptive case from unusable to tolerable — but does not reach
-what a plain FFT gives, and the residual sits at the window edges.
+Renormalisation helps but does not reach what a lightly-tapered FFT gives, and
+the residual sits at the window edges. `center=True` is the only thing here
+that removes the spread outright.
 
 ### It makes the energy check circular
 
@@ -455,7 +507,7 @@ dist = np.array([tr.stats["repi"] for tr in sig if tr.stats.npts > 50])
 fig, ax = plt.subplots(figsize=(9, 4))
 ax.scatter(dist, pos * 100, s=45, color="#2a78d6", zorder=3)
 ax.axhspan(0, 20, color="#eb6834", alpha=0.13, zorder=0)
-ax.text(23, 9, "collapse zone", color="#eb6834", fontsize=10, ha="right")
+ax.text(23, 9, "most biased", color="#eb6834", fontsize=10, ha="right")
 ax.set(xlabel="epicentral distance (km)",
        ylabel="50%-energy point\\n(% through window)", ylim=(0, 80),
        title="Where the arrival lands, by distance")
@@ -477,8 +529,10 @@ window opens essentially on the S arrival and the coda fills the rest — the
 energy is front-loaded. At larger distance the window opens well before S, so
 the arrival lands nearer the middle.
 
-A quarter of these windows sit below 20%, where adaptive weighting is
-unreliable.
+A quarter of these windows sit below 20%, where the taper envelope costs the
+most energy. On these same 28 windows the worst trace recovers 0.56 of its true
+energy under either weighting, against 0.79 for a lightly-tapered FFT — see
+`docs/notes/window_position.md`.
 """)
 
 md("""

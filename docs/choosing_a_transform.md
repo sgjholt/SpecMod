@@ -34,45 +34,88 @@ An identical burst — same samples, same energy, same width — moved through a
 2000-sample window. Values are estimated energy divided by true energy, so 1.0
 is correct:
 
+<!-- measured: position_table -->
 | Position in window | multitaper, adaptive | multitaper, flat | FFT, 5% Tukey |
 |---|---|---|---|
-| 6% | 0.039 | 0.691 | 1.00 |
-| 10% | 0.203 | 0.974 | 1.03 |
-| 25% | 1.253 | 1.076 | 1.03 |
-| 50% | 1.317 | 1.146 | 1.03 |
-| 75% | 1.244 | 1.067 | 1.03 |
-| 90% | 0.149 | 0.917 | 1.03 |
-| stationary noise | 0.96 | 1.00 | 0.99 |
+| 6% | 0.673 | 0.690 | 1.00 |
+| 10% | 0.956 | 0.973 | 1.03 |
+| 25% | 1.079 | 1.075 | 1.03 |
+| 50% | 1.151 | 1.145 | 1.03 |
+| 75% | 1.070 | 1.066 | 1.03 |
+| 90% | 0.898 | 0.916 | 1.03 |
+| stationary noise | 1.01 | 1.01 | 0.99 |
+<!-- /measured -->
 
-Two distinct effects:
+One effect, and it is **the taper envelope**: a modest arch, roughly ±15% over
+the central band and falling off hard at the extreme edges, tracking the summed
+taper shape. It is unavoidable for any tapered method, it is the same under
+either weighting, and — because `mtspec` used the same DPSS tapers — it is
+present in pre-refactor results rather than introduced here. The FFT column is
+the contrast: a 5% Tukey window is nearly flat across the record, so it barely
+cares where the burst sits.
 
-**The taper envelope** (flat weighting). A modest arch, roughly ±15%, tracking
-the summed taper shape. Unavoidable for any tapered method.
+> **Changed in this version.** The adaptive column above used to read 0.039 at
+> 6% and 0.149 at 90% — an apparent "adaptive collapse" for off-centre
+> arrivals. That was a bug in *our* implementation, not a property of Thomson's
+> method, and it is fixed. Thomson's Eq. 5.1b regularises each weight with
+> `(1 − λₖ)·σ²`, and `σ²` must be in the units of the spectrum being weighted;
+> we were passing the record's time-domain variance against PSD-scaled
+> eigenspectra, overstating it by `1/dt` — 100× at 100 sps. The regularisation
+> then swamped the signal term and every weight collapsed, worst exactly where
+> the tapers saw least of the burst. Stationary noise passed cleanly throughout,
+> which is why it hid for so long.
+>
+> `adaptive` consequently **defaults back to `True`** (it had shipped `False`
+> while the defect stood). With `normalize_to_variance=True` putting both on the
+> same absolute scale, our estimate now matches Prieto's `multitaper` to within
+> **0.3%** across the band, under both weightings, for noise and for bursts at
+> 10%, 50% and 90%.
 
-**Adaptive collapse** (adaptive weighting, *this implementation*). An
-edge-located burst loses 80–96% of its energy. The weights are seeded from the
-two lowest-order tapers, which are the most centre-concentrated and see almost
-none of an off-centre arrival — so the iteration starts near zero and converges
-onto exactly the tapers with no signal in them. It fails silently, returning a
-plausible-looking spectrum at a fraction of the true amplitude.
+### Why adaptive weighting is the default
 
-This is why `adaptive` **defaults to `False`**.
+Leakage suppression is the reason to reach for multitaper at all, and flat
+weighting does not provide it. A 2 Hz line 10⁶ times stronger than the
+background — a mild version of what a real seismic spectrum does across its
+band — with the recovered noise floor measured between 20 and 49 Hz:
+
+<!-- measured: leakage_table -->
+| Weighting | recovered floor / true |
+|---|---|
+| flat | **287x** |
+| adaptive | 1.1x |
+<!-- /measured -->
+
+`t*` and `f_c` are both read off the high-frequency decay, so a floor nearly
+three orders of magnitude too high is not a cosmetic problem — it flattens the
+tail and biases both parameters.
+
+The cost is resolution. Adaptive weighting downweights the higher-order tapers
+wherever leakage would dominate, so it spends fewer effective degrees of
+freedom and returns a noisier estimate in bands where the signal is strong.
+Turn it off for a well-conditioned record with little dynamic range, where the
+extra averaging buys more than the leakage rejection does.
 
 ### It is the *linear* component of phase — that is, position
 
 Worth separating carefully, because the candidates have different fixes. Hold
-`|X(f)|` fixed and change only the phase, three ways:
+`|X(f)|` fixed and change only the phase, three ways. The second column
+confirms the magnitude spectrum really is untouched — the changes are at
+machine precision — and the third tracks where the energy ends up:
 
-| Change | `|X|` altered? | Envelope moved? | Estimate |
+<!-- measured: phase_table -->
+| Change | max change in `\|X\|` | Envelope centroid | Estimate |
 |---|---|---|---|
-| Linear ramp (= a time shift) | no | **yes** | **changes** |
-| Constant 90° rotation | no | no | unchanged |
-| Random phase | no | yes (spread) | changes |
+| (unchanged reference) | -- | 11.2% | 1.053 |
+| Linear ramp (= a time shift) | 4.7e-16 | 51.2% | 1.159 |
+| Constant 90 deg rotation | 4.7e-16 | 11.2% | 1.053 |
+| Random phase | 3.5e-16 | 52.0% | 1.007 |
+<!-- /measured -->
 
-The constant rotation is decisive: phase *in general* does not matter. What
-matters is the **linear** component — the group delay — which is exactly where
-the envelope sits. Envelope symmetry is irrelevant: a symmetric, zero-phase
-envelope collapses identically at 10% and 90%.
+The constant rotation is decisive: it changes every sample of the record, yet
+the centroid does not move and the estimate does not budge. Phase *in general*
+does not matter. What matters is the **linear** component — the group delay —
+which is exactly where the envelope sits. Envelope symmetry is irrelevant
+too: a symmetric, zero-phase envelope is biased identically at 10% and 90%.
 
 **Why, in two equivalent ways.**
 
@@ -97,14 +140,16 @@ with shifting —
 
 Which means centring fixes it, and fixes it completely:
 
+<!-- measured: centring_table -->
 | Burst start | `center=False` | `center=True` |
 |---|---|---|
-| 2% | 0.389 | 1.162 |
-| 10% | 1.053 | 1.162 |
-| 30% | 1.153 | 1.162 |
-| 50% | 1.159 | 1.162 |
-| 70% | 1.126 | 1.162 |
-| 78% | 1.053 | 1.162 |
+| 2% | 0.374 | 1.166 |
+| 10% | 1.034 | 1.166 |
+| 30% | 1.155 | 1.166 |
+| 50% | 1.164 | 1.166 |
+| 70% | 1.129 | 1.166 |
+| 78% | 1.060 | 1.166 |
+<!-- /measured -->
 
 Identical to three decimals at every position. `MultitaperEstimator(center=True)`
 circularly shifts the record so its energy centroid sits mid-window. This is
@@ -179,27 +224,38 @@ SpecMod offers this as `MultitaperEstimator(normalize_to_variance=True)`.
 
 ### It fixes energy, not shape
 
-`Omega` is read from the low-frequency plateau, not from total energy. Pinning
-the integral does not pin the plateau. Measured on a real S-arrival embedded at
-different positions, spread of the recovered 1–4 Hz plateau relative to its
-value at mid-window:
+`Omega` is read from the low-frequency plateau, not from total energy, and
+pinning the integral does not pin the plateau. A real S-arrival slid through an
+otherwise empty 2000-sample window, across the full range of positions it can
+occupy; the figure is the spread of the recovered 1–4 Hz level relative to its
+mid-window value:
 
+<!-- measured: plateau_table -->
 | Method | Plateau spread |
 |---|---|
-| FFT, light taper | **4%** |
-| Prieto, constant weights | 28% |
-| Prieto, adaptive | 33% |
-| ours, flat, no renormalisation | 89% |
-| ours, adaptive, no renormalisation | 650% |
+| FFT, light taper | 7% |
+| Prieto, constant weights | 8% |
+| Prieto, adaptive | 8% |
+| ours, flat, no renormalisation | 15% |
+| ours, adaptive, no renormalisation | 15% |
+| ours, adaptive, renormalised | 10% |
+| ours, adaptive, `center=True` | 0% |
+<!-- /measured -->
 
-So renormalisation takes the adaptive case from unusable to tolerable and the
-flat case from 89% to roughly 30%. It does **not** reach the 4% an FFT gives.
-The residual sits almost entirely at the extreme edges — at 10% through the
-window the plateau still reads about 20–24% low.
+Renormalisation helps — 15% to 10% — but does not reach what a lightly-tapered
+FFT gives, and the residual sits at the extreme edges. Centring is the only
+thing here that removes it outright.
 
-For a near-source station that is roughly 0.1 in `log10(Omega)`, or about
-**0.07 magnitude units**. Against the 0.13 m.u. scatter quoted for spectral
-`Mw`, that is small but not nothing, and it is systematic rather than random.
+For a near-source station a 10% plateau error is about 0.04 in `log10(Omega)`,
+or **0.03 magnitude units**. Against the 0.13 m.u. scatter quoted for spectral
+`Mw` that is small, but it is systematic rather than random, so it does not
+average away across stations at similar distance.
+
+> Earlier revisions of this page reported 89% for flat weighting and 650% for
+> adaptive here. The 650% was the adaptive collapse described above and is
+> gone. The remaining figures come from a differently-constructed sweep than
+> the original and are not directly comparable to it; this table is the one
+> `tools/measure_docs.py` reproduces.
 
 ### It makes the Parseval check circular
 
@@ -247,6 +303,25 @@ position dependence above.
 `n_tapers` must not exceed `2*NW - 1`; beyond that the tapers are poorly
 concentrated and add leakage rather than reducing variance. Exceeding it raises
 rather than silently degrading.
+
+**It is cross-validated against Prieto's package.** Both are put on the same
+absolute scale with `normalize_to_variance=True`, then compared bin by bin over
+0.5–45 Hz. Median ratio, ours over theirs:
+
+<!-- measured: prieto_agreement -->
+| Record | adaptive | flat |
+|---|---|---|
+| stationary noise | 1.0000 | 1.0000 |
+| burst at 10% | 1.0000 | 1.0000 |
+| burst at 50% | 1.0000 | 1.0000 |
+| burst at 90% | 0.9999 | 0.9999 |
+<!-- /measured -->
+
+Worst-case deviation anywhere in the band is 0.3%. Two independent
+implementations of Thomson's method agreeing to that level is the strongest
+evidence available that the native estimator is right — and it is what
+distinguishes the current adaptive weighting from the version it replaced,
+which disagreed by a factor of five.
 
 ### `PrietoMultitaperEstimator`
 

@@ -32,44 +32,61 @@ so the arrival lands nearer the middle.
 
 Energy recovered on those same windows (estimated / true):
 
-| | adaptive | flat | FFT |
+<!-- measured: field_energy_table -->
+| n = 28 | adaptive | flat | FFT |
 |---|---|---|---|
-| median | 0.983 | 0.988 | — |
-| worst | **0.286** | 0.563 | 0.790 |
-| below 0.6 | **14% of traces** | 4% | 0% |
+| median | 0.988 | 0.989 | 1.006 |
+| worst | 0.559 | 0.563 | 0.791 |
+| below 0.6 | 4% of traces | 4% of traces | 0% of traces |
+<!-- /measured -->
 
-The four worst are all at position < 8%, and all are near-source: UR.AQ04
-(0.9 km), UR.AQ05 (3.3 km), UR.AQ03 (6.0 km).
+Regenerate with `python tools/measure_docs.py --write --field`.
 
-Worst case under adaptive weighting: 0.286 of the true energy, so `sqrt(0.286)`
-= **0.53× in amplitude**, which is −0.27 in `log10(Omega)` and about **0.18
-magnitude units** on `Mw` for that station.
+The worst are at position < 8%, and near-source: UR.AQ04 (0.9 km), UR.AQ05
+(3.3 km), UR.AQ03 (6.0 km).
 
-That is not a rounding error. The paper quotes a standard deviation of 0.13 m.u.
-for spectral `Mw`, and station `Mw` values are combined by median across
-stations — so a handful of biased near-source stations do not necessarily move
-the event `Mw` by 0.18, but they do inflate the scatter and they bias
-systematically in one direction rather than randomly.
+Worst case: 0.56 of the true energy, so `sqrt(0.56)` = **0.75× in amplitude**,
+which is −0.12 in `log10(Omega)` and about **0.08 magnitude units** on `Mw` for
+that station.
+
+The paper quotes a standard deviation of 0.13 m.u. for spectral `Mw`, and
+station `Mw` values are combined by median across stations — so this does not
+move the event `Mw`, but it inflates the scatter and it biases systematically in
+one direction rather than randomly.
+
+> **Revised.** The adaptive column previously read 0.983 median / **0.286**
+> worst / 14% of traces below 0.6, and it was the reason `adaptive` shipped
+> `False`. That was a units bug in our own implementation of Thomson's Eq. 5.1b
+> regularisation term — see `specmod.transforms.multitaper` — and it is fixed.
+> Adaptive and flat weighting now agree to within 1% on every trace here, which
+> is the expected result: the residual bias is taper shape, and both use the
+> same tapers.
+>
+> The flat and FFT columns are unchanged from the original run, which is what
+> makes the revision trustworthy: the same harness reproduces the two numbers
+> that should not have moved and moves only the one that should.
 
 ## Consequences taken
 
-1. `MultitaperEstimator.adaptive` and `TransformConfig.adaptive` now default to
-   **False**. Flat weighting is well-behaved at every position tested.
-2. `studies/magna_2020_paper.toml` pins `adaptive = true` explicitly, so the
+1. `MultitaperEstimator.adaptive` and `TransformConfig.adaptive` default to
+   **True**, matching what `mtspec` did. They shipped `False` while the defect
+   above stood.
+2. `studies/magna_2020_paper.toml` pins `adaptive = true` explicitly, so a
    changed default cannot silently alter what that file means. Whether the
    published run actually used it is unverified — `mtspec` defaulted to on, and
    the manuscript does not say.
-3. Flat weighting is *not* unbiased either — 0.563 at worst. The FFT with a
-   light taper holds 0.79 at worst and is the better choice when absolute
-   amplitude fidelity matters more than variance.
+3. Neither weighting is unbiased — 0.56 at worst, and that is taper shape, not
+   a defect. Two ways out, both opt-in: `center=True` removes the position
+   dependence outright, and the FFT with a light taper holds 0.79 at worst
+   without needing to roll the record.
 
 ## Open
 
-Whether `mtspec`'s Fortran adaptive routine collapses the same way is untested
-and needs the legacy environment. If it does, near-source stations in the
-published catalogue carry this bias. If it does not, the collapse is specific to
-the implementation here and should simply be fixed.
+Whether `mtspec` and this implementation now agree numerically on real windows
+is still untested and needs the legacy environment — that is the §5.2.6
+three-way comparison. It is a weaker question than it was: with the collapse
+fixed, we already agree with Prieto's `multitaper` (`mtspec`'s successor, same
+lineage) to within 0.3% on synthetic records under both weightings.
 
-That is a question for the §5.2.6 three-way comparison, and it is now a specific
-thing to look for rather than a general check: **compare near-source stations
-first**, since that is where the two would diverge.
+**Still compare near-source stations first**, since that is where any remaining
+divergence would show.
