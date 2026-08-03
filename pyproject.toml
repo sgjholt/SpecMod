@@ -29,6 +29,7 @@ dependencies = [
     "pandas>=2.2.2",  # first release with numpy 2 ABI wheels
     "matplotlib>=3.9",  # numpy 2 support
     "pooch>=1.8",
+    "click>=8.1",  # every CLI in this project is a click command
 ]
 
 [project.optional-dependencies]
@@ -108,6 +109,11 @@ ignore = [
 "src/specmod/preprocess.py" = ["B006", "PLR", "SIM", "E501", "PLW2901", "PLW0602"]
 "src/specmod/utils.py" = ["RUF012", "B", "SIM", "PLR", "E501", "E741", "PLW2901", "E402", "UP", "C4", "RUF"]
 "src/specmod/models.py" = ["PLW0603", "PLW0602"]
+
+# Measurements import lazily on purpose: obspy and multitaper are slow or
+# optional, and a measurement that cannot run should degrade to a note in the
+# table rather than stop the whole tool from importing.
+"tools/measure_docs.py" = ["PLC0415"]
 
 # Findings ruff confirms and the plan already tracks, silenced only so CI is
 # green while the modules that carry them are still awaiting rewrite:
