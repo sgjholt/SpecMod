@@ -108,9 +108,10 @@ class TransformConfig:
     #: positionally to mtspec, with no way to configure it.
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    #: Off by default: adaptive weighting collapses for off-centre transients.
-    #: See specmod.transforms.multitaper.
-    adaptive: bool = False
+    #: On by default: leakage suppression is the point of multitaper, and flat
+    #: weighting leaves the high-frequency floor ~287x high under a strong
+    #: low-frequency peak. See specmod.transforms.multitaper.
+    adaptive: bool = True
     #: Rescale the spectrum to integrate to the record variance, as mtspec and
     #: Prieto's multitaper do. Needed to reproduce pre-refactor results; off by
     #: default because it makes the Parseval check circular.

@@ -353,14 +353,16 @@ def transient_at(position: float, width: float = 0.10, seed: int = 1) -> np.ndar
     return x
 
 
-def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
-    """Without adaptive weighting the bias is modest and explicable.
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_multitaper_bias_tracks_the_taper_envelope(adaptive: bool) -> None:
+    """The bias is modest, explicable, and the same under either weighting.
 
     It follows the summed DPSS envelope: the tapers weight the middle of the
     record above the ends, so a centred transient reads high and an edge one
-    low, by roughly +/-15%.
+    low, by roughly +/-15%. Adaptive weighting is held to the same standard as
+    flat because the two now agree — which is the whole point of the fix.
     """
-    est = MultitaperEstimator(adaptive=False)
+    est = MultitaperEstimator(adaptive=adaptive)
     ratios = {
         p: est.estimate(transient_at(p), DT).energy()
         / time_domain_energy(transient_at(p))
@@ -371,29 +373,58 @@ def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
     assert ratios[0.50] > ratios[0.10], "centre should read higher than the edge"
 
 
-def test_adaptive_weighting_collapses_for_edge_transients() -> None:
-    """A known, unexplained deficiency — pinned so it cannot regress silently.
+def test_adaptive_weighting_does_not_collapse_for_edge_transients() -> None:
+    """Regression test for a units bug that made adaptive weighting unusable.
 
-    An edge-located burst loses 80-85% of its energy under adaptive weighting,
-    far more than taper shape accounts for. The suspected cause is the weights
-    being seeded from the two lowest-order tapers, which see almost none of it.
-    This is documented rather than fixed because changing it would move
-    published numbers; see the module docstring and REFACTOR_PLAN §5.2.6.
+    Thomson's Eq. 5.1b regularises the weights with ``(1 - lambda_k) *
+    sigma^2``, and ``sigma^2`` has to be in the units of the spectrum being
+    weighted. Passing the record's time-domain variance against PSD-scaled
+    eigenspectra overstated it by ``1/dt``, so the regularisation term swamped
+    the signal term and every weight collapsed towards zero — worst exactly
+    where the tapers saw least of the burst. At 10% this recovered 0.203 of the
+    true energy and at 90%, 0.149.
+
+    The tolerance below is deliberately tight against flat weighting rather
+    than against 1.0: what is being asserted is that the two weightings see the
+    same energy, since any residual is taper shape and common to both.
     """
-    edge = transient_at(0.10)
-    centre = transient_at(0.50)
+    for position in (0.10, 0.50, 0.90):
+        x = transient_at(position)
+        expected = time_domain_energy(x)
+        adaptive = MultitaperEstimator(adaptive=True).estimate(x, DT).energy()
+        flat = MultitaperEstimator(adaptive=False).estimate(x, DT).energy()
+        assert adaptive / expected > 0.85, f"collapse has returned at {position:.0%}"
+        assert adaptive == pytest.approx(flat, rel=0.03), (
+            f"weightings disagree at {position:.0%}; they should differ in "
+            f"variance and leakage, not in total energy"
+        )
 
-    adaptive = MultitaperEstimator(adaptive=True)
-    edge_ratio = adaptive.estimate(edge, DT).energy() / time_domain_energy(edge)
-    centre_ratio = adaptive.estimate(centre, DT).energy() / time_domain_energy(centre)
 
-    assert edge_ratio < 0.35, "the collapse should be severe, not marginal"
-    assert centre_ratio > 1.15
-    # Turning adaptive off restores sane behaviour — which is why it is now
-    # the shipped default.
-    flat = MultitaperEstimator(adaptive=False).estimate(edge, DT).energy()
-    assert flat / time_domain_energy(edge) > 0.85
-    assert MultitaperEstimator().adaptive is False, "default must stay off"
+def test_adaptive_weighting_suppresses_leakage_and_flat_does_not() -> None:
+    """Why adaptive is the default: it is the only one that does this job.
+
+    A strong low-frequency peak over a weak high-frequency tail is the ordinary
+    shape of a seismic spectrum, and ``t*`` and ``f_c`` are both read off that
+    tail. Flat weighting lets the peak leak into it through the higher-order
+    tapers; adaptive weighting is precisely the mechanism for not doing that.
+    """
+    rng = np.random.default_rng(11)
+    t = np.arange(N) * DT
+    weak = rng.normal(0.0, 1e-9, N)
+    x = 1e-3 * np.sin(2 * np.pi * 2.0 * t) + weak
+
+    band = (20.0, 49.0)
+    truth = FFTEstimator(taper="tukey", taper_alpha=0.05).estimate(weak, DT).band(*band)
+    flat = MultitaperEstimator(adaptive=False).estimate(x, DT).band(*band)
+    adaptive = MultitaperEstimator(adaptive=True).estimate(x, DT).band(*band)
+
+    assert float(np.median(flat.amp / truth.amp)) > 50.0
+    assert float(np.median(adaptive.amp / truth.amp)) < 2.0
+
+
+def test_adaptive_weighting_is_the_default() -> None:
+    assert MultitaperEstimator().adaptive is True
+    assert MultitaperEstimator().estimate(transient(), DT).meta["adaptive"] is True
 
 
 def test_light_taper_fft_tracks_transient_energy_far_better() -> None:

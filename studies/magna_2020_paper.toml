@@ -64,11 +64,13 @@ noise_shift = 0.5
 estimator = "multitaper"
 time_bandwidth = 3.0
 n_tapers = 5
-# UNVERIFIED, and pinned deliberately. SpecMod's own default for this changed
-# to false after adaptive weighting was found to collapse for off-centre
-# transients; mtspec's default was true, and the manuscript does not say. It is
-# written explicitly here so that changing the package default can never move
-# what this file means. If the 0.1.1 re-run disagrees, try false.
+# UNVERIFIED, and pinned deliberately. mtspec's default was true and the
+# manuscript does not say, so this matches mtspec. It is written explicitly so
+# that changing the package default can never move what this file means — and
+# that default has already moved twice: off while SpecMod's adaptive weighting
+# was collapsing for off-centre transients, then back on once that was
+# diagnosed as a units bug in Thomson's Eq. 5.1b regularisation term and fixed.
+# If the 0.1.1 re-run disagrees, try false.
 adaptive = true
 # mtspec rescaled the spectrum to integrate to the record variance (the same
 # `sscal = xvar / (sum(spec)*df)` that Prieto's multitaper package still does),
