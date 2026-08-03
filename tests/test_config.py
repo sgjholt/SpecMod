@@ -35,9 +35,11 @@ def test_defaults_preserve_pre_refactor_behaviour(isolated: Path) -> None:
     assert cfg.snr.assert_bandwidths is False
     assert cfg.snr.rotate_noise is True
     assert cfg.snr.tolerance == 3.0
-    # The one deliberate departure from pre-refactor behaviour: adaptive
-    # weighting collapses for off-centre transients, so it ships off.
-    assert cfg.transform.adaptive is False
+    # mtspec weighted adaptively by default, so this matches it. It shipped
+    # off for a while during the refactor, when our own adaptive routine was
+    # collapsing for off-centre transients; that was a units bug in Eq. 5.1b's
+    # regularisation term, now fixed and validated against Prieto's package.
+    assert cfg.transform.adaptive is True
     assert cfg.model.source == "brune"
     assert cfg.model.motion == "velocity"
 

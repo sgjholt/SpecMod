@@ -207,9 +207,34 @@ def test_multitaper_time_bandwidth_is_configurable() -> None:
 
 
 def test_registry_resolves_every_estimator() -> None:
+    """Every registered name resolves, or says exactly what to install.
+
+    ``prieto`` is backed by an optional extra, so on a default install it
+    cannot be constructed. That is deliberate: keeping it in the registry means
+    ``get_estimator("prieto")`` explains what is missing instead of claiming
+    the name is unknown. The contract is therefore *either* a working estimator
+    *or* an actionable ImportError — asserting only the former made the suite
+    depend on whether the extra happened to be installed.
+    """
     for name in ESTIMATORS:
-        est = get_estimator(name)
-        assert est.estimate(noise(), DT).kind is AmplitudeKind.FAS
+        # pytest.raises does not fit here: whether the import fails depends on
+        # the environment, so the message is captured and asserted on below
+        # rather than in the handler.
+        message: str | None = None
+        try:
+            # The check has to span construction *and* estimation: the
+            # optional import is resolved lazily, inside estimate().
+            spectrum = get_estimator(name).estimate(noise(), DT)
+        except ImportError as exc:
+            message = str(exc)
+
+        if message is not None:
+            assert "pip install specmod[" in message, (
+                f"{name!r} is unavailable but does not name the extra to "
+                f"install; the message was: {message}"
+            )
+            continue
+        assert spectrum.kind is AmplitudeKind.FAS
 
 
 def test_unknown_estimator_names_the_alternatives() -> None:
@@ -353,14 +378,16 @@ def transient_at(position: float, width: float = 0.10, seed: int = 1) -> np.ndar
     return x
 
 
-def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
-    """Without adaptive weighting the bias is modest and explicable.
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_multitaper_bias_tracks_the_taper_envelope(adaptive: bool) -> None:
+    """The bias is modest, explicable, and the same under either weighting.
 
     It follows the summed DPSS envelope: the tapers weight the middle of the
     record above the ends, so a centred transient reads high and an edge one
-    low, by roughly +/-15%.
+    low, by roughly +/-15%. Adaptive weighting is held to the same standard as
+    flat because the two now agree — which is the whole point of the fix.
     """
-    est = MultitaperEstimator(adaptive=False)
+    est = MultitaperEstimator(adaptive=adaptive)
     ratios = {
         p: est.estimate(transient_at(p), DT).energy()
         / time_domain_energy(transient_at(p))
@@ -371,29 +398,58 @@ def test_flat_multitaper_bias_tracks_the_taper_envelope() -> None:
     assert ratios[0.50] > ratios[0.10], "centre should read higher than the edge"
 
 
-def test_adaptive_weighting_collapses_for_edge_transients() -> None:
-    """A known, unexplained deficiency — pinned so it cannot regress silently.
+def test_adaptive_weighting_does_not_collapse_for_edge_transients() -> None:
+    """Regression test for a units bug that made adaptive weighting unusable.
 
-    An edge-located burst loses 80-85% of its energy under adaptive weighting,
-    far more than taper shape accounts for. The suspected cause is the weights
-    being seeded from the two lowest-order tapers, which see almost none of it.
-    This is documented rather than fixed because changing it would move
-    published numbers; see the module docstring and REFACTOR_PLAN §5.2.6.
+    Thomson's Eq. 5.1b regularises the weights with ``(1 - lambda_k) *
+    sigma^2``, and ``sigma^2`` has to be in the units of the spectrum being
+    weighted. Passing the record's time-domain variance against PSD-scaled
+    eigenspectra overstated it by ``1/dt``, so the regularisation term swamped
+    the signal term and every weight collapsed towards zero — worst exactly
+    where the tapers saw least of the burst. At 10% this recovered 0.203 of the
+    true energy and at 90%, 0.149.
+
+    The tolerance below is deliberately tight against flat weighting rather
+    than against 1.0: what is being asserted is that the two weightings see the
+    same energy, since any residual is taper shape and common to both.
     """
-    edge = transient_at(0.10)
-    centre = transient_at(0.50)
+    for position in (0.10, 0.50, 0.90):
+        x = transient_at(position)
+        expected = time_domain_energy(x)
+        adaptive = MultitaperEstimator(adaptive=True).estimate(x, DT).energy()
+        flat = MultitaperEstimator(adaptive=False).estimate(x, DT).energy()
+        assert adaptive / expected > 0.85, f"collapse has returned at {position:.0%}"
+        assert adaptive == pytest.approx(flat, rel=0.03), (
+            f"weightings disagree at {position:.0%}; they should differ in "
+            f"variance and leakage, not in total energy"
+        )
 
-    adaptive = MultitaperEstimator(adaptive=True)
-    edge_ratio = adaptive.estimate(edge, DT).energy() / time_domain_energy(edge)
-    centre_ratio = adaptive.estimate(centre, DT).energy() / time_domain_energy(centre)
 
-    assert edge_ratio < 0.35, "the collapse should be severe, not marginal"
-    assert centre_ratio > 1.15
-    # Turning adaptive off restores sane behaviour — which is why it is now
-    # the shipped default.
-    flat = MultitaperEstimator(adaptive=False).estimate(edge, DT).energy()
-    assert flat / time_domain_energy(edge) > 0.85
-    assert MultitaperEstimator().adaptive is False, "default must stay off"
+def test_adaptive_weighting_suppresses_leakage_and_flat_does_not() -> None:
+    """Why adaptive is the default: it is the only one that does this job.
+
+    A strong low-frequency peak over a weak high-frequency tail is the ordinary
+    shape of a seismic spectrum, and ``t*`` and ``f_c`` are both read off that
+    tail. Flat weighting lets the peak leak into it through the higher-order
+    tapers; adaptive weighting is precisely the mechanism for not doing that.
+    """
+    rng = np.random.default_rng(11)
+    t = np.arange(N) * DT
+    weak = rng.normal(0.0, 1e-9, N)
+    x = 1e-3 * np.sin(2 * np.pi * 2.0 * t) + weak
+
+    band = (20.0, 49.0)
+    truth = FFTEstimator(taper="tukey", taper_alpha=0.05).estimate(weak, DT).band(*band)
+    flat = MultitaperEstimator(adaptive=False).estimate(x, DT).band(*band)
+    adaptive = MultitaperEstimator(adaptive=True).estimate(x, DT).band(*band)
+
+    assert float(np.median(flat.amp / truth.amp)) > 50.0
+    assert float(np.median(adaptive.amp / truth.amp)) < 2.0
+
+
+def test_adaptive_weighting_is_the_default() -> None:
+    assert MultitaperEstimator().adaptive is True
+    assert MultitaperEstimator().estimate(transient(), DT).meta["adaptive"] is True
 
 
 def test_light_taper_fft_tracks_transient_energy_far_better() -> None:
@@ -413,18 +469,34 @@ def test_the_bias_is_specific_to_transients() -> None:
     assert ratio == pytest.approx(1.0, rel=0.03)
 
 
-def test_variance_normalisation_pins_energy_by_construction() -> None:
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_variance_normalisation_is_exactly_a_scalar_multiply(adaptive: bool) -> None:
     """Prieto's convention, offered explicitly because mtspec used it.
 
-    It makes energy recovery exact whatever the taper weighting does — which is
-    why it is off by default: with it on, the Parseval contract that holds
-    every backend to account becomes a tautology.
+    Asserting that it recovers the input energy would be worthless — it pins
+    the integral by construction, so that check cannot fail while the feature
+    exists at all. What *is* falsifiable is that it does so by scaling the
+    whole spectrum uniformly: a frequency-dependent normalisation would pass an
+    energy check and still be wrong.
+
+    This is also what makes the next test true rather than merely observed. A
+    scalar multiply cannot change any ratio *within* a spectrum, so it cannot
+    move the low-frequency plateau relative to the rest, and so it cannot fix
+    the position dependence that plateau inherits.
     """
     x = transient_at(0.10)
-    expected = time_domain_energy(x)
-    for adaptive in (False, True):
-        est = MultitaperEstimator(adaptive=adaptive, normalize_to_variance=True)
-        assert est.estimate(x, DT).energy() == pytest.approx(expected, rel=0.02)
+    raw = MultitaperEstimator(adaptive=adaptive).estimate(x, DT)
+    normalised = MultitaperEstimator(
+        adaptive=adaptive, normalize_to_variance=True
+    ).estimate(x, DT)
+
+    assert normalised.freq == pytest.approx(raw.freq)
+    ratio = normalised.amp / raw.amp
+    assert ratio.std() / ratio.mean() < 1e-12, "normalisation must not reshape"
+    # ...and the constant is the one that corrects total energy, which is the
+    # only thing the caller is actually buying.
+    expected = np.sqrt(time_domain_energy(x) / raw.energy())
+    assert float(ratio.mean()) == pytest.approx(expected, rel=0.02)
 
 
 def test_variance_normalisation_is_off_by_default() -> None:

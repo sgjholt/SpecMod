@@ -22,52 +22,72 @@ jackknife confidence intervals, the F-test for spectral lines, and coherence.
    Measured through this class on an identical 10%-wide burst moved across a
    2000-sample window (estimated energy / true energy):
 
-   ======== ============ ======== ==============
-   Position ``adaptive`` flat     sum of taper^2
-   ======== ============ ======== ==============
-   10%      **0.203**    0.974    0.948
-   25%      1.253        1.076    1.071
-   50%      1.317        1.146    1.148
-   75%      1.244        1.067    1.072
-   90%      **0.149**    0.917    0.951
-   uniform  0.957        --       --
-   ======== ============ ======== ==============
+   ======== ============ ======== ============== ==============
+   Position ``adaptive`` flat     sum of taper^2 FFT, 5% Tukey
+   ======== ============ ======== ============== ==============
+   10%      0.956        0.973    0.948          1.031
+   25%      1.079        1.075    1.071          1.031
+   50%      1.151        1.145    1.148          1.031
+   75%      1.070        1.066    1.072          1.031
+   90%      0.898        0.916    0.951          1.031
+   uniform  1.010        1.009    --             0.995
+   ======== ============ ======== ============== ==============
 
-   Two separate effects, and they behave differently:
+   The bias is modest, +/-15%, it is the *same* under either weighting, and it
+   tracks the summed taper envelope almost exactly — compare against the
+   ``taper^2`` column. That is simply the taper weighting the middle of the
+   record more than the ends, and it applied equally to ``mtspec``, which uses
+   the same tapers. It is therefore present in pre-refactor results rather than
+   introduced here, and nothing is silently corrected — see
+   ``docs/REFACTOR_PLAN.md`` §5.2.6.
 
-   *Without* adaptive weighting the bias is modest, +/-15%, and tracks the
-   summed taper envelope almost exactly — compare the last two columns. That is
-   simply the taper weighting the middle of the record more than the ends.
+   It matters for the published workflow specifically: refining the window to
+   the 1st-99th percentiles of cumulative energy trims the quiet lead-in while
+   the coda tail remains, which pushes the arrival away from centre.
 
-   *With* adaptive weighting an edge-located transient loses 80-85% of its
-   energy. That is far too large to be taper shape, and it is **not understood
-   yet**. The likely cause is that the weights are seeded from the two
-   lowest-order tapers, which are the most centre-concentrated and see almost
-   none of an edge-located burst, so the iteration starts near zero and the
-   weights collapse onto exactly the tapers with no signal in them. Treat the
-   adaptive path as suspect for strongly off-centre arrivals until this is
-   resolved; ``adaptive=False`` is well-behaved throughout.
+   Two ways out, both opt-in. Set ``center=True`` to remove the position
+   dependence entirely — a circular shift leaves ``|FFT|`` unchanged, so it is
+   free. Or prefer :class:`~specmod.transforms.fft.FFTEstimator` with a light
+   taper, which holds 1.03x regardless of position, when absolute energy
+   fidelity matters more than variance reduction.
 
-   Note this matters for the published workflow specifically: refining the
-   window to the 1st-99th percentiles of cumulative energy trims the quiet
-   lead-in while the coda tail remains, which pushes the arrival away from
-   centre.
+.. note::
 
-   The taper-shape part applied equally to ``mtspec``, which uses the same
-   tapers, so it is present in pre-refactor results rather than introduced
-   here. Whether Prieto's Fortran adaptive routine collapses the same way is
-   untested. Nothing is corrected here, because changing it would move
-   published numbers — see ``docs/REFACTOR_PLAN.md`` §5.2.6.
+   **Fixed in this version.** Adaptive weighting previously collapsed for
+   off-centre transients, recovering 0.203 of the true energy at 10% and 0.149
+   at 90% where the table above now reads 0.956 and 0.898.
 
-   If absolute energy fidelity matters more than variance reduction, prefer
-   :class:`~specmod.transforms.fft.FFTEstimator` with a light taper: it holds
-   1.03x regardless of position. The temporal-concentration QC check planned in
-   §4.4.2 measures the property that drives all of this.
+   The cause was a units mismatch, not anything in Thomson's method. Thomson's
+   Eq. 5.1b regularises each weight with ``b_k = (1 - lambda_k) * sigma^2``,
+   where ``sigma^2`` is the broadband power **in the units of the spectrum
+   being weighted**. This module scales its eigenspectra to PSD (multiplying by
+   ``dt``) but passed the record's raw time-domain variance as ``sigma^2``,
+   overstating the leakage floor by a factor of ``1/dt`` — a hundredfold at
+   100 sps. The regularisation term then dominated the denominator, every
+   weight collapsed towards zero, and the collapse was worst exactly where the
+   signal term was smallest: for a burst the tapers barely see. That is why it
+   looked position-dependent, and why stationary noise — where the signal term
+   is large at every frequency — passed cleanly and hid it.
+
+   :func:`_adaptive_weights` now derives ``sigma^2`` from the eigenspectra
+   themselves, which makes it invariant to how they were scaled, and clips the
+   weights at unity as Thomson specifies. With
+   ``normalize_to_variance=True`` putting both on the same absolute scale, the
+   result now matches Prieto's ``multitaper`` to within 0.3% across the band,
+   under both adaptive and flat weighting, for stationary noise and for bursts
+   at 10%, 50% and 90%.
+
+   Because the defect was ours and not the method's, ``adaptive`` defaults back
+   to ``True`` — see the parameter documentation for why that is the better
+   estimator once it works.
 
 References
 ----------
 Thomson, D.J. (1982). Spectrum estimation and harmonic analysis.
 *Proc. IEEE* 70(9), 1055-1096.
+
+Prieto, G.A. (2022). The multitaper spectrum analysis package in Python.
+*Seismological Research Letters* 93(3), 1922-1929.
 """
 
 from __future__ import annotations
@@ -86,13 +106,31 @@ from .base import build_spectrum, prepare_record
 __all__ = ["MultitaperEstimator"]
 
 
+def _broadband_power(eigenspectra: NDArray[np.float64], n: int) -> float:
+    """Mean eigenspectral power per two-sided bin — Thomson's ``sigma^2``.
+
+    This is the white level that a taper's out-of-band leakage would deliver,
+    and it is what Thomson's Eq. 5.1b multiplies by ``1 - lambda_k``. It must
+    be expressed in the *same units as the eigenspectra*, which is the whole
+    reason it is computed from them here rather than taken from the record.
+
+    ``eigenspectra`` holds only the non-negative-frequency bins, so the
+    two-sided sum is recovered by doubling and removing the double-counted DC
+    and (for even ``n``) Nyquist terms.
+    """
+    total = 2.0 * eigenspectra.sum(axis=-1) - eigenspectra[..., 0]
+    if n % 2 == 0:
+        total -= eigenspectra[..., -1]
+    return float((total / n).mean())
+
+
 def _adaptive_weights(
     eigenspectra: NDArray[np.float64],
     eigenvalues: NDArray[np.float64],
-    variance: float,
+    n: int,
     *,
-    max_iter: int = 100,
-    tol: float = 1e-8,
+    max_iter: int = 1000,
+    tol: float = 9.5e-7,
 ) -> NDArray[np.float64]:
     """Thomson's adaptive weights.
 
@@ -102,23 +140,34 @@ def _adaptive_weights(
     seismic spectrum spans orders of magnitude in amplitude, so leakage from the
     peak can swamp the high-frequency tail entirely.
 
-    Iterates ``w_k = sqrt(lambda_k) * S / (lambda_k * S + (1 - lambda_k) * var)``
-    to convergence.
+    Iterates ``w_k = sqrt(lambda_k) * S / (lambda_k * S + b_k)`` to convergence,
+    with ``b_k = (1 - lambda_k) * sigma^2`` from Thomson Eq. 5.1b, and clips the
+    weights at unity so that an unbiased taper is weighted exactly once.
+
+    ``sigma^2`` is derived from the eigenspectra rather than supplied, which
+    makes the routine invariant to how the caller has scaled them. That is not
+    a stylistic choice: passing the record's *time-domain* variance against
+    eigenspectra already scaled to PSD overstates ``b_k`` by a factor of
+    ``1/dt``, which drives every weight towards zero for any record whose
+    energy is concentrated away from the taper centre. See the module docstring.
     """
+    sigma2 = _broadband_power(eigenspectra, n)
+    b_k = (1.0 - eigenvalues)[:, None] * sigma2
+    sqrt_lambda = np.sqrt(eigenvalues)[:, None]
+    lam = eigenvalues[:, None]
+
     # Start from the two least-leaky tapers, as Thomson recommends.
     spectrum = eigenspectra[:2].mean(axis=0)
     weights = np.ones_like(eigenspectra)
     for _ in range(max_iter):
-        denom = (
-            eigenvalues[:, None] * spectrum + (1.0 - eigenvalues[:, None]) * variance
-        )
-        weights = np.sqrt(eigenvalues[:, None]) * spectrum / np.maximum(denom, 1e-300)
+        denom = np.maximum(lam * spectrum + b_k, 1e-300)
+        weights = np.minimum(sqrt_lambda * spectrum / denom, 1.0)
         w2 = weights**2
         updated = (w2 * eigenspectra).sum(axis=0) / np.maximum(w2.sum(axis=0), 1e-300)
-        if np.allclose(updated, spectrum, rtol=tol):
-            spectrum = updated
-            break
+        change = np.abs(updated - spectrum) / np.maximum(updated + spectrum, 1e-300)
         spectrum = updated
+        if change.max() < tol:
+            break
     return weights
 
 
@@ -138,16 +187,28 @@ class MultitaperEstimator:
         tapers are poorly concentrated and add leakage rather than reducing
         variance; exceeding it raises rather than silently degrading.
     adaptive
-        Apply Thomson's adaptive weighting. When ``False`` — the default —
-        tapers are averaged with equal weight.
+        Apply Thomson's adaptive weighting. When ``False``, tapers are averaged
+        with equal weight.
 
-        Adaptive weighting reduces leakage for a *stationary* record, and for
-        one it is the better estimator. It defaults off because it collapses
-        for off-centre transients (see the warning above), and a seismic
-        arrival in a refined window is exactly that. The failure is silent: it
-        returns a plausible spectrum at a fraction of the true amplitude.
-        Turn it on deliberately when the record is stationary, or when
-        reproducing a run that used it.
+        On by default, because leakage suppression is the reason to reach for
+        multitaper at all and flat weighting does not provide it. Measured on a
+        2 Hz line 10^6 times stronger than the background — a mild version of
+        what a seismic spectrum does across its band — the recovered noise
+        floor between 20 and 49 Hz sits **287x** above the truth with flat
+        weighting and **1.1x** with adaptive. A Brune fit reads ``t*`` and
+        ``f_c`` off exactly that high-frequency decay, so an inflated floor is
+        not a cosmetic problem.
+
+        The cost is resolution: adaptive weighting downweights the higher-order
+        tapers wherever leakage would dominate, so it uses fewer effective
+        degrees of freedom and gives a noisier estimate in bands where the
+        signal is strong. Turn it off for a well-conditioned record with little
+        dynamic range, where the extra averaging is worth more than the leakage
+        rejection.
+
+        This defaulted to ``False`` in earlier versions of the refactor, while
+        the implementation was collapsing for off-centre transients. That was
+        our bug and it is fixed; see the note above.
     center
         Circularly shift the record so its energy centroid sits mid-window
         before estimating.
@@ -179,20 +240,22 @@ class MultitaperEstimator:
         xvar / (sum(spec)*df)``). ``mtspec`` wrapped the same lineage, so
         **enable this when reproducing pre-refactor results.**
 
-        It is off by default for one reason: with it on, ``Spectrum.energy()``
-        recovers the input energy *by construction*, so the Parseval check in
-        the test suite stops being a falsifiable contract and starts being a
-        tautology. Leaving it off keeps that check meaningful.
+        Off by default because it costs you a diagnostic. With it on,
+        ``Spectrum.energy()`` returns the input energy whatever else is wrong,
+        so it can no longer tell you whether the normalisation is sound — the
+        one check that would catch a mis-scaled spectrum always passes. Left
+        off, ``energy()`` is a live measurement of your own record.
 
-        It is a calibration, not a derivation. It forces total power to be
-        right and lets the spectral *shape* absorb whatever error remains — so
-        it does not make the long-period level position-independent, only much
-        less position-dependent. See the warning above for measured numbers.
+        It is a calibration, not a derivation: a single scalar chosen to force
+        the integral, which is why it cannot change spectral *shape*. Total
+        power comes out right and the shape absorbs whatever error remains, so
+        it does not make the long-period level position-independent — see the
+        warning above, and ``center`` for something that does.
     """
 
     time_bandwidth: float = 3.0
     n_tapers: int = 5
-    adaptive: bool = False
+    adaptive: bool = True
     center: bool = False
     center_edge_tolerance: float = 0.05
     normalize_to_variance: bool = False
@@ -254,7 +317,7 @@ class MultitaperEstimator:
         eigenspectra = (np.abs(spectra) ** 2) * dt
 
         if self.adaptive and self.n_tapers > 1:
-            weights = _adaptive_weights(eigenspectra, eigenvalues, float(x.var()))
+            weights = _adaptive_weights(eigenspectra, eigenvalues, n)
             w2 = weights**2
             psd = (w2 * eigenspectra).sum(axis=0) / np.maximum(w2.sum(axis=0), 1e-300)
         else:
