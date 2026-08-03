@@ -28,8 +28,9 @@ Why this is vendored rather than imported
 -----------------------------------------
 ``multitaper`` remains an optional extra and is still the better route to
 jackknife intervals and the F-test. This one function is carried here because
-it does not run at all on the version of numpy SpecMod requires, and because a
-corner frequency is read straight off the quantity it estimates.
+it does not run at all on the version of numpy SpecMod requires — see change 1
+— so importing it would make the quadratic estimator unavailable by default.
+Vendoring keeps it a core capability with no optional dependency.
 
 Changes from upstream
 ---------------------

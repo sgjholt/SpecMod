@@ -16,12 +16,12 @@ says it is not simply sharpening everything.
 .. note::
 
    **On a corner frequency it is only a marginal improvement.** Over 40
-   realisations of a true 4 Hz Brune corner the bias flips sign and shrinks a
-   little — ordinary multitaper -0.087, this +0.077 — but the scatter is
-   unchanged (IQR 0.133 against 0.139), so the two are indistinguishable once
-   both are counted. A lightly-tapered FFT beats both (bias -0.020, IQR 0.055)
-   and is around 100x faster. Reach for this estimator when the feature of
-   interest is a peak or a line, not to squeeze a corner.
+   realisations of a true 4 Hz Brune corner: ordinary multitaper biases -0.087
+   and this +0.077, with the same scatter (IQR 0.133 against 0.139), so the two
+   are indistinguishable once both are counted. A lightly-tapered FFT beats
+   both (bias -0.020, IQR 0.055) and is around 100x faster. Reach for this
+   estimator when the feature of interest is a peak or a line, not to squeeze a
+   corner.
 
 .. warning::
 
@@ -30,8 +30,11 @@ says it is not simply sharpening everything.
    handed to it** — see :meth:`QuadraticMultitaperEstimator.estimate`. Omitting
    that scales the estimate down by ``sum(w**2)/K`` wherever the weights bite,
    which on a Brune spectrum is 0.57 in the tail and reads convincingly like a
-   curvature artefact. Upstream omits it and leans on a global variance
-   rescaling that cannot compensate, because the deficit varies with frequency.
+   curvature artefact. The tell is that it vanishes under flat weighting.
+
+   Upstream omits this and leans on a global variance rescaling that cannot
+   compensate, because the deficit varies with frequency — so results taken
+   from ``multitaper``'s own ``MTSpec.qiinv`` carry it.
 
 The cost is a per-frequency least-squares solve, so this is roughly two orders
 of magnitude slower than :class:`~specmod.transforms.multitaper.MultitaperEstimator`.

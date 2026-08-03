@@ -40,7 +40,7 @@ Energy recovered on those same windows (estimated / true):
 | below 0.6 | 4% of traces | 4% of traces | 0% of traces |
 <!-- /measured -->
 
-Regenerate with `python tools/measure_docs.py --write --field`.
+Regenerate with `python tools/measure_docs.py write --field`.
 
 The worst are at position < 8%, and near-source: UR.AQ04 (0.9 km), UR.AQ05
 (3.3 km), UR.AQ03 (6.0 km).
@@ -54,23 +54,16 @@ station `Mw` values are combined by median across stations — so this does not
 move the event `Mw`, but it inflates the scatter and it biases systematically in
 one direction rather than randomly.
 
-> **Revised.** The adaptive column previously read 0.983 median / **0.286**
-> worst / 14% of traces below 0.6, and it was the reason `adaptive` shipped
-> `False`. That was a units bug in our own implementation of Thomson's Eq. 5.1b
-> regularisation term — see `specmod.transforms.multitaper` — and it is fixed.
-> Adaptive and flat weighting now agree to within 1% on every trace here, which
-> is the expected result: the residual bias is taper shape, and both use the
-> same tapers.
->
-> The flat and FFT columns are unchanged from the original run, which is what
-> makes the revision trustworthy: the same harness reproduces the two numbers
-> that should not have moved and moves only the one that should.
+Adaptive and flat weighting agree to within 1% on every trace here, which is
+what should happen: the residual is taper shape, and both use the same tapers.
+A discrepancy between them on real windows would point at a weighting bug, not
+at the tapers — see the σ² units gotcha in
+[`../choosing_a_transform.md`](../choosing_a_transform.md).
 
 ## Consequences taken
 
 1. `MultitaperEstimator.adaptive` and `TransformConfig.adaptive` default to
-   **True**, matching what `mtspec` did. They shipped `False` while the defect
-   above stood.
+   **True**, matching what `mtspec` did.
 2. `studies/magna_2020_paper.toml` pins `adaptive = true` explicitly, so a
    changed default cannot silently alter what that file means. Whether the
    published run actually used it is unverified — `mtspec` defaulted to on, and
@@ -82,11 +75,11 @@ one direction rather than randomly.
 
 ## Open
 
-Whether `mtspec` and this implementation now agree numerically on real windows
-is still untested and needs the legacy environment — that is the §5.2.6
-three-way comparison. It is a weaker question than it was: with the collapse
-fixed, we already agree with Prieto's `multitaper` (`mtspec`'s successor, same
-lineage) to within 0.3% on synthetic records under both weightings.
+Whether `mtspec` and this implementation agree numerically on real windows is
+untested and needs the legacy environment — that is the §5.2.6 three-way
+comparison. Synthetic records already agree with Prieto's `multitaper`
+(`mtspec`'s successor, same lineage) to within 0.3% under both weightings, so
+the open question is specifically about real data.
 
 **Still compare near-source stations first**, since that is where any remaining
 divergence would show.

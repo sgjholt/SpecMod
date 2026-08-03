@@ -163,15 +163,14 @@ def test_adaptive_weights_are_renormalised_before_the_curvature_fit(
     wherever the weights bite — which on a Brune spectrum is 0.80 at 10-25 Hz
     and 0.57 at 25-49 Hz.
 
-    The symptom was a smooth droop confined to the falling tail, which is a
-    thoroughly plausible curvature artefact, and it was briefly documented as
-    one. What gives it away is that it vanishes entirely with ``adaptive=False``
-    — a genuine property of the quadratic correction would not care how the
-    eigencoefficients were weighted going in.
+    The symptom is a smooth droop confined to the falling tail, which reads
+    convincingly as a curvature artefact. The tell is that it vanishes entirely
+    under ``adaptive=False`` — a genuine property of the quadratic correction
+    cannot depend on how the eigencoefficients were weighted going in.
 
-    So this asserts against *both* weightings: the quadratic estimate must
-    track the ordinary one in a region of gentle curvature no matter how the
-    tapers are weighted.
+    Hence the parametrisation: the quadratic estimate must track the ordinary
+    one in a region of gentle curvature under *either* weighting. Asserting
+    only the adaptive case would pass with the bug present.
     """
     plain = MultitaperEstimator(time_bandwidth=NW, n_tapers=K, adaptive=adaptive)
     quad = QuadraticMultitaperEstimator(
@@ -196,13 +195,13 @@ def test_adaptive_weights_are_renormalised_before_the_curvature_fit(
 def test_does_not_bias_a_corner_frequency_low() -> None:
     """It is no worse than the ordinary estimate at the job SpecMod exists for.
 
-    This existed in an earlier revision asserting the opposite — that the
-    quadratic estimate dragged ``f_c`` down — which was the weight-normalisation
-    bug above showing through. Kept, inverted, as the guard that would catch it
-    coming back.
+    Paired with the weight-normalisation test above: that bug manifests as a
+    suppressed high-frequency tail, and a suppressed tail drags a fitted corner
+    down. This checks the consequence rather than the mechanism, so the two
+    fail independently and a regression is easier to localise.
 
-    A lightly-tapered FFT still recovers ``f_c`` best; see
-    docs/choosing_a_transform.md.
+    A lightly-tapered FFT recovers ``f_c`` better than either multitaper
+    variant; see docs/choosing_a_transform.md.
     """
 
     def fit_fc(spectrum: object) -> float:

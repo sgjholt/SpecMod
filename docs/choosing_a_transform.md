@@ -55,22 +55,22 @@ present in pre-refactor results rather than introduced here. The FFT column is
 the contrast: a 5% Tukey window is nearly flat across the record, so it barely
 cares where the burst sits.
 
-> **Changed in this version.** The adaptive column above used to read 0.039 at
-> 6% and 0.149 at 90% — an apparent "adaptive collapse" for off-centre
-> arrivals. That was a bug in *our* implementation, not a property of Thomson's
-> method, and it is fixed. Thomson's Eq. 5.1b regularises each weight with
-> `(1 − λₖ)·σ²`, and `σ²` must be in the units of the spectrum being weighted;
-> we were passing the record's time-domain variance against PSD-scaled
-> eigenspectra, overstating it by `1/dt` — 100× at 100 sps. The regularisation
-> then swamped the signal term and every weight collapsed, worst exactly where
-> the tapers saw least of the burst. Stationary noise passed cleanly throughout,
-> which is why it hid for so long.
+Both weightings track the envelope because the residual *is* the envelope.
+With `normalize_to_variance=True` putting them on the same absolute scale, the
+estimate here agrees with Prieto's `multitaper` to within **0.3%** across the
+band, under either weighting, for stationary noise and for bursts at 10%, 50%
+and 90%.
+
+> **Gotcha if you implement Thomson weighting yourself.** Eq. 5.1b regularises
+> each weight with `(1 − λₖ)·σ²`, and `σ²` has to be in the units of the
+> spectrum being weighted. Pass a record's *time-domain* variance against
+> PSD-scaled eigenspectra and you overstate it by `1/dt` — 100× at 100 sps. The
+> regularisation then swamps the signal term, every weight collapses toward
+> zero, and it is worst exactly where the tapers see least of the signal. The
+> result looks like a plausible spectrum at a fraction of the true amplitude.
 >
-> `adaptive` consequently **defaults back to `True`** (it had shipped `False`
-> while the defect stood). With `normalize_to_variance=True` putting both on the
-> same absolute scale, our estimate now matches Prieto's `multitaper` to within
-> **0.3%** across the band, under both weightings, for noise and for bursts at
-> 10%, 50% and 90%.
+> Stationary noise is *insensitive* to this, so a Parseval check on white noise
+> will not catch it. Test with an off-centre transient.
 
 ### Why adaptive weighting is the default
 
@@ -403,29 +403,27 @@ Over 40 realisations of a true 4 Hz Brune corner:
 | multitaper | 3.913 | −0.087 | 0.133 |
 | quadratic | 4.077 | +0.077 | 0.139 |
 
-The bias flips sign and shrinks slightly, but the scatter is unchanged, so
-once both are accounted for the two multitaper variants are indistinguishable.
-**A lightly-tapered FFT still recovers a corner frequency better than either**,
-and it does so about 100× faster. Reach for the quadratic estimator when the
-feature of interest is a peak or a line — an instrumental tone, a site
-resonance, a spectral hole — not to squeeze a corner.
+The two multitaper variants carry opposite-signed bias of similar size and the
+same scatter, so once both are counted they are indistinguishable. **A
+lightly-tapered FFT recovers a corner frequency better than either**, and about
+100× faster. Reach for the quadratic estimator when the feature of interest is
+a peak or a line — an instrumental tone, a site resonance, a spectral hole —
+not to squeeze a corner.
 
-> **An earlier revision of this page said the opposite**: that the quadratic
-> estimate droops a falling tail by 19% and drags `f_c` down to 3.44 Hz. That
-> was a bug in SpecMod's wrapper, not a property of the method. `qiinv` builds
-> cross-spectra from `wt·yk` and never divides by `Σw²`, so its diagonal
-> averages to `(1/K)·Σw²|y|²` where the adaptive estimate is `Σw²|y|²/Σw²`.
-> Passing raw Thomson weights scaled the result down by `Σw²/K` — 0.80 at
-> 10–25 Hz, 0.57 at 25–49 Hz — which looks exactly like a curvature artefact
-> confined to the tail.
+> **Gotcha if you call `qiinv` directly**, including through Prieto's package.
+> It builds cross-spectra from `wt·yk` and never divides by `Σw²`, so its
+> diagonal averages to `(1/K)·Σw²|y|²` where the adaptive estimate is
+> `Σw²|y|²/Σw²`. Hand it raw Thomson weights and the result is scaled down by
+> `Σw²/K` wherever the weights bite — on a Brune spectrum that is 0.80 at
+> 10–25 Hz and 0.57 at 25–49 Hz.
 >
-> What gives it away is that it vanished entirely with `adaptive=False`; a real
-> property of the correction would not care how the eigencoefficients were
-> weighted going in. The weights are now renormalised so `Σw² = K` before the
-> curvature fit, and `tests/test_quadratic.py` asserts agreement under *both*
-> weightings so it cannot come back. Upstream omits this normalisation and
-> relies on its global variance rescaling to mask it, which cannot work: the
-> deficit is frequency-dependent.
+> The symptom is a smooth deficit confined to the falling tail, which reads
+> convincingly as a curvature artefact. The tell is that it disappears with
+> flat weighting: a real property of the correction cannot depend on how the
+> eigencoefficients were weighted going in. SpecMod renormalises so `Σw² = K`
+> before the fit. Upstream does not, and leans on its global variance rescaling
+> to mask it — which cannot work, because the deficit varies with frequency and
+> that is a single scalar.
 
 It costs a least-squares solve per frequency bin, so it is roughly two orders
 of magnitude slower than the ordinary estimator. Not one for a whole catalogue.

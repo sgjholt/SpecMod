@@ -189,18 +189,17 @@ pre-refactor results rather than introduced here.
 The FFT curve (green) is the contrast: a 5% Tukey window is nearly flat across
 the record, so it barely cares where the burst sits.
 
-> **This changed.** Until recently the adaptive curve collapsed at both edges,
-> losing 80–95% of the energy, and `adaptive` shipped `False` because of it.
-> That was a bug in SpecMod, not a property of Thomson's method. His Eq. 5.1b
-> regularises each weight with `(1 − λₖ)·σ²`, where `σ²` must be in the units
-> of the spectrum being weighted; SpecMod passed the record's time-domain
-> variance against PSD-scaled eigenspectra, overstating it by `1/dt` — 100× at
-> 100 sps. The regularisation swamped the signal term, every weight collapsed,
-> and it was worst exactly where the tapers saw least of the burst.
+> **Gotcha if you roll your own Thomson weighting.** Eq. 5.1b regularises each
+> weight with `(1 − λₖ)·σ²`, and `σ²` has to be in the units of the spectrum
+> being weighted. Pass a record's *time-domain* variance against PSD-scaled
+> eigenspectra and you overstate it by `1/dt` — 100× at 100 sps. The
+> regularisation then swamps the signal term, the weights collapse toward zero,
+> and the damage is worst exactly where the tapers see least of the signal. You
+> get a plausible-looking spectrum at a fraction of the true amplitude.
 >
-> Stationary noise passed cleanly throughout, which is why it hid: the bug only
-> showed for records that violate the stationarity assumption in the first
-> place. `adaptive` now defaults to `True`, matching `mtspec`.
+> Stationary noise is blind to this, so a Parseval check on white noise will
+> not catch it. Test with an off-centre transient — which is the case this
+> whole notebook is about.
 """)
 
 md("""

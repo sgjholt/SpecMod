@@ -53,33 +53,16 @@ jackknife confidence intervals, the F-test for spectral lines, and coherence.
 
 .. note::
 
-   **Fixed in this version.** Adaptive weighting previously collapsed for
-   off-centre transients, recovering 0.203 of the true energy at 10% and 0.149
-   at 90% where the table above now reads 0.956 and 0.898.
-
-   The cause was a units mismatch, not anything in Thomson's method. Thomson's
-   Eq. 5.1b regularises each weight with ``b_k = (1 - lambda_k) * sigma^2``,
-   where ``sigma^2`` is the broadband power **in the units of the spectrum
-   being weighted**. This module scales its eigenspectra to PSD (multiplying by
-   ``dt``) but passed the record's raw time-domain variance as ``sigma^2``,
-   overstating the leakage floor by a factor of ``1/dt`` — a hundredfold at
-   100 sps. The regularisation term then dominated the denominator, every
-   weight collapsed towards zero, and the collapse was worst exactly where the
-   signal term was smallest: for a burst the tapers barely see. That is why it
-   looked position-dependent, and why stationary noise — where the signal term
-   is large at every frequency — passed cleanly and hid it.
-
-   :func:`_adaptive_weights` now derives ``sigma^2`` from the eigenspectra
-   themselves, which makes it invariant to how they were scaled, and clips the
-   weights at unity as Thomson specifies. With
+   **Validated against Prieto's** ``multitaper``. With
    ``normalize_to_variance=True`` putting both on the same absolute scale, the
-   result now matches Prieto's ``multitaper`` to within 0.3% across the band,
-   under both adaptive and flat weighting, for stationary noise and for bursts
-   at 10%, 50% and 90%.
+   two agree to within 0.3% across the band, under adaptive and flat weighting
+   alike, for stationary noise and for bursts at 10%, 50% and 90%.
 
-   Because the defect was ours and not the method's, ``adaptive`` defaults back
-   to ``True`` — see the parameter documentation for why that is the better
-   estimator once it works.
+   The check that earns that is the transient one. A Parseval test on
+   stationary noise passes for a whole family of weighting errors — the signal
+   term is large at every frequency, so the regularisation in Eq. 5.1b never
+   gets a chance to dominate. See :func:`_adaptive_weights` for the units trap
+   that hides there.
 
 References
 ----------
@@ -240,10 +223,6 @@ class MultitaperEstimator:
         signal is strong. Turn it off for a well-conditioned record with little
         dynamic range, where the extra averaging is worth more than the leakage
         rejection.
-
-        This defaulted to ``False`` in earlier versions of the refactor, while
-        the implementation was collapsing for off-centre transients. That was
-        our bug and it is fixed; see the note above.
     center
         Circularly shift the record so its energy centroid sits mid-window
         before estimating.

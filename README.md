@@ -72,10 +72,10 @@ worked walkthrough in
 ### Why the units are typed
 
 A spectrum carries its ground-motion domain and amplitude convention as
-attributes. Previously both lived in module-level globals that had to be kept in
-sync by hand with however many times `.inte()` or `.diff()` had been called;
-getting it wrong returned a wrong seismic moment with no error anywhere. It is
-now a type error instead.
+attributes rather than in module-level globals. The alternative is keeping those
+globals in sync by hand with however many times `.inte()` or `.diff()` has been
+called, where getting it wrong returns a wrong seismic moment with no error
+anywhere. Here it is a type error.
 
 Amplitude normalisation is keyed off the physical record duration, never off the
 length of the frequency axis, so zero-padding refines the frequency grid and
