@@ -220,19 +220,43 @@ def quadratic_table() -> str:
         for est in (plain, quad)
     ]
 
-    # 4. a Brune tail: the case it is bad at
+    # 4. a Brune corner: the job SpecMod exists for
     f = np.fft.rfftfreq(n, DT)
     amp = 1e-6 / (1.0 + (f / 4.0) ** 2)
     amp[0] = 0.0
-    tails = []
-    for _ in range(8):  # successive draws from rng, not reseeded
-        ph = rng.uniform(-np.pi, np.pi, f.size)
+
+    def brune(seed: int) -> np.ndarray:
+        r = np.random.default_rng(seed)
+        ph = r.uniform(-np.pi, np.pi, f.size)
         ph[0] = 0.0
         ph[-1] = 0.0
-        x = np.fft.irfft(amp * np.exp(1j * ph), n=n) * n
-        a = plain.estimate(x, DT).band(25.0, 49.0).amp
-        b = quad.estimate(x, DT).band(25.0, 49.0).amp
-        tails.append(float(np.median(b / a)))
+        return np.fft.irfft(amp * np.exp(1j * ph), n=n) * n
+
+    def fit_fc(spectrum: object) -> float:
+        ff, a = spectrum.freq, spectrum.amp  # type: ignore[attr-defined]
+        m = (ff > 0.3) & (ff < 45.0)
+        ff, a = ff[m], np.log10(a[m])
+        best, best_fc = np.inf, np.nan
+        for fc in np.geomspace(1.0, 16.0, 300):
+            model = -np.log10(1.0 + (ff / fc) ** 2)
+            res = float(np.sum((a - model - np.mean(a - model)) ** 2))
+            if res < best:
+                best, best_fc = res, fc
+        return float(best_fc)
+
+    fcs = [
+        np.median([fit_fc(est.estimate(brune(s), DT)) for s in range(12)])
+        for est in (plain, quad)
+    ]
+    tails = [
+        float(
+            np.median(
+                quad.estimate(brune(s), DT).band(25.0, 49.0).amp
+                / plain.estimate(brune(s), DT).band(25.0, 49.0).amp
+            )
+        )
+        for s in range(8)
+    ]
 
     rows = [
         ["single line, peak / true", f"{peak[0]:.2f}", f"**{peak[1]:.2f}**"],
@@ -242,10 +266,11 @@ def quadratic_table() -> str:
             f"**{contrast(quad):.1f}**",
         ],
         ["white noise, level ratio to multitaper", "1.00", f"{ctrl[1] / ctrl[0]:.2f}"],
+        ["Brune tail 25-49 Hz, ratio to multitaper", "1.00", f"{np.median(tails):.2f}"],
         [
-            "Brune tail 25-49 Hz, ratio to multitaper",
-            "1.00",
-            f"**{np.median(tails):.2f}**",
+            "Brune corner, fitted f_c (true 4.0 Hz)",
+            f"{fcs[0]:.2f}",
+            f"{fcs[1]:.2f}",
         ],
     ]
     return table(["Measurement", "multitaper", "quadratic"], rows)

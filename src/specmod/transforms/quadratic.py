@@ -13,19 +13,25 @@ peak-to-trough contrast. On white noise — no curvature to correct — it agree
 with the ordinary estimate to within a few percent, which is the control that
 says it is not simply sharpening everything.
 
+.. note::
+
+   **On a corner frequency it is only a marginal improvement.** Over 40
+   realisations of a true 4 Hz Brune corner the bias flips sign and shrinks a
+   little — ordinary multitaper -0.087, this +0.077 — but the scatter is
+   unchanged (IQR 0.133 against 0.139), so the two are indistinguishable once
+   both are counted. A lightly-tapered FFT beats both (bias -0.020, IQR 0.055)
+   and is around 100x faster. Reach for this estimator when the feature of
+   interest is a peak or a line, not to squeeze a corner.
+
 .. warning::
 
-   **It is not the right tool for fitting a corner frequency, despite the
-   corner being a curvature feature.** The correction models the spectrum as
-   quadratic in *linear* frequency across the inner band, and a source spectrum
-   falling as ``f**-2`` is badly described that way. Measured on a synthetic
-   Brune record, the estimate droops in the far tail — about 9% low at
-   10-25 Hz and 20% low at 25-49 Hz — which drags a fitted ``f_c`` down with
-   it. Over 12 realisations of a 4 Hz corner: FFT recovered 3.99 Hz, ordinary
-   multitaper 3.89 Hz, and this estimator 3.44 Hz.
-
-   Reach for it where the feature of interest is a *peak or a line* — an
-   instrumental tone, a site resonance, a spectral hole — not a monotone decay.
+   ``qiinv`` builds cross-spectra from ``wt * yk`` and never divides by
+   ``sum(w**2)``, so **adaptive weights must be renormalised before they are
+   handed to it** — see :meth:`QuadraticMultitaperEstimator.estimate`. Omitting
+   that scales the estimate down by ``sum(w**2)/K`` wherever the weights bite,
+   which on a Brune spectrum is 0.57 in the tail and reads convincingly like a
+   curvature artefact. Upstream omits it and leans on a global variance
+   rescaling that cannot compensate, because the deficit varies with frequency.
 
 The cost is a per-frequency least-squares solve, so this is roughly two orders
 of magnitude slower than :class:`~specmod.transforms.multitaper.MultitaperEstimator`.
@@ -144,6 +150,18 @@ class QuadraticMultitaperEstimator:
 
         if self.adaptive:
             weights = _adaptive_weights(eigenspectra, eigenvalues, n)
+            # qiinv forms cross-spectra of ``wt * yk`` and never divides by
+            # ``sum(w**2)``, so its diagonal averages to ``(1/K) sum(w**2 |y|**2)``
+            # where the adaptive estimate is ``sum(w**2 |y|**2) / sum(w**2)``.
+            # Renormalising per frequency so ``sum(w**2) = K`` makes the two
+            # agree. Without it the estimate is scaled down by ``sum(w**2)/K``
+            # wherever the weights bite — 0.57 in the high-frequency tail of a
+            # Brune spectrum, which reads exactly like a curvature artefact and
+            # is not one. Upstream leaves this out and relies on its global
+            # variance renormalisation to hide it, which cannot: the deficit is
+            # frequency-dependent.
+            scale = self.n_tapers / np.maximum((weights**2).sum(axis=0), 1e-300)
+            weights = weights * np.sqrt(scale)
         else:
             weights = np.ones_like(eigenspectra)
 

@@ -137,40 +137,95 @@ def test_leaves_a_curvature_free_spectrum_alone() -> None:
     assert ratio == pytest.approx(1.0, abs=0.10)
 
 
-def test_droops_a_steeply_falling_tail() -> None:
-    """A documented limitation, pinned so it cannot silently change.
-
-    The correction models the spectrum as quadratic in *linear* frequency
-    across the inner band. A source spectrum falling as ``f**-2`` is poorly
-    described that way, and the estimate is pulled low in the far tail — about
-    20% by 25-49 Hz on the synthetic Brune below. That biases a fitted corner
-    frequency *low*, which is why this estimator is not the default for source
-    fitting. See docs/choosing_a_transform.md.
-    """
-    fc, omega = 4.0, 1e-6
+def brune_realisation(seed: int, fc: float = 4.0, omega: float = 1e-6) -> np.ndarray:
+    """A record whose true amplitude spectrum is Brune with corner ``fc``."""
     f = np.fft.rfftfreq(N, DT)
     amp = omega / (1.0 + (f / fc) ** 2)
     amp[0] = 0.0
+    rng = np.random.default_rng(seed)
+    phase = rng.uniform(-np.pi, np.pi, f.size)
+    phase[0] = 0.0
+    if N % 2 == 0:
+        phase[-1] = 0.0
+    return np.fft.irfft(amp * np.exp(1j * phase), n=N) * N
 
-    ratios = []
-    for seed in range(8):
-        rng = np.random.default_rng(seed)
-        phase = rng.uniform(-np.pi, np.pi, f.size)
-        phase[0] = 0.0
-        if N % 2 == 0:
-            phase[-1] = 0.0
-        x = np.fft.irfft(amp * np.exp(1j * phase), n=N) * N
 
-        plain = MultitaperEstimator(time_bandwidth=NW, n_tapers=K).estimate(x, DT)
-        quad = QuadraticMultitaperEstimator(time_bandwidth=NW, n_tapers=K).estimate(
-            x, DT
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_adaptive_weights_are_renormalised_before_the_curvature_fit(
+    adaptive: bool,
+) -> None:
+    """Regression test for a scaling bug that looked exactly like a real result.
+
+    ``qiinv`` builds cross-spectra from ``wt * yk`` and never divides by
+    ``sum(w**2)``, so its diagonal averages to ``(1/K) sum(w**2 |y|**2)`` where
+    the adaptive estimate is ``sum(w**2 |y|**2) / sum(w**2)``. Feeding it raw
+    Thomson weights therefore scales the result down by ``sum(w**2)/K``
+    wherever the weights bite — which on a Brune spectrum is 0.80 at 10-25 Hz
+    and 0.57 at 25-49 Hz.
+
+    The symptom was a smooth droop confined to the falling tail, which is a
+    thoroughly plausible curvature artefact, and it was briefly documented as
+    one. What gives it away is that it vanishes entirely with ``adaptive=False``
+    — a genuine property of the quadratic correction would not care how the
+    eigencoefficients were weighted going in.
+
+    So this asserts against *both* weightings: the quadratic estimate must
+    track the ordinary one in a region of gentle curvature no matter how the
+    tapers are weighted.
+    """
+    plain = MultitaperEstimator(time_bandwidth=NW, n_tapers=K, adaptive=adaptive)
+    quad = QuadraticMultitaperEstimator(
+        time_bandwidth=NW, n_tapers=K, adaptive=adaptive
+    )
+    ratios = [
+        float(
+            np.median(
+                quad.estimate(brune_realisation(s), DT).band(25.0, 49.0).amp
+                / plain.estimate(brune_realisation(s), DT).band(25.0, 49.0).amp
+            )
         )
-        tail = (25.0, 49.0)
-        ratios.append(float(np.median(quad.band(*tail).amp / plain.band(*tail).amp)))
+        for s in range(8)
+    ]
+    assert float(np.median(ratios)) == pytest.approx(1.0, abs=0.15), (
+        f"quadratic/multitaper is {np.median(ratios):.3f} in the tail with "
+        f"adaptive={adaptive}; a discrepancy that depends on the weighting is "
+        f"a normalisation bug, not a curvature effect"
+    )
 
-    assert np.median(ratios) < 0.95, (
-        "the tail droop has gone; if this is a deliberate improvement, update "
-        "docs/choosing_a_transform.md and tests/test_quadratic.py together"
+
+def test_does_not_bias_a_corner_frequency_low() -> None:
+    """It is no worse than the ordinary estimate at the job SpecMod exists for.
+
+    This existed in an earlier revision asserting the opposite — that the
+    quadratic estimate dragged ``f_c`` down — which was the weight-normalisation
+    bug above showing through. Kept, inverted, as the guard that would catch it
+    coming back.
+
+    A lightly-tapered FFT still recovers ``f_c`` best; see
+    docs/choosing_a_transform.md.
+    """
+
+    def fit_fc(spectrum: object) -> float:
+        f, a = spectrum.freq, spectrum.amp  # type: ignore[attr-defined]
+        m = (f > 0.3) & (f < 45.0)
+        f, a = f[m], np.log10(a[m])
+        best, best_fc = np.inf, np.nan
+        for fc in np.geomspace(1.0, 16.0, 200):
+            model = -np.log10(1.0 + (f / fc) ** 2)
+            residual = float(np.sum((a - model - np.mean(a - model)) ** 2))
+            if residual < best:
+                best, best_fc = residual, fc
+        return float(best_fc)
+
+    quad = QuadraticMultitaperEstimator(time_bandwidth=NW, n_tapers=K)
+    plain = MultitaperEstimator(time_bandwidth=NW, n_tapers=K)
+    q = np.median([fit_fc(quad.estimate(brune_realisation(s), DT)) for s in range(12)])
+    p = np.median([fit_fc(plain.estimate(brune_realisation(s), DT)) for s in range(12)])
+
+    assert abs(q - 4.0) < 0.5, f"quadratic recovered fc = {q:.3f} against a true 4.0"
+    assert abs(q - 4.0) <= abs(p - 4.0) + 0.05, (
+        f"quadratic ({q:.3f}) should not be further from the true corner than "
+        f"the ordinary estimate ({p:.3f})"
     )
 
 

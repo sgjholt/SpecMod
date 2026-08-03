@@ -382,9 +382,10 @@ bias it causes.
 | Measurement | multitaper | quadratic |
 |---|---|---|
 | single line, peak / true | 0.87 | **1.02** |
-| two lines 0.70 Hz apart, peak/trough | 8.9 | **12.3** |
-| white noise, level ratio to multitaper | 1.00 | 1.00 |
-| Brune tail 25-49 Hz, ratio to multitaper | 1.00 | **0.81** |
+| two lines 0.70 Hz apart, peak/trough | 8.9 | **12.2** |
+| white noise, level ratio to multitaper | 1.00 | 1.01 |
+| Brune tail 25-49 Hz, ratio to multitaper | 1.00 | 1.07 |
+| Brune corner, fitted f_c (true 4.0 Hz) | 3.91 | 4.09 |
 <!-- /measured -->
 
 The first row is the clearest statement of what it does: a pure sine has a
@@ -393,16 +394,38 @@ while this recovers 102%. The white-noise row is the control — no curvature, s
 nothing should change, and nothing does. Without that row the first two would
 be equally consistent with an estimator that simply sharpens everything.
 
-> **Do not reach for it to fit a corner frequency**, despite a corner being a
-> curvature feature. The correction models the spectrum as quadratic in
-> *linear* frequency across the inner band, and a source spectrum falling as
-> `f⁻²` is badly described that way. The far tail droops — 9% low at 10–25 Hz,
-> 19% at 25–49 Hz — which drags the fitted `f_c` down with it. Over 12
-> realisations of a true 4 Hz corner: FFT recovered 3.99 Hz, ordinary
-> multitaper 3.89 Hz, quadratic **3.44 Hz**.
+On a corner it is a small improvement over the ordinary estimate and no more.
+Over 40 realisations of a true 4 Hz Brune corner:
+
+| Estimator | median `f_c` | bias | IQR |
+|---|---|---|---|
+| FFT, light taper | 3.980 | **−0.020** | **0.055** |
+| multitaper | 3.913 | −0.087 | 0.133 |
+| quadratic | 4.077 | +0.077 | 0.139 |
+
+The bias flips sign and shrinks slightly, but the scatter is unchanged, so
+once both are accounted for the two multitaper variants are indistinguishable.
+**A lightly-tapered FFT still recovers a corner frequency better than either**,
+and it does so about 100× faster. Reach for the quadratic estimator when the
+feature of interest is a peak or a line — an instrumental tone, a site
+resonance, a spectral hole — not to squeeze a corner.
+
+> **An earlier revision of this page said the opposite**: that the quadratic
+> estimate droops a falling tail by 19% and drags `f_c` down to 3.44 Hz. That
+> was a bug in SpecMod's wrapper, not a property of the method. `qiinv` builds
+> cross-spectra from `wt·yk` and never divides by `Σw²`, so its diagonal
+> averages to `(1/K)·Σw²|y|²` where the adaptive estimate is `Σw²|y|²/Σw²`.
+> Passing raw Thomson weights scaled the result down by `Σw²/K` — 0.80 at
+> 10–25 Hz, 0.57 at 25–49 Hz — which looks exactly like a curvature artefact
+> confined to the tail.
 >
-> Use it where the feature of interest is a *peak or a line* — an instrumental
-> tone, a site resonance, a spectral hole — not a monotone decay.
+> What gives it away is that it vanished entirely with `adaptive=False`; a real
+> property of the correction would not care how the eigencoefficients were
+> weighted going in. The weights are now renormalised so `Σw² = K` before the
+> curvature fit, and `tests/test_quadratic.py` asserts agreement under *both*
+> weightings so it cannot come back. Upstream omits this normalisation and
+> relies on its global variance rescaling to mask it, which cannot work: the
+> deficit is frequency-dependent.
 
 It costs a least-squares solve per frequency bin, so it is roughly two orders
 of magnitude slower than the ordinary estimator. Not one for a whole catalogue.
