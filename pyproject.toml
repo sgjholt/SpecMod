@@ -115,6 +115,11 @@ ignore = [
 # table rather than stop the whole tool from importing.
 "tools/measure_docs.py" = ["PLC0415"]
 
+# Vendored third-party code. Its structure is kept close to upstream so the
+# diff stays reviewable; restructuring it to suit our lint rules would defeat
+# the point of vendoring it verbatim.
+"src/specmod/_vendor/*" = ["PLR0915"]
+
 # Findings ruff confirms and the plan already tracks, silenced only so CI is
 # green while the modules that carry them are still awaiting rewrite:
 #   PLW0602/PLW0603  import-time global state              (§2.3, phase 2)

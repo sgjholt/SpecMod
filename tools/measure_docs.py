@@ -181,6 +181,76 @@ def centring_table() -> str:
     return table(["Burst start", "`center=False`", "`center=True`"], rows)
 
 
+@synthetic("quadratic_table")
+def quadratic_table() -> str:
+    """What the curvature correction buys, and what it costs.
+
+    Deliberately reports both directions. The peak and contrast rows are the
+    case it is built for; the Brune tail row is the case it should not be used
+    for, and omitting it would leave the docs recommending it for exactly the
+    job it is worst at.
+    """
+    from specmod.transforms import QuadraticMultitaperEstimator
+
+    n, nw, k = 1024, 3.0, 5
+    t = np.arange(n) * DT
+    w = nw / (n * DT)  # multitaper half-bandwidth, Hz
+    plain = MultitaperEstimator(time_bandwidth=nw, n_tapers=k)
+    quad = QuadraticMultitaperEstimator(time_bandwidth=nw, n_tapers=k)
+    rng = np.random.default_rng(3)
+
+    # 1. a single line, whose true Fourier amplitude is A*T/2
+    line = np.sin(2 * np.pi * 5.0 * t) + rng.normal(0.0, 0.02, n)
+    true_peak = 1.0 * (n * DT) / 2.0
+    peak = [est.estimate(line, DT).amp.max() / true_peak for est in (plain, quad)]
+
+    # 2. two lines just past the resolution limit
+    f2 = 5.0 + 1.2 * 2 * w
+    pair = line + np.sin(2 * np.pi * f2 * t)
+
+    def contrast(est: object) -> float:
+        s = est.estimate(pair, DT)  # type: ignore[attr-defined]
+        trough = s.amp[(s.freq > 5.0) & (s.freq < f2)]
+        return float(s.amp.max() / trough.min())
+
+    # 3. white noise: no curvature, so nothing should change
+    flat = rng.normal(0.0, 1e-6, n)
+    ctrl = [
+        float(np.median(est.estimate(flat, DT).band(2.0, 40.0).amp))
+        for est in (plain, quad)
+    ]
+
+    # 4. a Brune tail: the case it is bad at
+    f = np.fft.rfftfreq(n, DT)
+    amp = 1e-6 / (1.0 + (f / 4.0) ** 2)
+    amp[0] = 0.0
+    tails = []
+    for _ in range(8):  # successive draws from rng, not reseeded
+        ph = rng.uniform(-np.pi, np.pi, f.size)
+        ph[0] = 0.0
+        ph[-1] = 0.0
+        x = np.fft.irfft(amp * np.exp(1j * ph), n=n) * n
+        a = plain.estimate(x, DT).band(25.0, 49.0).amp
+        b = quad.estimate(x, DT).band(25.0, 49.0).amp
+        tails.append(float(np.median(b / a)))
+
+    rows = [
+        ["single line, peak / true", f"{peak[0]:.2f}", f"**{peak[1]:.2f}**"],
+        [
+            f"two lines {f2 - 5.0:.2f} Hz apart, peak/trough",
+            f"{contrast(plain):.1f}",
+            f"**{contrast(quad):.1f}**",
+        ],
+        ["white noise, level ratio to multitaper", "1.00", f"{ctrl[1] / ctrl[0]:.2f}"],
+        [
+            "Brune tail 25-49 Hz, ratio to multitaper",
+            "1.00",
+            f"**{np.median(tails):.2f}**",
+        ],
+    ]
+    return table(["Measurement", "multitaper", "quadratic"], rows)
+
+
 @synthetic("leakage_table")
 def leakage_table() -> str:
     """Why adaptive weighting is the default: flat weighting does not suppress

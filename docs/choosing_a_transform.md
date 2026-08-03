@@ -14,6 +14,7 @@ The short version:
 | Reproducing pre-refactor or published SpecMod results | `PrietoMultitaperEstimator` — same lineage as `mtspec` |
 | Confidence intervals, or testing for instrumental tones | `PrietoMultitaperEstimator` |
 | A stationary record — noise windows, ambient measurements | `MultitaperEstimator` or `WelchEstimator` |
+| Resolving a peak, tone or resonance without smoothing it down | `QuadraticMultitaperEstimator` |
 
 ---
 
@@ -366,6 +367,54 @@ than as a check. And `confidence_interval()` raises for
 `weighting="constant"`: an upstream shape bug in `multitaper.utils.jackspec`
 leaves the degrees-of-freedom array two-dimensional, so the interval broadcasts
 to `(nfft, nfft)`. `adaptive` and `eigenvalue` are unaffected.
+
+### `QuadraticMultitaperEstimator`
+
+Multitaper with the curvature bias removed, after Prieto *et al.* (2007).
+
+Averaging `K` tapers smooths the spectrum across the inner band `[-W, W]`.
+Where the true spectrum is curved that smoothing does not average out — it
+pulls peaks down and fills troughs in, in proportion to the second derivative.
+The quadratic inverse method estimates that second derivative and subtracts the
+bias it causes.
+
+<!-- measured: quadratic_table -->
+| Measurement | multitaper | quadratic |
+|---|---|---|
+| single line, peak / true | 0.87 | **1.02** |
+| two lines 0.70 Hz apart, peak/trough | 8.9 | **12.3** |
+| white noise, level ratio to multitaper | 1.00 | 1.00 |
+| Brune tail 25-49 Hz, ratio to multitaper | 1.00 | **0.81** |
+<!-- /measured -->
+
+The first row is the clearest statement of what it does: a pure sine has a
+known Fourier amplitude, `A·T/2`, and the ordinary estimate recovers 87% of it
+while this recovers 102%. The white-noise row is the control — no curvature, so
+nothing should change, and nothing does. Without that row the first two would
+be equally consistent with an estimator that simply sharpens everything.
+
+> **Do not reach for it to fit a corner frequency**, despite a corner being a
+> curvature feature. The correction models the spectrum as quadratic in
+> *linear* frequency across the inner band, and a source spectrum falling as
+> `f⁻²` is badly described that way. The far tail droops — 9% low at 10–25 Hz,
+> 19% at 25–49 Hz — which drags the fitted `f_c` down with it. Over 12
+> realisations of a true 4 Hz corner: FFT recovered 3.99 Hz, ordinary
+> multitaper 3.89 Hz, quadratic **3.44 Hz**.
+>
+> Use it where the feature of interest is a *peak or a line* — an instrumental
+> tone, a site resonance, a spectral hole — not a monotone decay.
+
+It costs a least-squares solve per frequency bin, so it is roughly two orders
+of magnitude slower than the ordinary estimator. Not one for a whole catalogue.
+
+**It is vendored, not imported.** The numerical core lives in
+`specmod/_vendor/qiinv.py` under Prieto's MIT licence, because upstream's
+`qiinv` raises on every weighting scheme under numpy ≥ 2 — four lines assign
+shape-`(1,)` arrays into scalar slots. The vendored copy carries those fixes,
+replaces a numba-jitted Goertzel recursion with an exact vectorised
+equivalent (dropping numba from the dependency graph), and is cross-validated
+against the patched upstream to 1e-9 in the test suite. It does **not** need
+`specmod[multitaper]` installed.
 
 ### `WelchEstimator`
 

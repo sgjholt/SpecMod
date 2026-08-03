@@ -114,14 +114,49 @@ def _broadband_power(eigenspectra: NDArray[np.float64], n: int) -> float:
     be expressed in the *same units as the eigenspectra*, which is the whole
     reason it is computed from them here rather than taken from the record.
 
-    ``eigenspectra`` holds only the non-negative-frequency bins, so the
+    Accepts either layout. Given the full ``n`` two-sided bins the mean is
+    direct; given the ``n // 2 + 1`` non-negative bins of an ``rfft`` the
     two-sided sum is recovered by doubling and removing the double-counted DC
-    and (for even ``n``) Nyquist terms.
+    and (for even ``n``) Nyquist terms. The two cannot be confused, since
+    ``n // 2 + 1 != n`` for any ``n >= 2``.
     """
+    if eigenspectra.shape[-1] == n:
+        return float(eigenspectra.mean())
     total = 2.0 * eigenspectra.sum(axis=-1) - eigenspectra[..., 0]
     if n % 2 == 0:
         total -= eigenspectra[..., -1]
     return float((total / n).mean())
+
+
+def center_on_energy_centroid(
+    x: NDArray[np.float64], edge_tolerance: float
+) -> NDArray[np.float64]:
+    """Circularly shift ``x`` so its energy centroid sits mid-window.
+
+    Legitimate because ``|FFT|`` is invariant under a circular shift: the
+    quantity being estimated does not change, only its alignment with the
+    tapers. Shared by every estimator that offers ``center``, so the wrap
+    check cannot drift between them.
+
+    Raises when the window edges are not quiet enough to roll without
+    splicing a discontinuity into the record.
+    """
+    energy = x**2
+    centroid = int((np.arange(x.size) * energy).sum() / energy.sum())
+    rolled: NDArray[np.float64] = np.roll(x, x.size // 2 - centroid)
+    peak = float(np.abs(rolled).max())
+    if peak > 0:
+        step = abs(float(rolled[0]) - float(rolled[-1])) / peak
+        if step > edge_tolerance:
+            raise ValueError(
+                f"Centring would introduce a discontinuity of {step:.3f} of "
+                f"the record's peak at the wrap point, above "
+                f"center_edge_tolerance={edge_tolerance}. The "
+                f"window edges are not quiet enough to roll; taper first, "
+                f"widen the window, or use FFTEstimator, which is "
+                f"position-stable without centring."
+            )
+    return rolled
 
 
 def _adaptive_weights(
@@ -279,22 +314,7 @@ class MultitaperEstimator:
             )
 
     def _centered(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
-        energy = x**2
-        centroid = int((np.arange(x.size) * energy).sum() / energy.sum())
-        rolled: NDArray[np.float64] = np.roll(x, x.size // 2 - centroid)
-        peak = float(np.abs(rolled).max())
-        if peak > 0:
-            step = abs(float(rolled[0]) - float(rolled[-1])) / peak
-            if step > self.center_edge_tolerance:
-                raise ValueError(
-                    f"Centring would introduce a discontinuity of {step:.3f} of "
-                    f"the record's peak at the wrap point, above "
-                    f"center_edge_tolerance={self.center_edge_tolerance}. The "
-                    f"window edges are not quiet enough to roll; taper first, "
-                    f"widen the window, or use FFTEstimator, which is "
-                    f"position-stable without centring."
-                )
-        return rolled
+        return center_on_energy_centroid(x, self.center_edge_tolerance)
 
     def estimate(
         self,
