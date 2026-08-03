@@ -207,9 +207,34 @@ def test_multitaper_time_bandwidth_is_configurable() -> None:
 
 
 def test_registry_resolves_every_estimator() -> None:
+    """Every registered name resolves, or says exactly what to install.
+
+    ``prieto`` is backed by an optional extra, so on a default install it
+    cannot be constructed. That is deliberate: keeping it in the registry means
+    ``get_estimator("prieto")`` explains what is missing instead of claiming
+    the name is unknown. The contract is therefore *either* a working estimator
+    *or* an actionable ImportError — asserting only the former made the suite
+    depend on whether the extra happened to be installed.
+    """
     for name in ESTIMATORS:
-        est = get_estimator(name)
-        assert est.estimate(noise(), DT).kind is AmplitudeKind.FAS
+        # pytest.raises does not fit here: whether the import fails depends on
+        # the environment, so the message is captured and asserted on below
+        # rather than in the handler.
+        message: str | None = None
+        try:
+            # The check has to span construction *and* estimation: the
+            # optional import is resolved lazily, inside estimate().
+            spectrum = get_estimator(name).estimate(noise(), DT)
+        except ImportError as exc:
+            message = str(exc)
+
+        if message is not None:
+            assert "pip install specmod[" in message, (
+                f"{name!r} is unavailable but does not name the extra to "
+                f"install; the message was: {message}"
+            )
+            continue
+        assert spectrum.kind is AmplitudeKind.FAS
 
 
 def test_unknown_estimator_names_the_alternatives() -> None:

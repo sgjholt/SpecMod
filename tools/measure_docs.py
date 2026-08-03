@@ -21,10 +21,17 @@ markers cost nothing to a reader. Usage::
 measurements, so a change to an estimator that moves a published number breaks
 the build rather than quietly leaving the docs wrong.
 
-Measurements are in one of two groups. **Synthetic** ones are fast, need only
-numpy and specmod, and are checked in CI. **Field** ones read the PNR waveforms
-under ``Tutorial/Data`` and are skipped when that is unavailable — pass
-``--field`` to include them.
+Measurements are in one of two groups, split by whether CI can be relied on to
+reproduce them. **Synthetic** ones need only numpy and specmod, are fast, and
+are checked on every run. **Field** ones need something not guaranteed to be
+present — the PNR waveforms under ``Tutorial/Data``, or the optional
+``specmod[multitaper]`` extra — so they are excluded unless ``--field`` is
+passed.
+
+That split is load-bearing, not organisational: a measurement that degrades to
+a "not available" note when its dependency is missing would render that note in
+CI and fail the check against a doc holding real numbers. Anything that can
+fail to run belongs in ``FIELD``.
 """
 
 from __future__ import annotations
@@ -241,10 +248,15 @@ def phase_table() -> str:
         mag_change = float(
             np.abs(np.abs(np.fft.rfft(x))[interior] - base_mag).max() / base_mag.max()
         )
+        # Rendered against a threshold, not as a raw value. This quantity is
+        # pure floating-point noise -- its leading digit varies with platform,
+        # BLAS and numpy version, which would make the published table fail on
+        # some CI runners and not others. The claim is "unchanged", and a
+        # bound states that more honestly than a spurious 4.7e-16.
         rows.append(
             [
                 name,
-                f"{mag_change:.1e}",
+                "< 1e-12" if mag_change < 1e-12 else f"{mag_change:.1e}",
                 f"{envelope_centroid(x):.1%}",
                 f"{ratio(x):.3f}",
             ]
@@ -254,7 +266,7 @@ def phase_table() -> str:
     )
 
 
-@synthetic("prieto_agreement")
+@field("prieto_agreement")
 def prieto_agreement() -> str:
     """Cross-validation against the reference implementation.
 

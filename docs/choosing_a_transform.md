@@ -106,9 +106,9 @@ machine precision — and the third tracks where the energy ends up:
 | Change | max change in `\|X\|` | Envelope centroid | Estimate |
 |---|---|---|---|
 | (unchanged reference) | -- | 11.2% | 1.053 |
-| Linear ramp (= a time shift) | 4.7e-16 | 51.2% | 1.159 |
-| Constant 90 deg rotation | 4.7e-16 | 11.2% | 1.053 |
-| Random phase | 3.5e-16 | 52.0% | 1.007 |
+| Linear ramp (= a time shift) | < 1e-12 | 51.2% | 1.159 |
+| Constant 90 deg rotation | < 1e-12 | 11.2% | 1.053 |
+| Random phase | < 1e-12 | 52.0% | 1.007 |
 <!-- /measured -->
 
 The constant rotation is decisive: it changes every sample of the record, yet
