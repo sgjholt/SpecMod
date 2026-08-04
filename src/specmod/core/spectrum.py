@@ -20,6 +20,59 @@ from .units import AmplitudeKind, Motion
 
 __all__ = ["Spectrum"]
 
+#: Tolerance on the derived sample count. ``duration`` is ``n * dt`` and
+#: ``sampling_rate`` is ``1 / dt``, so their product is ``n`` exactly up to
+#: floating-point representation — anything further out is a real mismatch,
+#: not rounding.
+_SAMPLE_COUNT_TOL = 1e-6
+
+
+def _validate_record_geometry(
+    freq: NDArray[np.float64], duration: float, sampling_rate: float
+) -> None:
+    """Check the three quantities every correction is built on agree.
+
+    Sample count, duration and sampling rate are not independent: ``duration =
+    n * dt`` and ``sampling_rate = 1 / dt``, so any two determine the third and
+    the frequency axis they imply. Every normalisation in this package — the
+    ``2T`` between amplitude and power, the fold at DC and Nyquist, the taper
+    corrections, the wavelet scale grid — is a function of them.
+
+    That makes an inconsistent triple the most dangerous thing a caller can
+    construct: it produces a spectrum that is wrong by a clean factor
+    everywhere, which looks like a plausible spectrum and survives every check
+    that inspects shape rather than scale. Catching it here is cheap; catching
+    it downstream has historically meant noticing that a magnitude looks odd.
+    """
+    implied = duration * sampling_rate
+    if abs(implied - round(implied)) > _SAMPLE_COUNT_TOL * max(1.0, implied):
+        raise ValueError(
+            f"duration={duration} s at {sampling_rate} Hz implies "
+            f"{implied} samples, which is not a whole number. These are not "
+            f"independent: duration = n_samples / sampling_rate. One of them "
+            f"is wrong, and every amplitude conversion depends on both."
+        )
+
+    if freq.size == 0:
+        return
+    if freq[0] < 0.0:
+        raise ValueError(f"frequencies must be non-negative, got {freq.min()}")
+    if freq.size > 1 and not np.all(np.diff(freq) > 0):
+        raise ValueError(
+            "freq must be strictly increasing; band() and the smoothers both "
+            "assume it, and an unsorted axis integrates to nonsense"
+        )
+
+    nyquist = sampling_rate / 2.0
+    if freq[-1] > nyquist * (1.0 + 1e-9):
+        raise ValueError(
+            f"frequency axis reaches {freq[-1]} Hz but the Nyquist frequency "
+            f"for {sampling_rate} Hz sampling is {nyquist} Hz. Either "
+            f"sampling_rate is wrong or the axis does not belong to this "
+            f"record; energy() would silently integrate over a band the "
+            f"record cannot represent."
+        )
+
 
 @dataclass(frozen=True)
 class Spectrum:
@@ -70,6 +123,7 @@ class Spectrum:
             raise ValueError(
                 f"sampling_rate must be positive, got {self.sampling_rate}"
             )
+        _validate_record_geometry(freq, self.duration, self.sampling_rate)
         freq.setflags(write=False)
         amp.setflags(write=False)
         object.__setattr__(self, "freq", freq)
@@ -84,6 +138,20 @@ class Spectrum:
     def unit(self) -> str:
         """Unit string, e.g. ``m/s*s`` for a velocity FAS."""
         return self.kind.unit(self.motion)
+
+    @property
+    def n_samples(self) -> int:
+        """Samples in the source record, ``duration * sampling_rate``.
+
+        The third of the triple, derived rather than stored so it cannot
+        disagree with the other two. Validated on construction — see
+        :func:`_validate_record_geometry` for why that matters.
+
+        Note this is the *record* length, not ``len(freq)``. Zero-padding
+        changes the second and not the first, and confusing them is the §2.2
+        bug.
+        """
+        return round(self.duration * self.sampling_rate)
 
     @property
     def nyquist(self) -> float:

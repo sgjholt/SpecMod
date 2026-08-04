@@ -667,3 +667,98 @@ def test_motion_conversion_is_safe_on_an_unfolded_spectrum() -> None:
     direct = spectrum.to_motion("displacement").to_kind("magnitude")
     assert mag.amp == pytest.approx(direct.amp, rel=1e-9)
     assert mag.kind is AmplitudeKind.MAGNITUDE
+
+
+# ---------------------------------------------- the record geometry triple
+
+
+def valid_axis(n: int = 1000, fs: float = FS) -> np.ndarray:
+    return np.linspace(fs / (2 * n), fs / 2, n)
+
+
+def test_sample_count_duration_and_rate_must_agree() -> None:
+    """The three quantities every correction is built on are not independent.
+
+    ``duration = n_samples / sampling_rate``, so any two fix the third. An
+    inconsistent triple produces a spectrum wrong by a clean factor everywhere
+    — which looks entirely plausible and survives any check that inspects shape
+    rather than scale.
+    """
+    freq = valid_axis()
+    # 20.005 s at 100 Hz is 2000.5 samples, which no record has.
+    with pytest.raises(ValueError, match="not a whole number"):
+        Spectrum(
+            freq=freq,
+            amp=np.ones_like(freq),
+            motion="velocity",
+            kind="fas",
+            duration=20.005,
+            sampling_rate=100.0,
+        )
+
+    # A consistent triple with the same awkward numbers is accepted, so this
+    # rejects mismatch rather than merely disliking non-round durations.
+    Spectrum(
+        freq=freq,
+        amp=np.ones_like(freq),
+        motion="velocity",
+        kind="fas",
+        duration=20.005,
+        sampling_rate=100.02499375156211,
+    )
+
+
+def test_frequency_axis_cannot_exceed_its_own_nyquist() -> None:
+    """Caught the case that motivated this: an axis running to 50 Hz on a
+    spectrum claiming 50 Hz sampling, so twice its own Nyquist. ``energy()``
+    happily integrated over a band the record cannot represent."""
+    freq = valid_axis()
+    with pytest.raises(ValueError, match="Nyquist"):
+        Spectrum(
+            freq=freq,
+            amp=np.ones_like(freq),
+            motion="velocity",
+            kind="fas",
+            duration=20.0,
+            sampling_rate=50.0,
+        )
+
+
+def test_frequency_axis_must_be_sorted() -> None:
+    """The docstring always claimed this; nothing enforced it.
+
+    Prieto's backend returns an FFT-ordered axis, and integrating over one
+    unsorted gives a negative energy — which is how this was found.
+    """
+    freq = valid_axis()[::-1].copy()
+    with pytest.raises(ValueError, match="strictly increasing"):
+        Spectrum(
+            freq=freq,
+            amp=np.ones_like(freq),
+            motion="velocity",
+            kind="fas",
+            duration=20.0,
+            sampling_rate=100.0,
+        )
+
+
+def test_n_samples_is_derived_not_stored() -> None:
+    """So it cannot drift from the other two, and is never confused with
+    ``len(freq)`` — padding changes the latter and not the former."""
+    x = noise()
+    spectrum = FFTEstimator(n_fft=4 * N).estimate(x, DT)
+    assert spectrum.n_samples == N
+    assert len(spectrum) != N, "this test is pointless without padding"
+    assert spectrum.duration == pytest.approx(DURATION)
+
+
+@pytest.mark.parametrize(("estimator", "_rtol"), ALL_ESTIMATORS)
+def test_every_estimator_reports_a_consistent_geometry(estimator, _rtol) -> None:
+    """Construction validates it, so this is really asserting that each
+    estimator passes through the record's own numbers rather than inventing
+    any — which is what makes the validation worth having."""
+    spectrum = estimator.estimate(noise(), DT)
+    assert spectrum.n_samples == N
+    assert spectrum.sampling_rate == pytest.approx(FS)
+    assert spectrum.duration == pytest.approx(DURATION)
+    assert spectrum.freq.max() <= spectrum.nyquist * (1 + 1e-9)
