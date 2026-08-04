@@ -53,33 +53,16 @@ jackknife confidence intervals, the F-test for spectral lines, and coherence.
 
 .. note::
 
-   **Fixed in this version.** Adaptive weighting previously collapsed for
-   off-centre transients, recovering 0.203 of the true energy at 10% and 0.149
-   at 90% where the table above now reads 0.956 and 0.898.
-
-   The cause was a units mismatch, not anything in Thomson's method. Thomson's
-   Eq. 5.1b regularises each weight with ``b_k = (1 - lambda_k) * sigma^2``,
-   where ``sigma^2`` is the broadband power **in the units of the spectrum
-   being weighted**. This module scales its eigenspectra to PSD (multiplying by
-   ``dt``) but passed the record's raw time-domain variance as ``sigma^2``,
-   overstating the leakage floor by a factor of ``1/dt`` — a hundredfold at
-   100 sps. The regularisation term then dominated the denominator, every
-   weight collapsed towards zero, and the collapse was worst exactly where the
-   signal term was smallest: for a burst the tapers barely see. That is why it
-   looked position-dependent, and why stationary noise — where the signal term
-   is large at every frequency — passed cleanly and hid it.
-
-   :func:`_adaptive_weights` now derives ``sigma^2`` from the eigenspectra
-   themselves, which makes it invariant to how they were scaled, and clips the
-   weights at unity as Thomson specifies. With
+   **Validated against Prieto's** ``multitaper``. With
    ``normalize_to_variance=True`` putting both on the same absolute scale, the
-   result now matches Prieto's ``multitaper`` to within 0.3% across the band,
-   under both adaptive and flat weighting, for stationary noise and for bursts
-   at 10%, 50% and 90%.
+   two agree to within 0.3% across the band, under adaptive and flat weighting
+   alike, for stationary noise and for bursts at 10%, 50% and 90%.
 
-   Because the defect was ours and not the method's, ``adaptive`` defaults back
-   to ``True`` — see the parameter documentation for why that is the better
-   estimator once it works.
+   The check that earns that is the transient one. A Parseval test on
+   stationary noise passes for a whole family of weighting errors — the signal
+   term is large at every frequency, so the regularisation in Eq. 5.1b never
+   gets a chance to dominate. See :func:`_adaptive_weights` for the units trap
+   that hides there.
 
 References
 ----------
@@ -114,14 +97,49 @@ def _broadband_power(eigenspectra: NDArray[np.float64], n: int) -> float:
     be expressed in the *same units as the eigenspectra*, which is the whole
     reason it is computed from them here rather than taken from the record.
 
-    ``eigenspectra`` holds only the non-negative-frequency bins, so the
+    Accepts either layout. Given the full ``n`` two-sided bins the mean is
+    direct; given the ``n // 2 + 1`` non-negative bins of an ``rfft`` the
     two-sided sum is recovered by doubling and removing the double-counted DC
-    and (for even ``n``) Nyquist terms.
+    and (for even ``n``) Nyquist terms. The two cannot be confused, since
+    ``n // 2 + 1 != n`` for any ``n >= 2``.
     """
+    if eigenspectra.shape[-1] == n:
+        return float(eigenspectra.mean())
     total = 2.0 * eigenspectra.sum(axis=-1) - eigenspectra[..., 0]
     if n % 2 == 0:
         total -= eigenspectra[..., -1]
     return float((total / n).mean())
+
+
+def center_on_energy_centroid(
+    x: NDArray[np.float64], edge_tolerance: float
+) -> NDArray[np.float64]:
+    """Circularly shift ``x`` so its energy centroid sits mid-window.
+
+    Legitimate because ``|FFT|`` is invariant under a circular shift: the
+    quantity being estimated does not change, only its alignment with the
+    tapers. Shared by every estimator that offers ``center``, so the wrap
+    check cannot drift between them.
+
+    Raises when the window edges are not quiet enough to roll without
+    splicing a discontinuity into the record.
+    """
+    energy = x**2
+    centroid = int((np.arange(x.size) * energy).sum() / energy.sum())
+    rolled: NDArray[np.float64] = np.roll(x, x.size // 2 - centroid)
+    peak = float(np.abs(rolled).max())
+    if peak > 0:
+        step = abs(float(rolled[0]) - float(rolled[-1])) / peak
+        if step > edge_tolerance:
+            raise ValueError(
+                f"Centring would introduce a discontinuity of {step:.3f} of "
+                f"the record's peak at the wrap point, above "
+                f"center_edge_tolerance={edge_tolerance}. The "
+                f"window edges are not quiet enough to roll; taper first, "
+                f"widen the window, or use FFTEstimator, which is "
+                f"position-stable without centring."
+            )
+    return rolled
 
 
 def _adaptive_weights(
@@ -205,10 +223,6 @@ class MultitaperEstimator:
         signal is strong. Turn it off for a well-conditioned record with little
         dynamic range, where the extra averaging is worth more than the leakage
         rejection.
-
-        This defaulted to ``False`` in earlier versions of the refactor, while
-        the implementation was collapsing for off-centre transients. That was
-        our bug and it is fixed; see the note above.
     center
         Circularly shift the record so its energy centroid sits mid-window
         before estimating.
@@ -279,22 +293,7 @@ class MultitaperEstimator:
             )
 
     def _centered(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
-        energy = x**2
-        centroid = int((np.arange(x.size) * energy).sum() / energy.sum())
-        rolled: NDArray[np.float64] = np.roll(x, x.size // 2 - centroid)
-        peak = float(np.abs(rolled).max())
-        if peak > 0:
-            step = abs(float(rolled[0]) - float(rolled[-1])) / peak
-            if step > self.center_edge_tolerance:
-                raise ValueError(
-                    f"Centring would introduce a discontinuity of {step:.3f} of "
-                    f"the record's peak at the wrap point, above "
-                    f"center_edge_tolerance={self.center_edge_tolerance}. The "
-                    f"window edges are not quiet enough to roll; taper first, "
-                    f"widen the window, or use FFTEstimator, which is "
-                    f"position-stable without centring."
-                )
-        return rolled
+        return center_on_energy_centroid(x, self.center_edge_tolerance)
 
     def estimate(
         self,

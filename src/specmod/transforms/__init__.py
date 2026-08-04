@@ -10,6 +10,7 @@ from .base import SpectralEstimator, TaperCorrection
 from .fft import FFTEstimator, WelchEstimator
 from .multitaper import MultitaperEstimator
 from .prieto import PrietoMultitaperEstimator
+from .quadratic import QuadraticMultitaperEstimator
 
 #: Name -> estimator, for resolving `TransformConfig.estimator`.
 ESTIMATORS: dict[str, type[SpectralEstimator]] = {
@@ -17,6 +18,7 @@ ESTIMATORS: dict[str, type[SpectralEstimator]] = {
     "welch": WelchEstimator,
     "multitaper": MultitaperEstimator,
     "prieto": PrietoMultitaperEstimator,
+    "quadratic": QuadraticMultitaperEstimator,
 }
 
 
@@ -37,6 +39,7 @@ __all__ = [
     "FFTEstimator",
     "MultitaperEstimator",
     "PrietoMultitaperEstimator",
+    "QuadraticMultitaperEstimator",
     "SpectralEstimator",
     "TaperCorrection",
     "WelchEstimator",
