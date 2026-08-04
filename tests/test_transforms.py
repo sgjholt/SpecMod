@@ -762,3 +762,56 @@ def test_every_estimator_reports_a_consistent_geometry(estimator, _rtol) -> None
     assert spectrum.sampling_rate == pytest.approx(FS)
     assert spectrum.duration == pytest.approx(DURATION)
     assert spectrum.freq.max() <= spectrum.nyquist * (1 + 1e-9)
+
+
+# ------------------------------------------------------------ record parity
+
+
+@pytest.mark.parametrize("n", [2000, 2001, 20001, 200001])
+def test_the_fold_respects_record_parity(n: int) -> None:
+    """Only an even-length record has a true Nyquist bin.
+
+    An ``rfft`` of even ``n`` ends exactly on ``fs/2``, which is its own mirror
+    image and so is not folded. Odd ``n`` ends half a bin below at
+    ``fs/2 * (n-1)/n``; that bin has a negative-frequency twin like any other
+    and *is* folded.
+
+    Lengths grow here because the gap between an odd top bin and Nyquist is
+    ``df/2``, which shrinks as the record lengthens. A fixed relative tolerance
+    eventually swallows it — ``np.isclose`` at its default does so from about
+    200000 samples, which at 1000 Hz is a 200 s record — and silently halves
+    that bin.
+    """
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    spectrum = FFTEstimator(taper="boxcar", drop_dc=False).estimate(x, DT)
+    factor = spectrum._fold_factor()
+
+    assert factor[0] == 1.0, "DC is never folded"
+    expected = 1.0 if n % 2 == 0 else 2.0
+    assert factor[-1] == expected, (
+        f"n={n} ({'even' if n % 2 == 0 else 'odd'}): top bin at "
+        f"{spectrum.freq[-1]:.6f} Hz against Nyquist {spectrum.nyquist}"
+    )
+    assert np.all(factor[1:-1] == 2.0), "every interior bin has a twin"
+
+
+@pytest.mark.parametrize("n", [2000, 2001])
+def test_magnitude_matches_numpy_for_both_parities(n: int) -> None:
+    """The end-to-end consequence: ``|X|`` is right whatever the record length.
+
+    Getting the fold wrong at one bin is invisible in an energy check — it is a
+    single bin out of a thousand — but it is a factor of two in that bin.
+    """
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    x = x - x.mean()
+    spectrum = FFTEstimator(taper="boxcar", drop_dc=False).estimate(x, DT)
+    reference = np.abs(np.fft.rfft(x)) * DT
+    assert spectrum.to_kind("magnitude").amp == pytest.approx(reference, rel=1e-9)
+
+
+@pytest.mark.parametrize("n", [2000, 2001])
+def test_energy_is_recovered_for_both_parities(n: int) -> None:
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    expected = float(np.sum((x - x.mean()) ** 2) * DT)
+    spectrum = FFTEstimator(taper="boxcar").estimate(x, DT)
+    assert spectrum.energy() == pytest.approx(expected, rel=0.01)
