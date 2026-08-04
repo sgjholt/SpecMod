@@ -187,7 +187,7 @@ class Spectrum:
             duration=self._duration(),
             sampling_rate=float(self.meta["sampling_rate"]),
         ).to_kind(target)
-        return np.asarray(converted.amp)
+        return np.array(converted.amp, dtype=float)
 
     def _duration(self):
         """Physical record length in seconds.
@@ -243,7 +243,13 @@ class Spectrum:
         # tests/test_spectral_wiring.py rather than assumed.
         psd = spectrum.to_kind("psd")
         del self.__tr
-        self.amp, self.freq = np.asarray(psd.amp), np.asarray(psd.freq)
+        # Copies, not views. core.Spectrum marks its arrays read-only so a
+        # spectrum cannot be mutated behind its own back, but the legacy classes
+        # here update amp in place (SNP.__scale_noise_parseval, integrate,
+        # differentiate, the noise rotation). Handing out the frozen array makes
+        # every one of those raise.
+        self.amp = np.array(psd.amp, dtype=float)
+        self.freq = np.array(psd.freq, dtype=float)
         self.motion = str(spectrum.motion)
         self.estimator = spectrum.meta.get("estimator")
 
