@@ -1,0 +1,1972 @@
+{
+ "cwt": {
+  "LV.L001..HHE": {
+   "amp_digest": "697a319022ece85d",
+   "amp_max": 0.0008663515645637924,
+   "amp_median": 0.00012808606540230517,
+   "band": [
+    0.8519591661447324,
+    27.215491578115735
+   ],
+   "bsnr_digest": "9ec7ed780f29a2e0",
+   "freq_digest": "b301399083ae7050",
+   "n_freq": 55,
+   "noise_amp_digest": "32b86684f142d879",
+   "resolution_floor": 0.8519591661447324
+  },
+  "LV.L001..HHN": {
+   "amp_digest": "fde2de076c643061",
+   "amp_max": 0.0021446028959879863,
+   "amp_median": 0.0001626000409578769,
+   "band": [
+    1.4179986801830637,
+    27.547627896915266
+   ],
+   "bsnr_digest": "e0617b6402b49965",
+   "freq_digest": "9e3f444e683ae4cb",
+   "n_freq": 49,
+   "noise_amp_digest": "9a7c96af18c47562",
+   "resolution_floor": 0.8519591661447324
+  },
+  "LV.L002..HHE": {
+   "amp_digest": "6175c85fb271c366",
+   "amp_max": 9.717808615941718e-05,
+   "amp_median": 1.538174446159623e-05,
+   "band": [
+    0.9290680585958758,
+    29.601660275031286
+   ],
+   "bsnr_digest": "c9e56d5abb06a9ad",
+   "freq_digest": "2f12b3013dfc44a8",
+   "n_freq": 56,
+   "noise_amp_digest": "7da61121b55f561c",
+   "resolution_floor": 0.9290680585958758
+  },
+  "LV.L002..HHN": {
+   "amp_digest": "bdf10b4ed6ed78d4",
+   "amp_max": 0.00012339515589668504,
+   "amp_median": 2.2063868988179305e-05,
+   "band": [
+    0.9290680585958758,
+    34.929066706258844
+   ],
+   "bsnr_digest": "9706e2c696c677b6",
+   "freq_digest": "b301399083ae7050",
+   "n_freq": 55,
+   "noise_amp_digest": "edc190b7aed28c9e",
+   "resolution_floor": 0.9290680585958758
+  },
+  "LV.L006..HHE": {
+   "amp_digest": "c00ec7fd709a8a7f",
+   "amp_max": 0.00019705514222864408,
+   "amp_median": 1.9650410700558577e-05,
+   "band": [
+    1.0131559020711012,
+    38.5441370442226
+   ],
+   "bsnr_digest": "fa5f1bbc0b3a2d0c",
+   "freq_digest": "ae56d78523b24b9c",
+   "n_freq": 54,
+   "noise_amp_digest": "0f6da377575d7e0f",
+   "resolution_floor": 1.0131559020711012
+  },
+  "LV.L006..HHN": {
+   "amp_digest": "60a16b7b3b65aced",
+   "amp_max": 0.00014038760421660653,
+   "amp_median": 1.1490261526342554e-05,
+   "band": [
+    1.0131559020711012,
+    38.73384609526382
+   ],
+   "bsnr_digest": "de0af8db7968373c",
+   "freq_digest": "3b55f31e6747c130",
+   "n_freq": 53,
+   "noise_amp_digest": "54cf8ccdfbd84800",
+   "resolution_floor": 1.0131559020711012
+  },
+  "LV.L007..HHE": {
+   "amp_digest": "e56629feca6d4576",
+   "amp_max": 4.355159563598722e-05,
+   "amp_median": 5.598526828217447e-06,
+   "band": [
+    0.9290680585958758,
+    27.523770033279778
+   ],
+   "bsnr_digest": "8327e2bfdedbcea0",
+   "freq_digest": "ae56d78523b24b9c",
+   "n_freq": 54,
+   "noise_amp_digest": "4013a068dcf64956",
+   "resolution_floor": 0.9290680585958758
+  },
+  "LV.L007..HHN": {
+   "amp_digest": "bb5be8c82a3d4a87",
+   "amp_max": 8.484023719776305e-05,
+   "amp_median": 1.4523514172942224e-05,
+   "band": [
+    0.9290680585958758,
+    23.25855435380366
+   ],
+   "bsnr_digest": "364dea24731c811b",
+   "freq_digest": "234c080c3d203fbb",
+   "n_freq": 51,
+   "noise_amp_digest": "493bbb0187451dbb",
+   "resolution_floor": 0.9290680585958758
+  },
+  "LV.L008..HHE": {
+   "amp_digest": "36399afd54f0b57c",
+   "amp_max": 3.6556589061141133e-05,
+   "amp_median": 1.2121997902742401e-05,
+   "band": [
+    1.2048522073499537,
+    20.96783774563101
+   ],
+   "bsnr_digest": "4af02bc9a92736ab",
+   "freq_digest": "3e16cbca551e9e0b",
+   "n_freq": 52,
+   "noise_amp_digest": "3a6958b1fc3aba30",
+   "resolution_floor": 1.2048522073499537
+  },
+  "LV.L008..HHN": {
+   "amp_digest": "43520e9c32b116ff",
+   "amp_max": 4.527151915913054e-05,
+   "amp_median": 1.576152296182826e-05,
+   "band": [
+    1.2048522073499537,
+    1.4536596471127292
+   ],
+   "bsnr_digest": "fed3b3dc85fc8939",
+   "freq_digest": "234c080c3d203fbb",
+   "n_freq": 51,
+   "noise_amp_digest": "094a1c202a36461a",
+   "resolution_floor": 1.2048522073499537
+  },
+  "LV.L009..HHE": {
+   "amp_digest": "c8674f950f4e6e6a",
+   "amp_max": 0.0001572010476143872,
+   "amp_median": 3.033593341118973e-05,
+   "band": [
+    1.0131559020711012,
+    37.980566605889976
+   ],
+   "bsnr_digest": "dab4b91d6dbbe91e",
+   "freq_digest": "bfbcc9d9a05179b4",
+   "n_freq": 57,
+   "noise_amp_digest": "dbab7ca9c0f423ee",
+   "resolution_floor": 1.0131559020711012
+  },
+  "LV.L009..HHN": {
+   "amp_digest": "d3a576168280c8fb",
+   "amp_max": 0.000188852371710304,
+   "amp_median": 2.1071142867601547e-05,
+   "band": [
+    1.0131559020711012,
+    38.167501839140726
+   ],
+   "bsnr_digest": "643eed7854e6ac29",
+   "freq_digest": "2f12b3013dfc44a8",
+   "n_freq": 56,
+   "noise_amp_digest": "625b56f83dc624da",
+   "resolution_floor": 1.0131559020711012
+  },
+  "UR.AQ01.00.HHE": {
+   "amp_digest": "38171871e228d1f6",
+   "amp_max": 2.857974672832182e-05,
+   "amp_median": 1.0720735279924358e-05,
+   "band": [
+    1.2048522073499537,
+    27.65923832222083
+   ],
+   "bsnr_digest": "0ab73fa5cf6ba934",
+   "freq_digest": "234c080c3d203fbb",
+   "n_freq": 51,
+   "noise_amp_digest": "121989bcbad26c08",
+   "resolution_floor": 1.2048522073499537
+  },
+  "UR.AQ01.00.HHN": {
+   "amp_digest": "4fb5dfa2e4db248c",
+   "amp_max": 3.5881822502165745e-05,
+   "amp_median": 9.939853102329856e-06,
+   "band": [
+    1.2048522073499537,
+    27.20763257086597
+   ],
+   "bsnr_digest": "b4d583d00a65e610",
+   "freq_digest": "f51d2fc224878e56",
+   "n_freq": 50,
+   "noise_amp_digest": "b4ee5426f047c819",
+   "resolution_floor": 1.2048522073499537
+  },
+  "UR.AQ03.00.HHE": {
+   "amp_digest": "68abeb587d60cd4b",
+   "amp_max": 0.00027803203216679456,
+   "amp_median": 2.31269906786721e-05,
+   "band": [
+    0.9290680585958758,
+    49.183625835798836
+   ],
+   "bsnr_digest": "85325a05c964d6eb",
+   "freq_digest": "89db8ef1ffe5eefd",
+   "n_freq": 64,
+   "noise_amp_digest": "e88cea68185a5c6f",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ03.00.HHN": {
+   "amp_digest": "e78030ee22e11d09",
+   "amp_max": 0.0004982664883270013,
+   "amp_median": 4.368391837117085e-05,
+   "band": [
+    0.9290680585958758,
+    45.731178397762164
+   ],
+   "bsnr_digest": "6430be8bea18c5da",
+   "freq_digest": "89db8ef1ffe5eefd",
+   "n_freq": 64,
+   "noise_amp_digest": "c7584422f1678938",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ04.00.HHE": {
+   "amp_digest": "3cf554adbd3e77e4",
+   "amp_max": 0.0002437697791455534,
+   "amp_median": 8.542022784032467e-05,
+   "band": [
+    0.8519591661447324,
+    63.91235117802151
+   ],
+   "bsnr_digest": "02fb9cd10f9d1cdf",
+   "freq_digest": "af5dfb4f5954ec6e",
+   "n_freq": 63,
+   "noise_amp_digest": "4b53adae910ff91a",
+   "resolution_floor": 0.8519591661447324
+  },
+  "UR.AQ04.00.HHN": {
+   "amp_digest": "8d4674e039dd5f53",
+   "amp_max": 0.0005685445243295532,
+   "amp_median": 0.00010161164587586677,
+   "band": [
+    0.8519591661447324,
+    63.91235117802151
+   ],
+   "bsnr_digest": "9f180417a87de35c",
+   "freq_digest": "af5dfb4f5954ec6e",
+   "n_freq": 63,
+   "noise_amp_digest": "34546f0c9a28e75a",
+   "resolution_floor": 0.8519591661447324
+  },
+  "UR.AQ05.00.HHE": {
+   "amp_digest": "2b455f0d4266cc9f",
+   "amp_max": 0.00037697117614253614,
+   "amp_median": 7.702375093979473e-05,
+   "band": [
+    0.8519591661447324,
+    65.80412825000539
+   ],
+   "bsnr_digest": "30cb3fcfb5033ce2",
+   "freq_digest": "89db8ef1ffe5eefd",
+   "n_freq": 64,
+   "noise_amp_digest": "2018aeaa1a9a34e1",
+   "resolution_floor": 0.8519591661447324
+  },
+  "UR.AQ05.00.HHN": {
+   "amp_digest": "9631040d5025b5f3",
+   "amp_max": 0.00043005637399894006,
+   "amp_median": 6.967313687809834e-05,
+   "band": [
+    0.8519591661447324,
+    69.91868710188403
+   ],
+   "bsnr_digest": "ade19b449fa5aade",
+   "freq_digest": "a59892a5fbac1529",
+   "n_freq": 60,
+   "noise_amp_digest": "94b6ac5540010592",
+   "resolution_floor": 0.8519591661447324
+  },
+  "UR.AQ06.00.HHE": {
+   "amp_digest": "c6b4c643c543e441",
+   "amp_max": 0.00021265444970791755,
+   "amp_median": 2.284936756327565e-05,
+   "band": [
+    0.9290680585958758,
+    45.731178397762164
+   ],
+   "bsnr_digest": "afff86c372a5fd71",
+   "freq_digest": "89db8ef1ffe5eefd",
+   "n_freq": 64,
+   "noise_amp_digest": "cfd6b7a5a4ef175b",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ06.00.HHN": {
+   "amp_digest": "64e7e7b24cf5cabe",
+   "amp_max": 0.00020570308498185714,
+   "amp_median": 2.4155376579452963e-05,
+   "band": [
+    0.9290680585958758,
+    45.166760039559136
+   ],
+   "bsnr_digest": "b3150eac4644a696",
+   "freq_digest": "263b70043ab83931",
+   "n_freq": 65,
+   "noise_amp_digest": "8f61848ade099945",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ07.00.HHE": {
+   "amp_digest": "50d81915f6b88c52",
+   "amp_max": 2.252283466307049e-05,
+   "amp_median": 6.1723642245902475e-06,
+   "band": [
+    1.313900648833929,
+    27.011893257380297
+   ],
+   "bsnr_digest": "28e33d89988225bd",
+   "freq_digest": "3b55f31e6747c130",
+   "n_freq": 53,
+   "noise_amp_digest": "b69a18b4a55cb2cd",
+   "resolution_floor": 1.313900648833929
+  },
+  "UR.AQ07.00.HHN": {
+   "amp_digest": "cfb677001cb26ed9",
+   "amp_max": 2.6274393510954805e-05,
+   "amp_median": 6.464302876939807e-06,
+   "band": [
+    1.313900648833929,
+    32.61822089549842
+   ],
+   "bsnr_digest": "5a715696f4852310",
+   "freq_digest": "3e16cbca551e9e0b",
+   "n_freq": 52,
+   "noise_amp_digest": "aa04b985e3636695",
+   "resolution_floor": 1.313900648833929
+  },
+  "UR.AQ09.00.HHE": {
+   "amp_digest": "84784dafc22a8689",
+   "amp_max": 6.735503557977823e-05,
+   "amp_median": 1.6032911466311895e-05,
+   "band": [
+    0.9290680585958758,
+    34.929066706258844
+   ],
+   "bsnr_digest": "c18ffbb0092f3e60",
+   "freq_digest": "b301399083ae7050",
+   "n_freq": 55,
+   "noise_amp_digest": "593366a173620495",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ09.00.HHN": {
+   "amp_digest": "a277ffe16a3d9e0e",
+   "amp_max": 0.00013403551000098221,
+   "amp_median": 2.0276434774817745e-05,
+   "band": [
+    0.9290680585958758,
+    34.929066706258844
+   ],
+   "bsnr_digest": "360c85e179d30505",
+   "freq_digest": "b301399083ae7050",
+   "n_freq": 55,
+   "noise_amp_digest": "6ce546269bcfa3c8",
+   "resolution_floor": 0.9290680585958758
+  },
+  "UR.AQ10.00.HHE": {
+   "amp_digest": "60cdbaaa6b27de0d",
+   "amp_max": 5.0305639240444934e-05,
+   "amp_median": 1.0369561584896477e-05,
+   "band": [
+    1.1048543456039803,
+    29.55894465067871
+   ],
+   "bsnr_digest": "bc0a77657800a2e2",
+   "freq_digest": "3b55f31e6747c130",
+   "n_freq": 53,
+   "noise_amp_digest": "79dbb14738c071f2",
+   "resolution_floor": 1.1048543456039803
+  },
+  "UR.AQ10.00.HHN": {
+   "amp_digest": "6976697188ef4d8a",
+   "amp_max": 3.649219453397855e-05,
+   "amp_median": 1.1093703253666817e-05,
+   "band": [
+    1.1048543456039803,
+    25.363633373438088
+   ],
+   "bsnr_digest": "46a2dbac985fc7c5",
+   "freq_digest": "234c080c3d203fbb",
+   "n_freq": 51,
+   "noise_amp_digest": "14fcf6e34ba20796",
+   "resolution_floor": 1.1048543456039803
+  }
+ },
+ "fft": {
+  "LV.L001..HHE": {
+   "amp_digest": "8330f090e003817d",
+   "amp_max": 0.0011390187450627152,
+   "amp_median": 4.752116713100885e-05,
+   "band": [
+    0.973717416300658,
+    32.788643482803174
+   ],
+   "bsnr_digest": "c7e5aedf4faebe9b",
+   "freq_digest": "aa38c59384132021",
+   "n_freq": 152,
+   "noise_amp_digest": "4612844e52de4e5f",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L001..HHN": {
+   "amp_digest": "cc5633430fea8d1c",
+   "amp_max": 0.0029829137745626517,
+   "amp_median": 5.291722355846412e-05,
+   "band": [
+    1.1181139989636801,
+    31.23385155720966
+   ],
+   "bsnr_digest": "a81b8707d27f9fec",
+   "freq_digest": "3a343496f98540b7",
+   "n_freq": 90,
+   "noise_amp_digest": "388389dcab69f3b8",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L002..HHE": {
+   "amp_digest": "1a560a71967201ac",
+   "amp_max": 0.00012393141510829643,
+   "amp_median": 1.437767717766146e-06,
+   "band": [
+    1.5094384507838874,
+    38.59542615124991
+   ],
+   "bsnr_digest": "4d45208b4d1fc9f7",
+   "freq_digest": "afda0d03e29aa10c",
+   "n_freq": 167,
+   "noise_amp_digest": "e49abcec124b8539",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L002..HHN": {
+   "amp_digest": "e0d24fc990912235",
+   "amp_max": 0.00014693697158659063,
+   "amp_median": 1.400713158897733e-06,
+   "band": [
+    0.9477387099726711,
+    37.53007532565119
+   ],
+   "bsnr_digest": "1129a6ad686b64af",
+   "freq_digest": "b1a8cca18c2e8f39",
+   "n_freq": 158,
+   "noise_amp_digest": "979d7d827e2c7593",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L006..HHE": {
+   "amp_digest": "09d68049ac9e6f88",
+   "amp_max": 0.00026703286935118766,
+   "amp_median": 1.6480468777141022e-07,
+   "band": [
+    1.3617127116258283,
+    23.61945176501958
+   ],
+   "bsnr_digest": "dd1ce4f0de2e9963",
+   "freq_digest": "499ca68b4b890d82",
+   "n_freq": 145,
+   "noise_amp_digest": "8fe1fceac5b1b122",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L006..HHN": {
+   "amp_digest": "dd1d7105ba10bcb1",
+   "amp_max": 0.00016669675811889086,
+   "amp_median": 1.7279370222124867e-07,
+   "band": [
+    1.1035836325547057,
+    9.245914728081909
+   ],
+   "bsnr_digest": "873d975fda40af0d",
+   "freq_digest": "4726d6bff7d0f855",
+   "n_freq": 135,
+   "noise_amp_digest": "cc71a34a298a1708",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L007..HHE": {
+   "amp_digest": "866a1023ad954cb6",
+   "amp_max": 6.765887381674309e-05,
+   "amp_median": 2.1210978181951005e-07,
+   "band": [
+    1.4484769173671939,
+    7.041619439901746
+   ],
+   "bsnr_digest": "8db6ddb81a80dbe9",
+   "freq_digest": "9b16eff09524d8b6",
+   "n_freq": 140,
+   "noise_amp_digest": "fd0a59aa45c45eb4",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L007..HHN": {
+   "amp_digest": "1ebe8268d852e687",
+   "amp_max": 0.00011688820468002885,
+   "amp_median": 1.9628020696457572e-07,
+   "band": [
+    0.8647452431401212,
+    10.475901429815453
+   ],
+   "bsnr_digest": "6e3174fb4a9bddc5",
+   "freq_digest": "8f3c505a48302426",
+   "n_freq": 114,
+   "noise_amp_digest": "8f612c5cb45e7241",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L008..HHE": {
+   "amp_digest": "48e164ce889da1f2",
+   "amp_max": 3.525237683148638e-05,
+   "amp_median": 1.472672323995612e-07,
+   "band": [
+    4.63777831359679,
+    18.29540141450008
+   ],
+   "bsnr_digest": "adab208184f6021c",
+   "freq_digest": "42e062b7d76d75a3",
+   "n_freq": 120,
+   "noise_amp_digest": "2c8952580505c1ed",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L008..HHN": {
+   "amp_digest": "c9924d693feffb40",
+   "amp_max": 7.189399040550449e-05,
+   "amp_median": 2.414342813880325e-07,
+   "band": [
+    9.98742597396051,
+    16.473241545409472
+   ],
+   "bsnr_digest": "489b4f982b88eb3b",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "16666ddb59417026",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L009..HHE": {
+   "amp_digest": "9b3fbe86d24b087d",
+   "amp_max": 0.00023837201436446775,
+   "amp_median": 3.297248288297286e-06,
+   "band": [
+    0.6756756756756757,
+    45.73816029563091
+   ],
+   "bsnr_digest": "2eeea5cfa8760595",
+   "freq_digest": "0be757e9d85199f0",
+   "n_freq": 177,
+   "noise_amp_digest": "46a19b1f12ae2165",
+   "resolution_floor": 0.6756756756756757
+  },
+  "LV.L009..HHN": {
+   "amp_digest": "c4719a22d6ff97ac",
+   "amp_max": 0.00024247095605136644,
+   "amp_median": 3.4464650217251585e-06,
+   "band": [
+    1.1975429546462397,
+    44.37797511381281
+   ],
+   "bsnr_digest": "de30b48e80d26f39",
+   "freq_digest": "951c55dace399bed",
+   "n_freq": 166,
+   "noise_amp_digest": "72e98f43a93355a5",
+   "resolution_floor": 0.6756756756756757
+  },
+  "UR.AQ01.00.HHE": {
+   "amp_digest": "112d0a1cfb466589",
+   "amp_max": 3.393966474702117e-05,
+   "amp_median": 1.384282294319947e-07,
+   "band": [
+    0.94187613565413,
+    19.94609399915649
+   ],
+   "bsnr_digest": "6da33ff55c4152b6",
+   "freq_digest": "bd1dcbcc1020f0ea",
+   "n_freq": 107,
+   "noise_amp_digest": "4a00206586d70d0e",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ01.00.HHN": {
+   "amp_digest": "bf61c1b3a6228b25",
+   "amp_max": 3.749467022672359e-05,
+   "amp_median": 1.893296462942313e-07,
+   "band": [
+    0.9603039489851778,
+    27.206502746088496
+   ],
+   "bsnr_digest": "71c2a755add17c5d",
+   "freq_digest": "3a2d61b414ee7896",
+   "n_freq": 104,
+   "noise_amp_digest": "14776601415eb410",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ03.00.HHE": {
+   "amp_digest": "06cae5f8e6ba47da",
+   "amp_max": 0.0004869521857524005,
+   "amp_median": 1.0680767534207588e-06,
+   "band": [
+    0.8944940844050081,
+    80.77427233709817
+   ],
+   "bsnr_digest": "131a0e1b7a51aef6",
+   "freq_digest": "39bfa0ccc5414c66",
+   "n_freq": 338,
+   "noise_amp_digest": "b12c4dbb2faa8728",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ03.00.HHN": {
+   "amp_digest": "e1d97cf7d00516eb",
+   "amp_max": 0.0007904315578929298,
+   "amp_median": 1.161129576017195e-06,
+   "band": [
+    0.9040002823361107,
+    52.70836316105784
+   ],
+   "bsnr_digest": "bc60d7dbd9953c00",
+   "freq_digest": "41f016214d89f5f5",
+   "n_freq": 333,
+   "noise_amp_digest": "b44a59b9fafbbecf",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ04.00.HHE": {
+   "amp_digest": "e4617f0acd85bb25",
+   "amp_max": 0.0003498847869222989,
+   "amp_median": 8.418031103242526e-06,
+   "band": [
+    0.9407138328094745,
+    87.288590981566
+   ],
+   "bsnr_digest": "6e0b1a08d542dad3",
+   "freq_digest": "92d50cbec0cdac8a",
+   "n_freq": 317,
+   "noise_amp_digest": "0915743622b1925c",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ04.00.HHN": {
+   "amp_digest": "1974cf0ee2d4d05e",
+   "amp_max": 0.0007518269511478216,
+   "amp_median": 4.5199527552402115e-06,
+   "band": [
+    0.9578491480949406,
+    94.27281435133563
+   ],
+   "bsnr_digest": "6dbdb189c043e7a4",
+   "freq_digest": "12d4d37d5a19b150",
+   "n_freq": 310,
+   "noise_amp_digest": "66d63394502a4991",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ05.00.HHE": {
+   "amp_digest": "42006ca4c0a73256",
+   "amp_max": 0.0005955785450757909,
+   "amp_median": 3.2423284194047053e-06,
+   "band": [
+    0.8996342659848598,
+    94.21104790578656
+   ],
+   "bsnr_digest": "0f74b1366c7da75a",
+   "freq_digest": "c63db6175f1eb953",
+   "n_freq": 335,
+   "noise_amp_digest": "5a98e03bddd9b9a8",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ05.00.HHN": {
+   "amp_digest": "586255079b24b8a4",
+   "amp_max": 0.0006782154333357239,
+   "amp_median": 3.095460610813734e-06,
+   "band": [
+    0.8204086361167056,
+    94.47315173882237
+   ],
+   "bsnr_digest": "147499ce46d1e097",
+   "freq_digest": "11570bfb7fcf7d89",
+   "n_freq": 239,
+   "noise_amp_digest": "b8846af44015619f",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ06.00.HHE": {
+   "amp_digest": "0f98884c86cc3082",
+   "amp_max": 0.00027100103773494715,
+   "amp_median": 8.370015944223729e-08,
+   "band": [
+    9.913364377447403,
+    66.42535104304301
+   ],
+   "bsnr_digest": "955407cc389f4475",
+   "freq_digest": "8140a2868c2a8fc0",
+   "n_freq": 338,
+   "noise_amp_digest": "df4299fec75563ee",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ06.00.HHN": {
+   "amp_digest": "f068a8733dd5baef",
+   "amp_max": 0.00029875735174908453,
+   "amp_median": 1.2697084692758168e-07,
+   "band": [
+    0.8016188872608188,
+    68.6920743469019
+   ],
+   "bsnr_digest": "abb8a078f9b800da",
+   "freq_digest": "468cc1a23fd4044a",
+   "n_freq": 368,
+   "noise_amp_digest": "1ffc2603bfc38538",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ07.00.HHE": {
+   "amp_digest": "3b015c3d86c38721",
+   "amp_max": 2.470507994688191e-05,
+   "amp_median": 1.897220586639862e-07,
+   "band": [
+    0.8849557522123893,
+    33.28274558056363
+   ],
+   "bsnr_digest": "b6518042152fd2e6",
+   "freq_digest": "35549d1ef7d07f00",
+   "n_freq": 126,
+   "noise_amp_digest": "c74f765756939b96",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ07.00.HHN": {
+   "amp_digest": "d0c6bfeae3856dcb",
+   "amp_max": 3.8024610352446536e-05,
+   "amp_median": 1.7882657432637512e-07,
+   "band": [
+    0.8849557522123893,
+    26.892138753418887
+   ],
+   "bsnr_digest": "8d9d7ae6cc5aff15",
+   "freq_digest": "6198b3989d805c09",
+   "n_freq": 118,
+   "noise_amp_digest": "5d7178cb0609bda6",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ09.00.HHE": {
+   "amp_digest": "8f7cccdd8b7010a7",
+   "amp_max": 7.129941243734882e-05,
+   "amp_median": 2.1111597085018037e-06,
+   "band": [
+    0.9922949033943869,
+    43.030304197326
+   ],
+   "bsnr_digest": "212702db51bad466",
+   "freq_digest": "2d731276c4a00fa3",
+   "n_freq": 149,
+   "noise_amp_digest": "ae9d22b7b6a66176",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ09.00.HHN": {
+   "amp_digest": "0c46db7034a4e734",
+   "amp_max": 0.0001347774984865206,
+   "amp_median": 2.1163520271732592e-06,
+   "band": [
+    0.6665703398762428,
+    41.48862130606012
+   ],
+   "bsnr_digest": "0f1a97d5f2a2a65e",
+   "freq_digest": "7c3545de00ac668e",
+   "n_freq": 148,
+   "noise_amp_digest": "acae596d58c71f44",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ10.00.HHE": {
+   "amp_digest": "d99eb21f41ad87ba",
+   "amp_max": 7.240492503881115e-05,
+   "amp_median": 1.569581571771115e-07,
+   "band": [
+    0.8014155430688078,
+    40.4117258750204
+   ],
+   "bsnr_digest": "2d1dec2eea9f863e",
+   "freq_digest": "ba6e8763200d72eb",
+   "n_freq": 124,
+   "noise_amp_digest": "853c698cca239338",
+   "resolution_floor": 0.7518796992481203
+  },
+  "UR.AQ10.00.HHN": {
+   "amp_digest": "7b4ea6a6dc4ab461",
+   "amp_max": 4.543295123097966e-05,
+   "amp_median": 1.8613609027262716e-07,
+   "band": [
+    0.9271659654213654,
+    28.034150656401575
+   ],
+   "bsnr_digest": "1d269332f6d0c1fd",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "8e9bbc9bc26e5003",
+   "resolution_floor": 0.7518796992481203
+  }
+ },
+ "multitaper": {
+  "LV.L001..HHE": {
+   "amp_digest": "a127c77acb116dd2",
+   "amp_max": 0.001031767824582608,
+   "amp_median": 2.801929943717493e-05,
+   "band": [
+    0.6514565439976477,
+    44.32350181580541
+   ],
+   "bsnr_digest": "0b66c5132104619a",
+   "freq_digest": "aa38c59384132021",
+   "n_freq": 152,
+   "noise_amp_digest": "4c2dc8583394d1ff",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L001..HHN": {
+   "amp_digest": "feaa515fcdf5a26b",
+   "amp_max": 0.0025509414540518275,
+   "amp_median": 4.477369116755556e-05,
+   "band": [
+    1.1181139989636801,
+    47.535876864282514
+   ],
+   "bsnr_digest": "f9785b7072ffc118",
+   "freq_digest": "3a343496f98540b7",
+   "n_freq": 90,
+   "noise_amp_digest": "7eb2a25f0bfd229b",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L002..HHE": {
+   "amp_digest": "9c531593b6ebf829",
+   "amp_max": 0.00010259088702967853,
+   "amp_median": 2.356500301164994e-06,
+   "band": [
+    0.9047816035221763,
+    33.671572687956086
+   ],
+   "bsnr_digest": "2beaf5110d7c8fa0",
+   "freq_digest": "afda0d03e29aa10c",
+   "n_freq": 167,
+   "noise_amp_digest": "4461e895156a3a58",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L002..HHN": {
+   "amp_digest": "a053af3ec0196356",
+   "amp_max": 0.00011765492716975434,
+   "amp_median": 2.1080516909351346e-06,
+   "band": [
+    0.9477387099726711,
+    37.53007532565119
+   ],
+   "bsnr_digest": "d188a2dc02c0ed28",
+   "freq_digest": "b1a8cca18c2e8f39",
+   "n_freq": 158,
+   "noise_amp_digest": "a3f43f828d3e820d",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L006..HHE": {
+   "amp_digest": "d054166082add8f0",
+   "amp_max": 0.0001762569582764143,
+   "amp_median": 1.495358468973426e-07,
+   "band": [
+    0.6993006993006994,
+    38.851394635233305
+   ],
+   "bsnr_digest": "389d8d2cb3bdaff3",
+   "freq_digest": "499ca68b4b890d82",
+   "n_freq": 145,
+   "noise_amp_digest": "8a248752c54debbe",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L006..HHN": {
+   "amp_digest": "ffeefa98bab5dae4",
+   "amp_max": 0.0001336085916996039,
+   "amp_median": 1.9829473572464233e-07,
+   "band": [
+    0.7453813965053203,
+    10.538014316805395
+   ],
+   "bsnr_digest": "ea98c3cfb405c1cb",
+   "freq_digest": "4726d6bff7d0f855",
+   "n_freq": 135,
+   "noise_amp_digest": "86aa732c0276c7c8",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L007..HHE": {
+   "amp_digest": "647ced5b414ab593",
+   "amp_max": 3.670474495745858e-05,
+   "amp_median": 2.130391652260609e-07,
+   "band": [
+    0.7251930841590306,
+    16.58318998942561
+   ],
+   "bsnr_digest": "41c64bb953471bdc",
+   "freq_digest": "9b16eff09524d8b6",
+   "n_freq": 140,
+   "noise_amp_digest": "a9db63b713627508",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L007..HHN": {
+   "amp_digest": "c77104ad9799fe2d",
+   "amp_max": 7.756875970091474e-05,
+   "amp_median": 1.2006934828007447e-07,
+   "band": [
+    0.8647452431401212,
+    20.330969206916524
+   ],
+   "bsnr_digest": "5e89f3fb365de742",
+   "freq_digest": "8f3c505a48302426",
+   "n_freq": 114,
+   "noise_amp_digest": "3150f2408367396a",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L008..HHE": {
+   "amp_digest": "ca2844488789c4ea",
+   "amp_max": 2.8351699778063485e-05,
+   "amp_median": 1.8655667208675422e-07,
+   "band": [
+    2.873372036131731,
+    18.888747059335977
+   ],
+   "bsnr_digest": "82eef781b0e89641",
+   "freq_digest": "42e062b7d76d75a3",
+   "n_freq": 120,
+   "noise_amp_digest": "5867f878bb65e5ad",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L008..HHN": {
+   "amp_digest": "35ba7d1bbf6925df",
+   "amp_max": 4.8346594937998064e-05,
+   "amp_median": 3.532476311848486e-07,
+   "band": [
+    3.239449498380968,
+    20.50496204447194
+   ],
+   "bsnr_digest": "fc78cb696e306d9e",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "f7a39cdac2d802c3",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L009..HHE": {
+   "amp_digest": "8f7f71dbf8f14e97",
+   "amp_max": 0.0001416980587438695,
+   "amp_median": 3.861095673260282e-06,
+   "band": [
+    0.6756756756756757,
+    45.73816029563091
+   ],
+   "bsnr_digest": "1642e57219353682",
+   "freq_digest": "0be757e9d85199f0",
+   "n_freq": 177,
+   "noise_amp_digest": "8a0e8fd2d049c000",
+   "resolution_floor": 0.6756756756756757
+  },
+  "LV.L009..HHN": {
+   "amp_digest": "5d9fdfa1f3202f07",
+   "amp_max": 0.00014988877134288937,
+   "amp_median": 4.059175652943728e-06,
+   "band": [
+    0.6756756756756757,
+    44.37797511381281
+   ],
+   "bsnr_digest": "52d06521e231d02f",
+   "freq_digest": "951c55dace399bed",
+   "n_freq": 166,
+   "noise_amp_digest": "2813310f2bd7dec4",
+   "resolution_floor": 0.6756756756756757
+  },
+  "UR.AQ01.00.HHE": {
+   "amp_digest": "5f576152fda572e7",
+   "amp_max": 2.2532690528944914e-05,
+   "amp_median": 8.150858669525949e-08,
+   "band": [
+    0.94187613565413,
+    30.85084146113449
+   ],
+   "bsnr_digest": "a2d6775c6608ef53",
+   "freq_digest": "bd1dcbcc1020f0ea",
+   "n_freq": 107,
+   "noise_amp_digest": "806dca4422766be0",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ01.00.HHN": {
+   "amp_digest": "e70e016040cb81e9",
+   "amp_max": 2.3939086024905927e-05,
+   "amp_median": 9.297288710716376e-08,
+   "band": [
+    0.9603039489851778,
+    21.90506249615995
+   ],
+   "bsnr_digest": "8f67a2ae581e5461",
+   "freq_digest": "3a2d61b414ee7896",
+   "n_freq": 104,
+   "noise_amp_digest": "b5ecf42671dc1677",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ03.00.HHE": {
+   "amp_digest": "080739e2b04a5860",
+   "amp_max": 0.0002940270235986697,
+   "amp_median": 9.157897263840286e-07,
+   "band": [
+    0.6211180124223602,
+    77.6986744345617
+   ],
+   "bsnr_digest": "98d1d9e8d8922fd4",
+   "freq_digest": "39bfa0ccc5414c66",
+   "n_freq": 338,
+   "noise_amp_digest": "519a5f9908f04fab",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ03.00.HHN": {
+   "amp_digest": "77d5b496be19da06",
+   "amp_max": 0.0005288825834033539,
+   "amp_median": 7.591404331918279e-07,
+   "band": [
+    0.9040002823361107,
+    59.20091432884038
+   ],
+   "bsnr_digest": "8be297e39249aafd",
+   "freq_digest": "41f016214d89f5f5",
+   "n_freq": 333,
+   "noise_amp_digest": "72ff79153a4abbda",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ04.00.HHE": {
+   "amp_digest": "60ac1ac7a89c89ef",
+   "amp_max": 0.00025816052668756087,
+   "amp_median": 3.947192939002647e-06,
+   "band": [
+    0.9407138328094745,
+    87.288590981566
+   ],
+   "bsnr_digest": "5c9c5b5d1897d2d0",
+   "freq_digest": "92d50cbec0cdac8a",
+   "n_freq": 317,
+   "noise_amp_digest": "a2cdd7d23d95f221",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ04.00.HHN": {
+   "amp_digest": "8b3f6727c90da1e8",
+   "amp_max": 0.0005381064353815671,
+   "amp_median": 2.2301209096572954e-06,
+   "band": [
+    0.6534409353452816,
+    84.05416505930008
+   ],
+   "bsnr_digest": "c1ea8744eb8f03a9",
+   "freq_digest": "12d4d37d5a19b150",
+   "n_freq": 310,
+   "noise_amp_digest": "4c1d1171c190c484",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ05.00.HHE": {
+   "amp_digest": "aed035045be942d5",
+   "amp_max": 0.0004417055536461667,
+   "amp_median": 1.2806630516685089e-06,
+   "band": [
+    0.5988023952095809,
+    74.66207268919987
+   ],
+   "bsnr_digest": "9a1192ad3f2eee20",
+   "freq_digest": "c63db6175f1eb953",
+   "n_freq": 335,
+   "noise_amp_digest": "db84455c0d7ac248",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ05.00.HHN": {
+   "amp_digest": "79f63ca682ea3e38",
+   "amp_max": 0.0005124788553860591,
+   "amp_median": 1.4646070469382758e-06,
+   "band": [
+    0.8204086361167056,
+    78.70973933893117
+   ],
+   "bsnr_digest": "ef686a04f2b97fd9",
+   "freq_digest": "11570bfb7fcf7d89",
+   "n_freq": 239,
+   "noise_amp_digest": "81d5965159639ad4",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ06.00.HHE": {
+   "amp_digest": "af5ffcfd7daf68dd",
+   "amp_max": 0.00019759925005268384,
+   "amp_median": 3.6618208558954723e-08,
+   "band": [
+    0.89317282283277,
+    46.8380554298236
+   ],
+   "bsnr_digest": "a8eead152e3993e4",
+   "freq_digest": "8140a2868c2a8fc0",
+   "n_freq": 338,
+   "noise_amp_digest": "3e8d68e092484235",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ06.00.HHN": {
+   "amp_digest": "c29302f4ac1a3d4b",
+   "amp_max": 0.00022772652161663726,
+   "amp_median": 4.055193568300452e-08,
+   "band": [
+    0.8016188872608188,
+    46.32869958783309
+   ],
+   "bsnr_digest": "b666db6e22c4a06b",
+   "freq_digest": "468cc1a23fd4044a",
+   "n_freq": 368,
+   "noise_amp_digest": "a60d8595f77e935d",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ07.00.HHE": {
+   "amp_digest": "b7c4ecc76da2d8ba",
+   "amp_max": 1.776752280497204e-05,
+   "amp_median": 1.59215296124233e-07,
+   "band": [
+    1.202166728657511,
+    33.28274558056363
+   ],
+   "bsnr_digest": "73cccb72b52f2617",
+   "freq_digest": "35549d1ef7d07f00",
+   "n_freq": 126,
+   "noise_amp_digest": "d3fe862464766ff8",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ07.00.HHN": {
+   "amp_digest": "13d49b14df028ea3",
+   "amp_max": 2.18142195307199e-05,
+   "amp_median": 1.531966751377244e-07,
+   "band": [
+    0.8849557522123893,
+    40.66197328450292
+   ],
+   "bsnr_digest": "8198f1279ad4bfa6",
+   "freq_digest": "6198b3989d805c09",
+   "n_freq": 118,
+   "noise_amp_digest": "cb40bd185ae5429e",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ09.00.HHE": {
+   "amp_digest": "019bfe3cca066198",
+   "amp_max": 6.333120400024323e-05,
+   "amp_median": 2.4460328386782916e-06,
+   "band": [
+    0.664945206005862,
+    47.55959434090303
+   ],
+   "bsnr_digest": "23b56ce2bc38b333",
+   "freq_digest": "2d731276c4a00fa3",
+   "n_freq": 149,
+   "noise_amp_digest": "69e18393d40cb47b",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ09.00.HHN": {
+   "amp_digest": "611ae11ba575ed43",
+   "amp_max": 0.00011441784689529445,
+   "amp_median": 2.7066690681184134e-06,
+   "band": [
+    0.6665703398762428,
+    47.40265302905726
+   ],
+   "bsnr_digest": "7b3e420925cd15e6",
+   "freq_digest": "7c3545de00ac668e",
+   "n_freq": 148,
+   "noise_amp_digest": "6d2f750bc1d75a7f",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ10.00.HHE": {
+   "amp_digest": "0a56c2b3a81c21b0",
+   "amp_max": 3.908070598096415e-05,
+   "amp_median": 2.0388349986380318e-07,
+   "band": [
+    1.216991767761747,
+    39.133730856537696
+   ],
+   "bsnr_digest": "c96b27e05f2363a8",
+   "freq_digest": "ba6e8763200d72eb",
+   "n_freq": 124,
+   "noise_amp_digest": "27668df5ed185f08",
+   "resolution_floor": 0.7518796992481203
+  },
+  "UR.AQ10.00.HHN": {
+   "amp_digest": "d469487f97455122",
+   "amp_max": 3.512319751475575e-05,
+   "amp_median": 2.2087204192338607e-07,
+   "band": [
+    0.9271659654213654,
+    29.84372913033072
+   ],
+   "bsnr_digest": "b66acd536f6c4c16",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "4f93be23481dc5fc",
+   "resolution_floor": 0.7518796992481203
+  }
+ },
+ "quadratic": {
+  "LV.L001..HHE": {
+   "amp_digest": "41b6cbbffd064315",
+   "amp_max": 0.001028515287585657,
+   "amp_median": 2.800246307782951e-05,
+   "band": [
+    0.973717416300658,
+    44.32350181580541
+   ],
+   "bsnr_digest": "c8b53da775db64ec",
+   "freq_digest": "aa38c59384132021",
+   "n_freq": 152,
+   "noise_amp_digest": "df7ce886a7fe2337",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L001..HHN": {
+   "amp_digest": "7e1cbea59c6c9e66",
+   "amp_max": 0.002559222208720344,
+   "amp_median": 4.609501170817078e-05,
+   "band": [
+    1.1181139989636801,
+    47.535876864282514
+   ],
+   "bsnr_digest": "4cfd7305f71febdf",
+   "freq_digest": "3a343496f98540b7",
+   "n_freq": 90,
+   "noise_amp_digest": "1964a7c0b9ee3a03",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L002..HHE": {
+   "amp_digest": "9ed889963a398545",
+   "amp_max": 0.0001021777293517189,
+   "amp_median": 2.4561529799796754e-06,
+   "band": [
+    0.9047816035221763,
+    33.671572687956086
+   ],
+   "bsnr_digest": "98098a5a27a58538",
+   "freq_digest": "afda0d03e29aa10c",
+   "n_freq": 167,
+   "noise_amp_digest": "450325d789acdeb2",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L002..HHN": {
+   "amp_digest": "a273b3aae88370df",
+   "amp_max": 0.00011937068749235247,
+   "amp_median": 2.161634928236204e-06,
+   "band": [
+    0.9477387099726711,
+    38.81835701848392
+   ],
+   "bsnr_digest": "99a3540ea1881273",
+   "freq_digest": "b1a8cca18c2e8f39",
+   "n_freq": 158,
+   "noise_amp_digest": "7761ddde681891e1",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L006..HHE": {
+   "amp_digest": "b022cece4ea3d3c5",
+   "amp_max": 0.0001859481971728988,
+   "amp_median": 1.5993819157962342e-07,
+   "band": [
+    0.6993006993006994,
+    38.851394635233305
+   ],
+   "bsnr_digest": "2c663bd42d688966",
+   "freq_digest": "499ca68b4b890d82",
+   "n_freq": 145,
+   "noise_amp_digest": "55f9d9bc362e0043",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L006..HHN": {
+   "amp_digest": "2994927b94ecfe74",
+   "amp_max": 0.00013384641361819424,
+   "amp_median": 2.2287773191944216e-07,
+   "band": [
+    0.7453813965053203,
+    23.86791114249469
+   ],
+   "bsnr_digest": "057c847799d80192",
+   "freq_digest": "4726d6bff7d0f855",
+   "n_freq": 135,
+   "noise_amp_digest": "99e6c2324fc98c57",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L007..HHE": {
+   "amp_digest": "c9c84133a10f3598",
+   "amp_max": 3.9873842171143765e-05,
+   "amp_median": 2.376091201196697e-07,
+   "band": [
+    0.7251930841590306,
+    16.58318998942561
+   ],
+   "bsnr_digest": "820af5f4c89983bf",
+   "freq_digest": "9b16eff09524d8b6",
+   "n_freq": 140,
+   "noise_amp_digest": "4cebe70d8cdf4645",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L007..HHN": {
+   "amp_digest": "3b9fab73cfe0ee7f",
+   "amp_max": 7.725663630751657e-05,
+   "amp_median": 1.3197205715886694e-07,
+   "band": [
+    0.8647452431401212,
+    20.330969206916524
+   ],
+   "bsnr_digest": "233aa75b26732d4d",
+   "freq_digest": "8f3c505a48302426",
+   "n_freq": 114,
+   "noise_amp_digest": "c396266d07da2a8c",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L008..HHE": {
+   "amp_digest": "d0248f4a628bb3b4",
+   "amp_max": 2.5556858024330423e-05,
+   "amp_median": 1.9432425408674415e-07,
+   "band": [
+    2.873372036131731,
+    18.888747059335977
+   ],
+   "bsnr_digest": "6e8acdb08c8de0d8",
+   "freq_digest": "42e062b7d76d75a3",
+   "n_freq": 120,
+   "noise_amp_digest": "f6581de6a9fcad71",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L008..HHN": {
+   "amp_digest": "2a4a9ce6893e6274",
+   "amp_max": 4.83704704802477e-05,
+   "amp_median": 3.926479226639238e-07,
+   "band": [
+    3.239449498380968,
+    20.50496204447194
+   ],
+   "bsnr_digest": "4972159c0b998fd2",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "6b395aaca237002a",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L009..HHE": {
+   "amp_digest": "f4f8fe6688babe7f",
+   "amp_max": 0.00015014301543327934,
+   "amp_median": 3.970101530631709e-06,
+   "band": [
+    0.6756756756756757,
+    45.73816029563091
+   ],
+   "bsnr_digest": "a1fc2ee22d83d9f2",
+   "freq_digest": "0be757e9d85199f0",
+   "n_freq": 177,
+   "noise_amp_digest": "b202cbc658b072fa",
+   "resolution_floor": 0.6756756756756757
+  },
+  "LV.L009..HHN": {
+   "amp_digest": "c9408d29b608662e",
+   "amp_max": 0.00016881939130150597,
+   "amp_median": 4.10280847641153e-06,
+   "band": [
+    0.6756756756756757,
+    44.37797511381281
+   ],
+   "bsnr_digest": "d6cdffadd6cd6783",
+   "freq_digest": "951c55dace399bed",
+   "n_freq": 166,
+   "noise_amp_digest": "574ae24f17f9f1d3",
+   "resolution_floor": 0.6756756756756757
+  },
+  "UR.AQ01.00.HHE": {
+   "amp_digest": "4ba9260b3154571d",
+   "amp_max": 2.4643113700245363e-05,
+   "amp_median": 9.265114452418664e-08,
+   "band": [
+    0.94187613565413,
+    31.82703920934722
+   ],
+   "bsnr_digest": "c1248d06a9fca534",
+   "freq_digest": "bd1dcbcc1020f0ea",
+   "n_freq": 107,
+   "noise_amp_digest": "4bc567a2ec24749c",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ01.00.HHN": {
+   "amp_digest": "a98325c2770c5961",
+   "amp_max": 2.6888047305701637e-05,
+   "amp_median": 1.0195289815396056e-07,
+   "band": [
+    0.9603039489851778,
+    21.90506249615995
+   ],
+   "bsnr_digest": "1c4bfa7f4e0aa923",
+   "freq_digest": "3a2d61b414ee7896",
+   "n_freq": 104,
+   "noise_amp_digest": "30a5b1f943dfbb9e",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ03.00.HHE": {
+   "amp_digest": "a8af3ab5ecf8a9b0",
+   "amp_max": 0.0003136038521277249,
+   "amp_median": 1.0323205824037012e-06,
+   "band": [
+    0.6211180124223602,
+    77.6986744345617
+   ],
+   "bsnr_digest": "0ca4bce7188fec0f",
+   "freq_digest": "39bfa0ccc5414c66",
+   "n_freq": 338,
+   "noise_amp_digest": "bbb20f688bd15e69",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ03.00.HHN": {
+   "amp_digest": "5db97e047b8680d5",
+   "amp_max": 0.0005388249850453448,
+   "amp_median": 8.455670644243065e-07,
+   "band": [
+    0.9040002823361107,
+    63.96773952686643
+   ],
+   "bsnr_digest": "ddf89f786094829a",
+   "freq_digest": "41f016214d89f5f5",
+   "n_freq": 333,
+   "noise_amp_digest": "afbb32c62b2d08b3",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ04.00.HHE": {
+   "amp_digest": "2491ea8cfa277234",
+   "amp_max": 0.0002566272752210146,
+   "amp_median": 4.25352627020281e-06,
+   "band": [
+    0.9407138328094745,
+    87.288590981566
+   ],
+   "bsnr_digest": "971bcbfe0cd77b59",
+   "freq_digest": "92d50cbec0cdac8a",
+   "n_freq": 317,
+   "noise_amp_digest": "fb6efbe65990e847",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ04.00.HHN": {
+   "amp_digest": "6a04c49defc36f40",
+   "amp_max": 0.0005038533219654268,
+   "amp_median": 2.361277093236953e-06,
+   "band": [
+    0.6534409353452816,
+    84.05416505930008
+   ],
+   "bsnr_digest": "be295075e689038b",
+   "freq_digest": "12d4d37d5a19b150",
+   "n_freq": 310,
+   "noise_amp_digest": "1c82297d586726e8",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ05.00.HHE": {
+   "amp_digest": "f2cadbf9f82e15f8",
+   "amp_max": 0.0004110367409743595,
+   "amp_median": 1.3698471442563068e-06,
+   "band": [
+    0.8996342659848598,
+    77.612857664939
+   ],
+   "bsnr_digest": "93bef4e5fde16f6d",
+   "freq_digest": "c63db6175f1eb953",
+   "n_freq": 335,
+   "noise_amp_digest": "130597c049ad97b2",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ05.00.HHN": {
+   "amp_digest": "cf1f529da5a48db0",
+   "amp_max": 0.0005314345170890203,
+   "amp_median": 1.6282322124304353e-06,
+   "band": [
+    0.8204086361167056,
+    78.70973933893117
+   ],
+   "bsnr_digest": "5df362b52500f3e7",
+   "freq_digest": "11570bfb7fcf7d89",
+   "n_freq": 239,
+   "noise_amp_digest": "9f97bd9565073b41",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ06.00.HHE": {
+   "amp_digest": "16dae519a3cc3ac2",
+   "amp_max": 0.00020920469520729332,
+   "amp_median": 4.2985144162810734e-08,
+   "band": [
+    0.89317282283277,
+    46.8380554298236
+   ],
+   "bsnr_digest": "6b01007ce357a865",
+   "freq_digest": "8140a2868c2a8fc0",
+   "n_freq": 338,
+   "noise_amp_digest": "9acbac696a5a94fc",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ06.00.HHN": {
+   "amp_digest": "d6ae2eac5ad89964",
+   "amp_max": 0.00022380587774247055,
+   "amp_median": 4.755542053200315e-08,
+   "band": [
+    0.8016188872608188,
+    46.32869958783309
+   ],
+   "bsnr_digest": "d02cc9caa7ce3087",
+   "freq_digest": "468cc1a23fd4044a",
+   "n_freq": 368,
+   "noise_amp_digest": "bf98165aa1cc2110",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ07.00.HHE": {
+   "amp_digest": "a09a0b0aae1632ed",
+   "amp_max": 1.751681911953427e-05,
+   "amp_median": 1.749507492999624e-07,
+   "band": [
+    0.8849557522123893,
+    43.07635105088069
+   ],
+   "bsnr_digest": "6d1972987384cb77",
+   "freq_digest": "35549d1ef7d07f00",
+   "n_freq": 126,
+   "noise_amp_digest": "aea1d885dfca484d",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ07.00.HHN": {
+   "amp_digest": "a306e5d406b2cc8b",
+   "amp_max": 2.2004998552015107e-05,
+   "amp_median": 1.6590239135876812e-07,
+   "band": [
+    0.8849557522123893,
+    44.732800785624676
+   ],
+   "bsnr_digest": "82c48df29b3b5cce",
+   "freq_digest": "6198b3989d805c09",
+   "n_freq": 118,
+   "noise_amp_digest": "2814df48f01fabf6",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ09.00.HHE": {
+   "amp_digest": "da2d6ce80b5fcf0f",
+   "amp_max": 6.393301186858944e-05,
+   "amp_median": 2.590082424878913e-06,
+   "band": [
+    0.664945206005862,
+    47.55959434090303
+   ],
+   "bsnr_digest": "dde83b162f3c2dcc",
+   "freq_digest": "2d731276c4a00fa3",
+   "n_freq": 149,
+   "noise_amp_digest": "ad1152719adf811c",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ09.00.HHN": {
+   "amp_digest": "9b32a73a0b69bfea",
+   "amp_max": 0.000119802212338276,
+   "amp_median": 2.74450310739947e-06,
+   "band": [
+    0.6665703398762428,
+    47.40265302905726
+   ],
+   "bsnr_digest": "a43b9d4eec6af99f",
+   "freq_digest": "7c3545de00ac668e",
+   "n_freq": 148,
+   "noise_amp_digest": "9753e20f830a3587",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ10.00.HHE": {
+   "amp_digest": "89a149617be41df2",
+   "amp_max": 4.387496940232088e-05,
+   "amp_median": 2.2146776858626503e-07,
+   "band": [
+    1.216991767761747,
+    40.4117258750204
+   ],
+   "bsnr_digest": "ea3916f058f7ceec",
+   "freq_digest": "ba6e8763200d72eb",
+   "n_freq": 124,
+   "noise_amp_digest": "78112cc499856cb4",
+   "resolution_floor": 0.7518796992481203
+  },
+  "UR.AQ10.00.HHN": {
+   "amp_digest": "fbff3db8f1f75145",
+   "amp_max": 3.515206165200962e-05,
+   "amp_median": 2.4509721944397784e-07,
+   "band": [
+    0.9271659654213654,
+    47.70849749634295
+   ],
+   "bsnr_digest": "23bff41f63ae2a36",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "b6d5838794147373",
+   "resolution_floor": 0.7518796992481203
+  }
+ },
+ "welch": {
+  "LV.L001..HHE": {
+   "amp_digest": "2b829114d7e11f2a",
+   "amp_max": 0.0007385995955116974,
+   "amp_median": 2.43664766658539e-05,
+   "band": [
+    0.973717416300658,
+    47.394212638783976
+   ],
+   "bsnr_digest": "b8ded723ec5ee7bc",
+   "freq_digest": "aa38c59384132021",
+   "n_freq": 152,
+   "noise_amp_digest": "92555584b115020f",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L001..HHN": {
+   "amp_digest": "3a63b44dfd8ae7a2",
+   "amp_max": 0.003417233309242894,
+   "amp_median": 3.361118953325949e-05,
+   "band": [
+    1.1181139989636801,
+    47.535876864282514
+   ],
+   "bsnr_digest": "8b3fe2460214aa2b",
+   "freq_digest": "3a343496f98540b7",
+   "n_freq": 90,
+   "noise_amp_digest": "643b42754fbe0878",
+   "resolution_floor": 0.6097560975609756
+  },
+  "LV.L002..HHE": {
+   "amp_digest": "07883a3f1d6c0b90",
+   "amp_max": 0.00013909084321946728,
+   "amp_median": 1.613041556935674e-06,
+   "band": [
+    0.9047816035221763,
+    13.867320285691235
+   ],
+   "bsnr_digest": "6def4b554cab9e8b",
+   "freq_digest": "afda0d03e29aa10c",
+   "n_freq": 167,
+   "noise_amp_digest": "7a7a67bf14ba4bc5",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L002..HHN": {
+   "amp_digest": "545425b901233f2b",
+   "amp_max": 0.00013488684694978363,
+   "amp_median": 1.643974224531519e-06,
+   "band": [
+    0.9477387099726711,
+    38.81835701848392
+   ],
+   "bsnr_digest": "15c0545e3b87c1ef",
+   "freq_digest": "b1a8cca18c2e8f39",
+   "n_freq": 158,
+   "noise_amp_digest": "af1cd76f7e2949eb",
+   "resolution_floor": 0.6578947368421053
+  },
+  "LV.L006..HHE": {
+   "amp_digest": "f2ba98cdf3ed7bdd",
+   "amp_max": 0.00021934010607461526,
+   "amp_median": 1.290679667904087e-07,
+   "band": [
+    3.121141742396598,
+    16.950347759139436
+   ],
+   "bsnr_digest": "4704dc897855c10e",
+   "freq_digest": "499ca68b4b890d82",
+   "n_freq": 145,
+   "noise_amp_digest": "be432ebc73e41f6c",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L006..HHN": {
+   "amp_digest": "227693224ed8e3c9",
+   "amp_max": 0.00016088735812269523,
+   "amp_median": 1.5502946542305865e-07,
+   "band": [
+    1.4812394729387823,
+    9.553271247128368
+   ],
+   "bsnr_digest": "8c298711034cdc8b",
+   "freq_digest": "4726d6bff7d0f855",
+   "n_freq": 135,
+   "noise_amp_digest": "b8a2e870ecdc5c3d",
+   "resolution_floor": 0.6993006993006994
+  },
+  "LV.L007..HHE": {
+   "amp_digest": "12878b3952cc8229",
+   "amp_max": 6.354268576992711e-05,
+   "amp_median": 1.8316212147179581e-07,
+   "band": [
+    0.7251930841590306,
+    27.18196694054258
+   ],
+   "bsnr_digest": "1bb9807d881c9dad",
+   "freq_digest": "9b16eff09524d8b6",
+   "n_freq": 140,
+   "noise_amp_digest": "603bf3b5801740d2",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L007..HHN": {
+   "amp_digest": "e2a6260c10fc5b4f",
+   "amp_max": 0.00011829617841411064,
+   "amp_median": 1.268225665919421e-07,
+   "band": [
+    0.8647452431401212,
+    13.486305565562793
+   ],
+   "bsnr_digest": "ec8539f2fc91bc22",
+   "freq_digest": "8f3c505a48302426",
+   "n_freq": 114,
+   "noise_amp_digest": "cd377c5d11b05eb6",
+   "resolution_floor": 0.6711409395973155
+  },
+  "LV.L008..HHE": {
+   "amp_digest": "5d62366486804c8f",
+   "amp_max": 3.329531540830543e-05,
+   "amp_median": 1.5717604942195576e-07,
+   "band": [
+    1.2531424586254993,
+    19.50133573941714
+   ],
+   "bsnr_digest": "d148006b5e95c330",
+   "freq_digest": "42e062b7d76d75a3",
+   "n_freq": 120,
+   "noise_amp_digest": "c3f48982165413cb",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L008..HHN": {
+   "amp_digest": "6e6e80ccd5e91170",
+   "amp_max": 5.9200303885107015e-05,
+   "amp_median": 2.2020687178842146e-07,
+   "band": [
+    1.8449305999719168,
+    16.473241545409472
+   ],
+   "bsnr_digest": "430c46a2c3a7e22b",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "3ba7170e641ab725",
+   "resolution_floor": 0.8130081300813008
+  },
+  "LV.L009..HHE": {
+   "amp_digest": "1f435fbad3db2b3c",
+   "amp_max": 0.00019631722155792424,
+   "amp_median": 3.071098640203552e-06,
+   "band": [
+    0.835306830755037,
+    47.34402538126305
+   ],
+   "bsnr_digest": "0db9831cf09637c7",
+   "freq_digest": "0be757e9d85199f0",
+   "n_freq": 177,
+   "noise_amp_digest": "d2836866bafa45ea",
+   "resolution_floor": 0.6756756756756757
+  },
+  "LV.L009..HHN": {
+   "amp_digest": "6bd5bbdcb034620e",
+   "amp_max": 0.00025380675839371835,
+   "amp_median": 3.2592151278958364e-06,
+   "band": [
+    0.6756756756756757,
+    45.916439360932046
+   ],
+   "bsnr_digest": "a54fd92b85489482",
+   "freq_digest": "951c55dace399bed",
+   "n_freq": 166,
+   "noise_amp_digest": "4064f76f5b59997d",
+   "resolution_floor": 0.6756756756756757
+  },
+  "UR.AQ01.00.HHE": {
+   "amp_digest": "1b6e7ede31ea5b75",
+   "amp_max": 4.063728668654615e-05,
+   "amp_median": 6.450538231177267e-08,
+   "band": [
+    0.94187613565413,
+    17.06914373386994
+   ],
+   "bsnr_digest": "2581036768a409e0",
+   "freq_digest": "bd1dcbcc1020f0ea",
+   "n_freq": 107,
+   "noise_amp_digest": "e58b6719e73b6fbc",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ01.00.HHN": {
+   "amp_digest": "b2a6754340effe63",
+   "amp_max": 3.733042499839134e-05,
+   "amp_median": 8.65479209247181e-08,
+   "band": [
+    0.9603039489851778,
+    21.90506249615995
+   ],
+   "bsnr_digest": "b65289657b7f4f5e",
+   "freq_digest": "3a2d61b414ee7896",
+   "n_freq": 104,
+   "noise_amp_digest": "5e5bf4d6ac538204",
+   "resolution_floor": 0.8064516129032259
+  },
+  "UR.AQ03.00.HHE": {
+   "amp_digest": "f68be322302edd96",
+   "amp_max": 0.0004715215194111601,
+   "amp_median": 8.411261437741605e-07,
+   "band": [
+    0.6211180124223602,
+    80.77427233709817
+   ],
+   "bsnr_digest": "2ad5c06d03dfe24e",
+   "freq_digest": "39bfa0ccc5414c66",
+   "n_freq": 338,
+   "noise_amp_digest": "088a4cb4373fd9f0",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ03.00.HHN": {
+   "amp_digest": "e084ec7a839ac658",
+   "amp_max": 0.0005498445188701188,
+   "amp_median": 8.464564274410741e-07,
+   "band": [
+    0.6211180124223602,
+    74.6837615351712
+   ],
+   "bsnr_digest": "40565d962a3473ee",
+   "freq_digest": "41f016214d89f5f5",
+   "n_freq": 333,
+   "noise_amp_digest": "9352516fdf1ff876",
+   "resolution_floor": 0.6211180124223602
+  },
+  "UR.AQ04.00.HHE": {
+   "amp_digest": "f871994b72157f92",
+   "amp_max": 0.0002694972179413228,
+   "amp_median": 3.7977435653646164e-06,
+   "band": [
+    0.9407138328094745,
+    94.25511767508232
+   ],
+   "bsnr_digest": "6e46fd7a6daaea10",
+   "freq_digest": "92d50cbec0cdac8a",
+   "n_freq": 317,
+   "noise_amp_digest": "cb0d2089cc533d1e",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ04.00.HHN": {
+   "amp_digest": "4278d67543e71357",
+   "amp_max": 0.00045024127097394835,
+   "amp_median": 2.2873532803105107e-06,
+   "band": [
+    0.9578491480949406,
+    94.27281435133563
+   ],
+   "bsnr_digest": "16c765eceb199e79",
+   "freq_digest": "12d4d37d5a19b150",
+   "n_freq": 310,
+   "noise_amp_digest": "d4cd72246d59e6ce",
+   "resolution_floor": 0.60790273556231
+  },
+  "UR.AQ05.00.HHE": {
+   "amp_digest": "e2d1041b683e8a99",
+   "amp_max": 0.0004434541093320748,
+   "amp_median": 1.5451342360492557e-06,
+   "band": [
+    0.8996342659848598,
+    94.21104790578656
+   ],
+   "bsnr_digest": "a1d9a6a946b00cd1",
+   "freq_digest": "c63db6175f1eb953",
+   "n_freq": 335,
+   "noise_amp_digest": "08ef2136b94797a9",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ05.00.HHN": {
+   "amp_digest": "3880bf0bceb1fe63",
+   "amp_max": 0.0005546114403448311,
+   "amp_median": 1.5124478747840774e-06,
+   "band": [
+    0.8204086361167056,
+    94.47315173882237
+   ],
+   "bsnr_digest": "4ebf753973ba7fad",
+   "freq_digest": "11570bfb7fcf7d89",
+   "n_freq": 239,
+   "noise_amp_digest": "88a12a0ce9a3a5e0",
+   "resolution_floor": 0.5988023952095809
+  },
+  "UR.AQ06.00.HHE": {
+   "amp_digest": "6d53718e7b129799",
+   "amp_max": 0.000321671708362552,
+   "amp_median": 6.338992532717392e-08,
+   "band": [
+    0.6289308176100629,
+    46.8380554298236
+   ],
+   "bsnr_digest": "0a9620e5c4a3ff4f",
+   "freq_digest": "8140a2868c2a8fc0",
+   "n_freq": 338,
+   "noise_amp_digest": "53ad316c46ad3746",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ06.00.HHN": {
+   "amp_digest": "9d7743e41d9fcead",
+   "amp_max": 0.00033833863269523056,
+   "amp_median": 6.331226450431456e-08,
+   "band": [
+    0.6289308176100629,
+    46.32869958783309
+   ],
+   "bsnr_digest": "dbb0271addeae77a",
+   "freq_digest": "468cc1a23fd4044a",
+   "n_freq": 368,
+   "noise_amp_digest": "7351198622d8b23f",
+   "resolution_floor": 0.6289308176100629
+  },
+  "UR.AQ07.00.HHE": {
+   "amp_digest": "cd4e66de49228eca",
+   "amp_max": 2.4883421201480353e-05,
+   "amp_median": 1.7689630735634703e-07,
+   "band": [
+    0.8849557522123893,
+    43.07635105088069
+   ],
+   "bsnr_digest": "eefbe9ebb2a089f2",
+   "freq_digest": "35549d1ef7d07f00",
+   "n_freq": 126,
+   "noise_amp_digest": "c22a5716123f7b8b",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ07.00.HHN": {
+   "amp_digest": "27aba159955edfce",
+   "amp_max": 3.15502316897255e-05,
+   "amp_median": 1.8293084845554365e-07,
+   "band": [
+    0.8849557522123893,
+    38.15604543461973
+   ],
+   "bsnr_digest": "7668106496eb7a68",
+   "freq_digest": "6198b3989d805c09",
+   "n_freq": 118,
+   "noise_amp_digest": "785489a7877331f9",
+   "resolution_floor": 0.8849557522123893
+  },
+  "UR.AQ09.00.HHE": {
+   "amp_digest": "fa8a6acfaa03b2b1",
+   "amp_max": 8.553014309818382e-05,
+   "amp_median": 2.3235886735325465e-06,
+   "band": [
+    0.9922949033943869,
+    47.55959434090303
+   ],
+   "bsnr_digest": "36f2b747e9f27846",
+   "freq_digest": "2d731276c4a00fa3",
+   "n_freq": 149,
+   "noise_amp_digest": "e2aed052fbbba489",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ09.00.HHN": {
+   "amp_digest": "ee8548e86289d521",
+   "amp_max": 0.00016752130561996476,
+   "amp_median": 2.139792760643741e-06,
+   "band": [
+    0.9941843499131225,
+    47.40265302905726
+   ],
+   "bsnr_digest": "98cfa8768d7cae81",
+   "freq_digest": "7c3545de00ac668e",
+   "n_freq": 148,
+   "noise_amp_digest": "33cb84b5c6063267",
+   "resolution_floor": 0.6578947368421053
+  },
+  "UR.AQ10.00.HHE": {
+   "amp_digest": "487b64bd80b5b470",
+   "amp_max": 7.079653516225593e-05,
+   "amp_median": 1.671376597527036e-07,
+   "band": [
+    0.8014155430688078,
+    40.4117258750204
+   ],
+   "bsnr_digest": "aaf544c8f9269b3b",
+   "freq_digest": "ba6e8763200d72eb",
+   "n_freq": 124,
+   "noise_amp_digest": "1e616008409e0029",
+   "resolution_floor": 0.7518796992481203
+  },
+  "UR.AQ10.00.HHN": {
+   "amp_digest": "0db9a43ce26ab9ce",
+   "amp_max": 5.0270376936658344e-05,
+   "amp_median": 1.4270885304027619e-07,
+   "band": [
+    0.9271659654213654,
+    28.034150656401575
+   ],
+   "bsnr_digest": "ab7ec27105161709",
+   "freq_digest": "3fd68451c821860e",
+   "n_freq": 109,
+   "noise_amp_digest": "81f6312f6c7a15bf",
+   "resolution_floor": 0.7518796992481203
+  }
+ }
+}
