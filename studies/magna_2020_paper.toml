@@ -60,6 +60,19 @@ noise_shift = 0.5
 
 
 [transform]
+# UNRESOLVED, and it affects Omega directly. The pre-refactor pipeline
+# converted PSD to amplitude with `sqrt(PSD * len(freq) / sampling_rate)`,
+# keyed off the length of the frequency axis rather than the record duration.
+# The correct form is `sqrt(2 * PSD * T)`, and the two differ by
+# `sqrt(2 * npts / len(freq))` -- a factor of 2 in amplitude for a half-length
+# rfft axis, 1.41 for a full-length one. That is 0.30 in log10(Omega), roughly
+# 0.20 magnitude units, and which factor applied here depends on the array
+# length mtspec returned for these windows.
+#
+# It is a scale error, not a shape error, so f_c and t* are unaffected.
+# Establishing the factor is part of the 0.1.1 re-run (REFACTOR_PLAN §5.2.6);
+# record the answer here when it is known.
+#
 # "a multitaper method (Prieto et al., 2009)".
 estimator = "multitaper"
 time_bandwidth = 3.0
