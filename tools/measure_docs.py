@@ -313,6 +313,55 @@ def cwt_table() -> str:
     return table(["Record", *estimators], rows)
 
 
+@synthetic("padding_table")
+def padding_table() -> str:
+    """What zero-padding does and does not do.
+
+    Two effects get conflated. Padding does not touch spectral leakage, which
+    is set by the taper; it fixes scalloping, which only matters for features
+    narrower than a bin. Reporting both together is the point.
+    """
+    n = 2000
+    t = np.arange(n) * DT
+    duration = n * DT
+    df = 1.0 / duration
+
+    def sidelobe(spectrum: object, f0: float) -> float:
+        f, a = spectrum.freq, spectrum.amp  # type: ignore[attr-defined]
+        away = np.abs(f - f0) > 0.5
+        return float(np.median(a[away]) / a.max())
+
+    rows = []
+    for pad, label in ((None, "none"), (2 * n, "2x"), (8 * n, "8x")):
+        # Leakage, measured on a line deliberately off bin centre.
+        off_centre = np.sin(2 * np.pi * 5.037 * t)
+        floors = [
+            sidelobe(
+                FFTEstimator(taper=taper, n_fft=pad).estimate(off_centre, DT), 5.037
+            )
+            for taper in ("boxcar", "tukey")
+        ]
+        # Scalloping, as the worst peak loss over sub-bin placements.
+        worst = min(
+            FFTEstimator(taper="boxcar", n_fft=pad)
+            .estimate(np.sin(2 * np.pi * (5.0 + frac * df) * t), DT)
+            .amp.max()
+            / duration
+            for frac in np.linspace(0.0, 0.5, 11)
+        )
+        rows.append([label, f"{floors[0]:.0e}", f"{floors[1]:.0e}", f"{worst:.3f}"])
+
+    return table(
+        [
+            "Zero-padding",
+            "sidelobes, boxcar",
+            "sidelobes, Tukey",
+            "worst peak / true",
+        ],
+        rows,
+    )
+
+
 @synthetic("leakage_table")
 def leakage_table() -> str:
     """Why adaptive weighting is the default: flat weighting does not suppress
