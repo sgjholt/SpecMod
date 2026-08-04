@@ -41,50 +41,58 @@ def time_domain_energy(tr: obspy.Trace) -> float:
 # ------------------------------------------------------------- the contract
 
 
-def test_the_legacy_class_now_satisfies_parseval() -> None:
-    """The headline of the rewiring.
+def test_the_pipeline_amplitude_is_the_unfolded_transform_magnitude() -> None:
+    """``Omega`` is defined in this convention, so it is the one to hold fixed.
 
-    On this path the pre-refactor chain recovered under a quarter of a record's
-    energy, because ``psd_to_amp`` used ``sqrt(PSD * len(freq) / sampling_rate)``
-    where the contract needs ``sqrt(2 * PSD * T)``. That is a factor of two in
-    amplitude — 0.30 in log10(Omega), about 0.20 magnitude units.
+    ``|X(f)| = |rfft(x)| * dt``. The long-period plateau of the displacement
+    spectrum is ``|X(f -> 0)| = |integral u dt|`` and ``M0`` is proportional to
+    it, so a factor of two here is 0.2 magnitude units on every event.
 
-    It went unnoticed because nothing checked the pipeline end to end against a
-    quantity whose value was known independently. That is the whole reason this
-    contract exists.
+    Note this is *not* the convention :class:`specmod.core.Spectrum` carries.
+    That one is folded — ``2|X|`` — so its ``energy()`` integrates over
+    non-negative frequencies alone. Both are self-consistent; the factor is
+    removed on the way into this module.
     """
     tr = trace()
-    spectrum = Signal(tr.copy())
-    energy = float(np.trapezoid(spectrum.amp**2 / 2.0, spectrum.freq))
+    spectrum = Signal(tr.copy(), estimator="fft", taper="boxcar")
+    reference = np.abs(np.fft.rfft(tr.data - tr.data.mean())) * DT
+    freq = np.fft.rfftfreq(len(tr.data), DT)
+
+    band = (spectrum.freq > 0.5) & (spectrum.freq < 40.0)
+    expected = np.interp(spectrum.freq[band], freq, reference)
+    assert float(np.median(spectrum.amp[band] / expected)) == pytest.approx(
+        1.0, rel=1e-6
+    )
+
+
+def test_energy_is_recovered_in_the_unfolded_convention() -> None:
+    """Parseval for ``|X|`` is ``E = 2 * integral |X|**2 df`` over ``f >= 0``.
+
+    The factor of two is the negative-frequency half, which an unfolded
+    one-sided spectrum does not carry.
+    """
+    tr = trace()
+    spectrum = Signal(tr.copy(), estimator="fft", taper="boxcar")
+    energy = 2.0 * float(np.trapezoid(spectrum.amp**2, spectrum.freq))
     assert energy == pytest.approx(time_domain_energy(tr), rel=0.05)
 
 
-@pytest.mark.parametrize("estimator", ["fft", "multitaper", "quadratic", "cwt"])
-def test_the_old_normalisation_error_scales_with_the_axis_length(
-    estimator: str,
-) -> None:
-    """Quantifies the break, and shows it was never a constant.
+def test_unpadded_amplitudes_reproduce_the_pre_refactor_run() -> None:
+    """The rewiring must not move anyone's numbers on the default path.
 
-    ``new/old = sqrt(2 * npts / len(freq))``, so the size of the error depends
-    on how many bins the transform returned — 2.00 for a half-length rfft axis,
-    1.41 for a full-length one, 7.21 for the CWT's 77 log-spaced scales. That
-    dependence *is* the bug, not a side effect of it.
-
-    Anyone comparing against a pre-refactor run needs this, and it says the
-    factor cannot be guessed: it has to be measured for the axis length mtspec
-    actually returned.
+    The old ``sqrt(PSD * len(freq) / sampling_rate)`` computes the same
+    quantity as ``sqrt(PSD * T / 2)`` whenever ``len(freq) * dt == T/2``, which
+    is every unpadded one-sided transform. So this is not a break: it is the
+    same convention, keyed off something that does not move.
     """
     tr = trace()
-    spectrum = Signal(tr.copy(), estimator=estimator)
+    spectrum = Signal(tr.copy())
     duration = spectrum.meta["npts"] * spectrum.meta["delta"]
 
     # Reconstruct what the old code would have produced from the same PSD.
-    psd = spectrum.amp**2 / (2.0 * duration)
+    psd = 2.0 * spectrum.amp**2 / duration
     old = np.sqrt(psd * len(spectrum.freq) / FS)
-
-    expected = np.sqrt(2.0 * spectrum.meta["npts"] / len(spectrum.freq))
-    assert float(np.median(spectrum.amp / old)) == pytest.approx(expected, rel=0.01)
-    assert expected > 1.0, "the old normalisation was always low, never high"
+    assert float(np.median(spectrum.amp / old)) == pytest.approx(1.0, rel=1e-9)
 
 
 def test_amplitude_conversion_round_trips() -> None:
@@ -116,6 +124,21 @@ def test_normalisation_is_independent_of_the_frequency_axis_length() -> None:
 
     assert level(padded) == pytest.approx(level(reference), rel=0.05)
     assert plain.freq.size > 0
+
+    # And the size of what was wrong. The old formula keyed off len(freq), so
+    # it drifts from the duration-keyed one by sqrt(2 * len(freq) * dt / T) —
+    # here 2049 bins against a 20 s record, so about 1.43x.
+    duration = padded.meta["npts"] * padded.meta["delta"]
+    old_padded = np.sqrt((2.0 * padded.amp**2 / duration) * len(padded.freq) / FS)
+    mask = (padded.freq > band[0]) & (padded.freq < band[1])
+
+    expected = np.sqrt(duration / (2.0 * len(padded.freq) / FS))
+    assert float(np.median(padded.amp[mask] / old_padded[mask])) == pytest.approx(
+        expected, rel=1e-6
+    )
+    assert expected < 0.8, (
+        "padding should visibly move the old formula, or this proves nothing"
+    )
 
 
 # --------------------------------------------------------- estimator choice

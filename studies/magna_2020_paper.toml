@@ -60,18 +60,21 @@ noise_shift = 0.5
 
 
 [transform]
-# UNRESOLVED, and it affects Omega directly. The pre-refactor pipeline
-# converted PSD to amplitude with `sqrt(PSD * len(freq) / sampling_rate)`,
-# keyed off the length of the frequency axis rather than the record duration.
-# The correct form is `sqrt(2 * PSD * T)`, and the two differ by
-# `sqrt(2 * npts / len(freq))` -- a factor of 2 in amplitude for a half-length
-# rfft axis, 1.41 for a full-length one. That is 0.30 in log10(Omega), roughly
-# 0.20 magnitude units, and which factor applied here depends on the array
-# length mtspec returned for these windows.
+# Amplitudes here are unchanged by the refactor. The pipeline reports the
+# unfolded Fourier transform magnitude |X(f)| = |rfft(x)|*dt, which is the
+# convention Omega is defined in: the displacement plateau is |X(f->0)| =
+# |integral u dt| and M0 is proportional to it.
 #
-# It is a scale error, not a shape error, so f_c and t* are unaffected.
-# Establishing the factor is part of the 0.1.1 re-run (REFACTOR_PLAN §5.2.6);
-# record the answer here when it is known.
+# The pre-refactor code computed the same quantity as
+# `sqrt(PSD * len(freq) / sampling_rate)`, which is identical to the
+# `sqrt(PSD * T / 2)` used now whenever `len(freq)*dt == T/2` -- i.e. for any
+# unpadded one-sided transform, which is what these windows were. Keying it off
+# T instead of len(freq) fixes the padding sensitivity (REFACTOR_PLAN §2.2)
+# without moving the values, so this study reproduces.
+#
+# Watch for it if you enable n_fft, or switch to `estimator = "prieto"`, whose
+# frequency axis is full-length: under the old formula either would have
+# silently rescaled Omega.
 #
 # "a multitaper method (Prieto et al., 2009)".
 estimator = "multitaper"

@@ -123,50 +123,52 @@ class Spectrum:
     def psd_to_amp(self):
         """Convert power spectral density to Fourier amplitude.
 
-        ``A = sqrt(2 * PSD * T)``, keyed off the record's physical duration.
+        ``A = sqrt(PSD * T / 2)``, which is ``|X(f)|`` — the *unfolded* Fourier
+        transform magnitude, ``|rfft(x)| * dt``.
+
+        .. note::
+
+           **This is not the same convention as** :class:`specmod.core.Spectrum`,
+           deliberately. That class carries a *folded* one-sided spectrum,
+           ``2|X|``, so that ``energy()`` integrates to ``sum(x**2)*dt`` over
+           non-negative frequencies alone. Both are self-consistent and both
+           recover the record's energy; they differ by exactly a factor of two.
+
+           This module uses the unfolded convention because ``Omega`` is defined
+           in it. The long-period plateau of the displacement spectrum is
+           ``|X(f -> 0)| = |integral u dt|``, and ``M0`` is proportional to that
+           — so folding would put ``M0`` out by two, which is 0.2 magnitude
+           units on every event. That is a convention to hold fixed, not to
+           improve upon.
+
+           :func:`estimate_spectrum` therefore returns a ``core.Spectrum`` in
+           the folded convention, and the factor is removed here on the way in.
+           Anyone reading ``core.Spectrum.amp`` directly and calling it
+           ``Omega`` needs to halve it first.
 
         .. warning::
 
-           **This changes amplitudes relative to a pre-refactor run.** The old
-           code used ``sqrt(PSD * len(freq) / sampling_rate)``, keyed off the
-           length of the frequency axis rather than the record duration — the
-           §2.2 padding bug. The two differ by::
-
-               new / old = sqrt(2 * npts / len(freq))
-
-           so the error is not a constant. It depends on how many bins the
-           transform happened to return, which is exactly why zero-padding
-           moved the answer. Measured through this class:
-
-           =========================== ========= ============ =============
-           estimator                   len(freq) new/old amp  old energy
-           =========================== ========= ============ =============
-           fft, multitaper, quadratic  1000      2.00         0.24
-           prieto                      2000      1.41         0.48
-           cwt                         77        7.21         0.02
-           =========================== ========= ============ =============
-
-           For the default path that is **a factor of two in amplitude**, so
-           0.30 in ``log10(Omega)`` and about 0.20 magnitude units. Which
-           factor applied to the published run depends on the length ``mtspec``
-           returned for those windows, and that is one of the things the
-           §5.2.6 comparison has to establish — it cannot be inferred from
-           here. ``studies/magna_2020_paper.toml`` is where the conclusion goes.
-
-           Note this is a *scale* error, not a shape error, so it does not move
-           ``f_c`` or ``t*``. Only ``Omega``, and therefore ``M0`` and ``Mw``.
+           The pre-refactor code computed this same quantity, but as
+           ``sqrt(PSD * len(freq) / sampling_rate)`` — using the length of the
+           frequency axis as a stand-in for ``T/2``. That identity holds only
+           for an unpadded one-sided transform, so the result moved whenever
+           the axis length changed: zero-padding to ``4*npts`` halved the
+           amplitude, and a backend returning a full-length axis (Prieto's)
+           changed it by ``sqrt(2)``. That is the §2.2 bug, and keying off
+           ``T`` is the fix. **Unpadded, the amplitudes are unchanged**, so a
+           pre-refactor run reproduces.
         """
         duration = self._duration()
-        self.amp = np.sqrt(2.0 * self.amp * duration)
+        self.amp = np.sqrt(self.amp * duration / 2.0)
         if self.bamp.size > 0:
-            self.bamp = np.sqrt(2.0 * self.bamp * duration)
+            self.bamp = np.sqrt(self.bamp * duration / 2.0)
 
     def amp_to_psd(self):
-        """Inverse of :meth:`psd_to_amp`: ``PSD = A**2 / (2T)``."""
+        """Inverse of :meth:`psd_to_amp`: ``PSD = 2 * A**2 / T``."""
         duration = self._duration()
-        self.amp = np.power(self.amp, 2) / (2.0 * duration)
+        self.amp = 2.0 * np.power(self.amp, 2) / duration
         if self.bamp.size > 0:
-            self.bamp = np.power(self.bamp, 2) / (2.0 * duration)
+            self.bamp = 2.0 * np.power(self.bamp, 2) / duration
 
     def _duration(self):
         """Physical record length in seconds.
