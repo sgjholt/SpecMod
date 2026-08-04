@@ -24,6 +24,31 @@ FS = 100.0
 DT = 1.0 / FS
 N = 2000
 
+try:  # `prieto` is behind the specmod[multitaper] extra, which CI does not install.
+    import multitaper as _multitaper  # noqa: F401
+
+    _HAS_MULTITAPER = True
+except ImportError:  # pragma: no cover - depends on the environment
+    _HAS_MULTITAPER = False
+
+#: Every registered estimator, with the optional one marked. Parametrise from
+#: this rather than writing the list out: a hardcoded list that happens to
+#: include ``prieto`` passes here and fails on a default install, which has now
+#: happened twice.
+ALL_ESTIMATORS = [
+    "fft",
+    "welch",
+    "multitaper",
+    pytest.param(
+        "prieto",
+        marks=pytest.mark.skipif(
+            not _HAS_MULTITAPER, reason="optional extra: specmod[multitaper]"
+        ),
+    ),
+    "quadratic",
+    "cwt",
+]
+
 
 def trace(sigma: float = 1e-6, seed: int = 0, npts: int = N) -> obspy.Trace:
     data = np.random.default_rng(seed).normal(0.0, sigma, npts)
@@ -141,9 +166,7 @@ def test_normalisation_is_independent_of_the_frequency_axis_length() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "estimator", ["fft", "welch", "multitaper", "prieto", "quadratic", "cwt"]
-)
+@pytest.mark.parametrize("estimator", ALL_ESTIMATORS)
 def test_every_estimator_lands_on_the_same_amplitude_convention(
     estimator: str,
 ) -> None:
@@ -169,9 +192,7 @@ def test_every_estimator_lands_on_the_same_amplitude_convention(
     )
 
 
-@pytest.mark.parametrize(
-    "estimator", ["fft", "welch", "multitaper", "prieto", "quadratic", "cwt"]
-)
+@pytest.mark.parametrize("estimator", ALL_ESTIMATORS)
 def test_the_pipeline_conversion_matches_the_typed_one(estimator: str) -> None:
     """``psd_to_amp`` must agree with ``to_kind("magnitude")``.
 
