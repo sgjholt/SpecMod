@@ -10,11 +10,15 @@ prompted vendoring in the first place.
 
 from __future__ import annotations
 
+import pathlib
+import types
 import warnings
 
 import numpy as np
 import pytest
+from scipy.signal.windows import dpss
 
+from specmod._vendor.qiinv import qiinv
 from specmod.core import AmplitudeKind
 from specmod.transforms import (
     ESTIMATORS,
@@ -325,13 +329,9 @@ def test_matches_prietos_implementation() -> None:
     """
     pytest.importorskip("multitaper", reason="optional extra: specmod[multitaper]")
 
-    import pathlib
-    import types
-
-    import multitaper.utils as upstream
-    from scipy.signal.windows import dpss
-
-    from specmod._vendor.qiinv import qiinv
+    # Guarded by the importorskip above: this is the optional extra, so it
+    # cannot be imported at module scope without skipping the whole file.
+    import multitaper.utils as upstream  # noqa: PLC0415
 
     src = pathlib.Path(upstream.__file__).read_text()
     for old, new in (

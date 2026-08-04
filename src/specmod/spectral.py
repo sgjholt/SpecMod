@@ -10,6 +10,9 @@ from scipy.integrate import cumulative_trapezoid
 
 from . import config as cfg
 from . import utils as ut
+from .config import load_config
+from .core import Spectrum as _CoreSpectrum
+from .transforms import ESTIMATORS
 
 
 def _mtspec(*args, **kwargs):
@@ -21,7 +24,10 @@ def _mtspec(*args, **kwargs):
     compiler, so it is resolved on first use rather than imported eagerly.
     """
     try:
-        from mtspec import mtspec
+        # Deferred on purpose: mtspec ships as Fortran source with no wheels,
+        # so importing it at module scope would make specmod itself
+        # unimportable wherever there is no compiler.
+        from mtspec import mtspec  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError(
             "The mtspec backend is not installed. It is a legacy optional "
@@ -47,9 +53,6 @@ def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
     how the legacy ``**kwargs`` passthrough from ``Spectra.from_streams``
     keeps working.
     """
-    from .config import load_config
-    from .transforms import ESTIMATORS
-
     transform = load_config().config.transform
     name = kwargs.pop("estimator", transform.estimator)
     if name == "mtspec":
@@ -177,8 +180,6 @@ class Spectrum:
         second copy of that rule is precisely how the two halves of the package
         would drift apart.
         """
-        from .core import Spectrum as _CoreSpectrum
-
         converted = _CoreSpectrum(
             freq=np.ascontiguousarray(freq, dtype=float),
             amp=np.ascontiguousarray(amp, dtype=float),
@@ -571,8 +572,6 @@ class SNP:
         Disable with ``SnrConfig.resolution_floor = False`` to reproduce a run
         made before this existed.
         """
-        from .config import load_config
-
         if not load_config().config.snr.resolution_floor:
             return
         band = getattr(self, "ubfreqs", None)
@@ -625,8 +624,6 @@ class SNP:
                 self.signal.set_pass_snr(False)
             return np.array([freq[fl], freq[fh]])
         else:
-            import matplotlib.pyplot as plt
-
             plt.plot(
                 freq,
                 np.sign(bsnr - bsnr_thresh),

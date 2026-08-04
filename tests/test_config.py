@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import specmod
 from specmod.config import Config, SnrConfig, config_hash, load_config
 from specmod.config.provenance import Provenance
 from specmod.config.serialize import to_toml
@@ -138,8 +139,6 @@ def test_config_hash_is_stable_and_sensitive() -> None:
 
 
 def test_provenance_records_version_and_config() -> None:
-    import specmod
-
     prov = Provenance.capture(Config())
     assert prov.specmod_version == specmod.__version__
     assert prov.config_hash == config_hash(Config())

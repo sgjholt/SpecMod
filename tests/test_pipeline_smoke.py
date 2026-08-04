@@ -20,8 +20,10 @@ without a network fetch and is not marked ``dataset``.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import glob
+import io
 import os
 import warnings
 from pathlib import Path
@@ -31,6 +33,9 @@ import numpy as np
 import pytest
 
 obspy = pytest.importorskip("obspy")
+
+import specmod.preprocess as pre  # noqa: E402
+from specmod.spectral import Spectra  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
@@ -60,8 +65,6 @@ def _cut_windows() -> tuple[Any, Any]:
 def _build_windows() -> tuple[Any, Any]:
     """Response removal and window refinement dominate this module's runtime,
     and every test wants the same windows — so do it once."""
-    import specmod.preprocess as pre
-
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(INVENTORY))
@@ -98,11 +101,6 @@ def _build_windows() -> tuple[Any, Any]:
 @pytest.fixture(scope="module")
 def spectra() -> Any:
     """One full pipeline run, shared across the assertions below."""
-    import contextlib
-    import io
-
-    from specmod.spectral import Spectra
-
     signal, noise = _cut_windows()
     with contextlib.redirect_stdout(io.StringIO()):
         return Spectra.from_streams(signal, noise)
@@ -227,11 +225,6 @@ def test_the_whole_pipeline_runs_on_each_estimator(estimator: str) -> None:
     element-wise signal-to-noise needs pinned bin edges to compare them. That
     is a real gap, not a flaw in this test.
     """
-    import contextlib
-    import io
-
-    from specmod.spectral import Spectra
-
     signal, noise = _cut_windows()
     with contextlib.redirect_stdout(io.StringIO()):
         result = Spectra.from_streams(signal, noise, estimator=estimator)
@@ -286,11 +279,6 @@ def test_the_cwt_floor_is_stricter_than_the_multitaper_one() -> None:
     spectrum's floor from its own frequency axis means that rule applies
     without the pipeline knowing which estimator produced it.
     """
-    import contextlib
-    import io
-
-    from specmod.spectral import Spectra
-
     floors = {}
     for estimator in ("multitaper", "cwt"):
         signal, noise = _cut_windows()

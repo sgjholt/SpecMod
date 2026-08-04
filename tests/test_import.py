@@ -13,6 +13,8 @@ import importlib
 
 import pytest
 
+import specmod
+
 MODULES = [
     "specmod.config",
     "specmod.fitting",
@@ -31,8 +33,6 @@ def test_module_imports(name: str) -> None:
 
 
 def test_package_exposes_version() -> None:
-    import specmod
-
     assert isinstance(specmod.__version__, str)
     assert specmod.__version__
 
@@ -43,16 +43,21 @@ def test_importable_without_mtspec() -> None:
     mtspec is Fortran source with no wheels; an eager import made the whole
     package uninstallable without a Fortran compiler.
     """
-    import specmod.spectral as sp
+    # Local on purpose: the import succeeding *is* the assertion, so it has to
+    # happen inside the test. At module scope a regression would surface as a
+    # collection error for the whole file instead of a failure here.
+    import specmod.spectral as sp  # noqa: PLC0415
 
     assert hasattr(sp, "Spectrum")
 
 
 def test_mtspec_shim_raises_a_useful_error() -> None:
-    import specmod.spectral as sp
+    import specmod.spectral as sp  # noqa: PLC0415
 
     try:
-        import mtspec  # noqa: F401
+        # Probing whether the optional extra is present; it cannot be a
+        # module-scope import because the branch below depends on the answer.
+        import mtspec  # noqa: F401, PLC0415
     except ImportError:
         with pytest.raises(ImportError, match="mtspec backend is not installed"):
             sp._mtspec([0.0, 1.0], 0.01, 3)

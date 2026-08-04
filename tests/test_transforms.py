@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.fft import next_fast_len
 
 from specmod.core import AmplitudeKind, Motion, Spectrum
 from specmod.transforms import (
@@ -23,6 +24,7 @@ from specmod.transforms import (
     WelchEstimator,
     get_estimator,
 )
+from specmod.transforms.base import resolve_n_fft
 
 FS = 100.0
 DT = 1.0 / FS
@@ -827,10 +829,6 @@ def test_fast_padding_reaches_an_efficiently_factorised_length() -> None:
     handles 5-smooth lengths, so a power of two overshoots. For 65537 samples
     it pads to 131072 against 65610, doing twice the transform.
     """
-    from scipy.fft import next_fast_len
-
-    from specmod.transforms.base import resolve_n_fft
-
     for n in (181, 271, 479, 677, 1999, 65537):
         fast = resolve_n_fft("fast", n)
         assert fast == next_fast_len(n)
@@ -839,8 +837,6 @@ def test_fast_padding_reaches_an_efficiently_factorised_length() -> None:
 
 
 def test_pow2_padding_reaches_the_next_power_of_two() -> None:
-    from specmod.transforms.base import resolve_n_fft
-
     assert resolve_n_fft("pow2", 2000) == 2048
     assert resolve_n_fft("pow2", 2048) == 2048
     assert resolve_n_fft("pow2", 2049) == 4096
@@ -872,7 +868,5 @@ def test_padding_strategies_do_not_move_amplitudes(strategy: str) -> None:
 
 
 def test_an_unknown_padding_strategy_names_the_valid_ones() -> None:
-    from specmod.transforms.base import resolve_n_fft
-
     with pytest.raises(ValueError, match="'fast' or 'pow2'"):
         resolve_n_fft("nextpow2", 2000)
