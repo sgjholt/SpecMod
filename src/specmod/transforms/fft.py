@@ -45,9 +45,24 @@ class FFTEstimator:
         ``"energy"`` preserves Parseval, ``"amplitude"`` preserves the peak of a
         coherent sinusoid. See :mod:`specmod.transforms.base`.
     n_fft
-        Transform length. ``None`` means no padding. Padding refines the
-        frequency grid without changing amplitude — the property that the
-        pre-refactor normalisation got wrong by keying off ``len(freq)``.
+        Transform length: ``None`` for no padding, an integer, or a strategy —
+        ``"fast"`` for the next efficiently-factorised length, ``"pow2"`` for
+        the next power of two. See
+        :func:`~specmod.transforms.base.resolve_n_fft`.
+
+        Padding refines the frequency grid without changing amplitude — the
+        property the pre-refactor normalisation got wrong by keying off
+        ``len(freq)``. So it buys two things and neither is leakage
+        suppression, which is the taper's job: it removes scalloping loss
+        (36% worst case on a line falling between bins, unpadded), and it
+        avoids the slow path for an awkward record length.
+
+        ``"fast"`` is the one to reach for. Cut windows are not round numbers —
+        of the 28 PNR S-windows, 17 are odd and several are prime — and a prime
+        length costs 1.77x across those. ``"pow2"`` is offered because it is
+        what people expect, but it overshoots: numpy's pocketfft handles
+        5-smooth lengths, so padding 65537 to 131072 does twice the work of
+        padding it to 65610.
     drop_dc
         Discard the zero-frequency bin.
     """
@@ -55,7 +70,7 @@ class FFTEstimator:
     taper: str = "tukey"
     taper_alpha: float = 0.05
     taper_correction: TaperCorrection = "energy"
-    n_fft: int | None = None
+    n_fft: int | str | None = None
     drop_dc: bool = True
     name: str = "fft"
 

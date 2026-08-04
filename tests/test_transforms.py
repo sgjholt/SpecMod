@@ -815,3 +815,64 @@ def test_energy_is_recovered_for_both_parities(n: int) -> None:
     expected = float(np.sum((x - x.mean()) ** 2) * DT)
     spectrum = FFTEstimator(taper="boxcar").estimate(x, DT)
     assert spectrum.energy() == pytest.approx(expected, rel=0.01)
+
+
+# --------------------------------------------------------- padding strategies
+
+
+def test_fast_padding_reaches_an_efficiently_factorised_length() -> None:
+    """Cut windows are not round numbers, and a prime one is slow.
+
+    ``"fast"`` is preferred to ``"pow2"`` on measurement: numpy's pocketfft
+    handles 5-smooth lengths, so a power of two overshoots. For 65537 samples
+    it pads to 131072 against 65610, doing twice the transform.
+    """
+    from scipy.fft import next_fast_len
+
+    from specmod.transforms.base import resolve_n_fft
+
+    for n in (181, 271, 479, 677, 1999, 65537):
+        fast = resolve_n_fft("fast", n)
+        assert fast == next_fast_len(n)
+        assert fast >= n
+        assert fast <= resolve_n_fft("pow2", n), "fast should never overshoot pow2"
+
+
+def test_pow2_padding_reaches_the_next_power_of_two() -> None:
+    from specmod.transforms.base import resolve_n_fft
+
+    assert resolve_n_fft("pow2", 2000) == 2048
+    assert resolve_n_fft("pow2", 2048) == 2048
+    assert resolve_n_fft("pow2", 2049) == 4096
+
+
+@pytest.mark.parametrize("strategy", ["fast", "pow2"])
+def test_padding_strategies_do_not_move_amplitudes(strategy: str) -> None:
+    """Padding is a speed knob, not a numerical one.
+
+    The normalisation is keyed off the record duration, so a longer transform
+    refines the frequency grid and changes nothing else. If that ever stops
+    being true, ``n_fft`` has become a scientific setting rather than a
+    performance one.
+    """
+    a0 = 2.5
+    x = sinusoid(a0)
+    padded = FFTEstimator(taper="boxcar", n_fft=strategy).estimate(x, DT)
+    plain = FFTEstimator(taper="boxcar").estimate(x, DT)
+
+    # Energy is the invariant. The *peak* is not, and deliberately so: this
+    # fixture places the line exactly on a bin of the unpadded transform, and
+    # padding to a length that is not a multiple moves it off-bin, so a little
+    # scalloping appears. That is the grid changing, not the normalisation —
+    # which is why the check is on energy, duration and record length.
+    assert padded.energy() == pytest.approx(plain.energy(), rel=1e-3)
+    assert padded.duration == pytest.approx(plain.duration)
+    assert padded.n_samples == plain.n_samples, "the record did not get longer"
+    assert padded.amp.max() <= a0 * DURATION * (1 + 1e-9), "padding cannot add energy"
+
+
+def test_an_unknown_padding_strategy_names_the_valid_ones() -> None:
+    from specmod.transforms.base import resolve_n_fft
+
+    with pytest.raises(ValueError, match="'fast' or 'pow2'"):
+        resolve_n_fft("nextpow2", 2000)
