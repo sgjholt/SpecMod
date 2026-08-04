@@ -604,6 +604,24 @@ enough to break them; the dataclass conversion in §4.2 would finish the job. On
 such file is already committed at `Tutorial/Spectra/2019-08-26T07:30:47.0.spec`,
 and there are presumably more in your working directories.
 
+> **This has already happened — it is no longer a future consequence.** The
+> `Spectral.py` → `spectral.py` rename alone was enough. The committed
+> tutorial file is dead today:
+>
+> ```
+> >>> Spectra.read_spectra("Tutorial/Spectra/2019-08-26T07:30:47.0.spec",
+> ...                      method="pickle", skip_warning=True)
+> ModuleNotFoundError: No module named 'specmod.Spectral'
+> ```
+>
+> `Tutorial/SpecModTutorial.ipynb` calls exactly that in two cells, so the
+> notebook cannot be run past them. The recommendation below is unchanged and
+> still the right one; what has changed is that the conversion is now
+> repairing something broken rather than pre-empting a break. Anyone reaching
+> for the legacy Docker image for the §5.2.6 Magna comparison should convert
+> this file in the same session — both need the same environment, and it is
+> the only one still standing.
+
 Two ways out, and the first is much better:
 
 1. **Convert in the old environment.** Phase 0 is already building a Docker image
@@ -750,7 +768,7 @@ file count rather than file size.** Measured:
 | `Tutorial/MetaData/pnr_inventory.xml` | 10.5 MB | Keep, but subset — see below |
 | `Tests/Tutorial/Meta/UUSSeq.catalog` | 9.9 MB | **Remove from the working tree** — unreferenced, and cannot support the Magna work |
 | `Tutorial/SpecModTutorial.ipynb` | 4.6 MB | Strip outputs — 4.4 MB of it is embedded PNGs |
-| `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable |
+| `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable, and **already unloadable** |
 
 Total pack size today is 14.7 MiB. That is a **small** repository, and the
 waveforms are not why. Three fixes, none of which needs external hosting:
