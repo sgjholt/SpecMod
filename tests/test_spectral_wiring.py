@@ -141,6 +141,54 @@ def test_normalisation_is_independent_of_the_frequency_axis_length() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "estimator", ["fft", "welch", "multitaper", "prieto", "quadratic", "cwt"]
+)
+def test_every_estimator_lands_on_the_same_amplitude_convention(
+    estimator: str,
+) -> None:
+    """The pairing this module depends on, checked per method rather than assumed.
+
+    ``psd_to_amp`` applies one conversion to whatever the configured estimator
+    produced. That is only sound if every estimator agrees on what its
+    amplitudes mean — and they reach it by very different routes: the CWT via
+    ``C_delta`` and a scale integral, the multitaper family via taper
+    normalisation, Welch via segment averaging.
+
+    They do agree, because each is held to ``E = integral(FAS**2 / 2) df``. This
+    asserts that directly, so a new estimator arriving on a different convention
+    fails here instead of silently rescaling ``Omega``.
+    """
+    from specmod.spectral import estimate_spectrum as estimate
+
+    tr = trace()
+    spectrum = estimate(tr.data, DT, estimator=estimator)
+    energy = float(np.trapezoid(spectrum.amp**2 / 2.0, spectrum.freq))
+    assert energy == pytest.approx(time_domain_energy(tr), rel=0.10), (
+        f"{estimator} is not on the folded FAS convention the pipeline assumes"
+    )
+
+
+@pytest.mark.parametrize(
+    "estimator", ["fft", "welch", "multitaper", "prieto", "quadratic", "cwt"]
+)
+def test_the_pipeline_conversion_matches_the_typed_one(estimator: str) -> None:
+    """``psd_to_amp`` must agree with ``to_kind("magnitude")``.
+
+    The legacy class does the PSD-to-amplitude step arithmetically, because it
+    keeps the pre-refactor call sequence. The core carries the same conversion
+    as a named kind. Two implementations of one relationship is exactly how a
+    factor of two survives, so they are pinned against each other here.
+    """
+    from specmod.spectral import estimate_spectrum as estimate
+
+    tr = trace()
+    typed = estimate(tr.data, DT, estimator=estimator).to_kind("magnitude")
+    through_pipeline = Signal(tr.copy(), estimator=estimator)
+
+    assert through_pipeline.amp == pytest.approx(np.asarray(typed.amp), rel=1e-9)
+
+
 # --------------------------------------------------------- estimator choice
 
 

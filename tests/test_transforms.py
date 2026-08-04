@@ -593,3 +593,77 @@ def test_centring_is_recorded_in_metadata() -> None:
     x[600:1000] = rng.normal(0.0, 1.0, 400) * np.exp(-np.arange(400) / 60.0)
     assert MultitaperEstimator(center=True).estimate(x, DT).meta["centered"] is True
     assert MultitaperEstimator().estimate(x, DT).meta["centered"] is False
+
+
+# ------------------------------------------------ the two amplitude conventions
+
+
+def test_magnitude_is_the_unfolded_transform_and_fas_is_folded() -> None:
+    """The pairing that decides whether ``M0`` is right or out by two.
+
+    ``FAS`` is folded (``2|X|``) so that energy integrates over non-negative
+    frequencies alone. ``MAGNITUDE`` is ``|X|`` itself, which is what a
+    long-period level means and therefore what ``Omega`` is read off. Naming
+    both is the point: the factor is easy to apply by hand, and just as easy to
+    apply twice or not at all.
+    """
+    x = noise()
+    spectrum = FFTEstimator(taper="boxcar", drop_dc=False).estimate(x, DT)
+    reference = np.abs(np.fft.rfft(x - x.mean())) * DT
+
+    magnitude = spectrum.to_kind(AmplitudeKind.MAGNITUDE)
+    assert magnitude.amp == pytest.approx(reference, rel=1e-9)
+    assert magnitude.unit == spectrum.unit, "both are an amplitude in [x]*s"
+
+    # The fold is two in the interior but one at DC and Nyquist: a real
+    # signal's transform is conjugate-symmetric, so those two bins are their
+    # own mirror image and have no twin to fold in. A blanket factor of two
+    # would be wrong at both ends, by exactly two.
+    interior = (spectrum.freq > 0) & (spectrum.freq < FS / 2)
+    assert spectrum.amp[interior] == pytest.approx(2.0 * reference[interior], rel=1e-9)
+    assert spectrum.amp[0] == pytest.approx(reference[0], rel=1e-9)
+    assert spectrum.amp[-1] == pytest.approx(reference[-1], rel=1e-9)
+
+
+def test_parseval_takes_a_different_form_in_each_convention() -> None:
+    """Both recover the energy; the formula is what differs.
+
+    Applying the folded form to an unfolded spectrum is a factor of four, which
+    is precisely the trap this pair of names exists to close.
+    """
+    x = noise()
+    expected = time_domain_energy(x)
+    fas = FFTEstimator(taper="boxcar").estimate(x, DT)
+    mag = fas.to_kind(AmplitudeKind.MAGNITUDE)
+
+    folded = float(np.trapezoid(fas.amp**2 / 2.0, fas.freq))
+    unfolded = 2.0 * float(np.trapezoid(mag.amp**2, mag.freq))
+    assert folded == pytest.approx(expected, rel=0.05)
+    assert unfolded == pytest.approx(expected, rel=0.05)
+
+
+def test_energy_is_convention_independent() -> None:
+    """``energy()`` converts to FAS first, so it is right whatever it is called
+    on. A caller should never need to know which convention they are holding."""
+    x = noise()
+    spectrum = MultitaperEstimator().estimate(x, DT)
+    for kind in ("fas", "magnitude", "psd", "asd"):
+        assert spectrum.to_kind(kind).energy() == pytest.approx(
+            spectrum.energy(), rel=1e-9
+        )
+
+
+def test_conversions_round_trip_through_magnitude() -> None:
+    spectrum = MultitaperEstimator().estimate(noise(), DT)
+    for kind in ("magnitude", "psd", "asd"):
+        there_and_back = spectrum.to_kind(kind).to_kind("fas")
+        assert there_and_back.amp == pytest.approx(spectrum.amp, rel=1e-9)
+
+
+def test_motion_conversion_is_safe_on_an_unfolded_spectrum() -> None:
+    """``to_motion`` routes non-FAS kinds through FAS, so the fold survives it."""
+    spectrum = MultitaperEstimator().estimate(noise(), DT)
+    mag = spectrum.to_kind("magnitude").to_motion("displacement")
+    direct = spectrum.to_motion("displacement").to_kind("magnitude")
+    assert mag.amp == pytest.approx(direct.amp, rel=1e-9)
+    assert mag.kind is AmplitudeKind.MAGNITUDE

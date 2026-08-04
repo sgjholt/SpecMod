@@ -158,17 +158,36 @@ class Spectrum:
            ``T`` is the fix. **Unpadded, the amplitudes are unchanged**, so a
            pre-refactor run reproduces.
         """
-        duration = self._duration()
-        self.amp = np.sqrt(self.amp * duration / 2.0)
+        self.amp = self._convert(self.freq, self.amp, "psd", "magnitude")
         if self.bamp.size > 0:
-            self.bamp = np.sqrt(self.bamp * duration / 2.0)
+            self.bamp = self._convert(self.bfreq, self.bamp, "psd", "magnitude")
 
     def amp_to_psd(self):
-        """Inverse of :meth:`psd_to_amp`: ``PSD = 2 * A**2 / T``."""
-        duration = self._duration()
-        self.amp = 2.0 * np.power(self.amp, 2) / duration
+        """Inverse of :meth:`psd_to_amp`."""
+        self.amp = self._convert(self.freq, self.amp, "magnitude", "psd")
         if self.bamp.size > 0:
-            self.bamp = 2.0 * np.power(self.bamp, 2) / duration
+            self.bamp = self._convert(self.bfreq, self.bamp, "magnitude", "psd")
+
+    def _convert(self, freq, amp, source, target):
+        """Change amplitude convention via :class:`specmod.core.Spectrum`.
+
+        Delegated rather than reimplemented. The relationship is not a single
+        scalar — the fold between ``FAS`` and ``|X|`` is two in the interior but
+        one at DC and Nyquist, which have no negative-frequency twin — and a
+        second copy of that rule is precisely how the two halves of the package
+        would drift apart.
+        """
+        from .core import Spectrum as _CoreSpectrum
+
+        converted = _CoreSpectrum(
+            freq=np.ascontiguousarray(freq, dtype=float),
+            amp=np.ascontiguousarray(amp, dtype=float),
+            motion=getattr(self, "motion", "velocity"),
+            kind=source,
+            duration=self._duration(),
+            sampling_rate=float(self.meta["sampling_rate"]),
+        ).to_kind(target)
+        return np.asarray(converted.amp)
 
     def _duration(self):
         """Physical record length in seconds.
@@ -218,6 +237,10 @@ class Spectrum:
         spectrum = estimate_spectrum(
             self.__tr.data.astype(float), float(self.meta["delta"]), **kwargs
         )
+        # PSD here, MAGNITUDE after psd_to_amp. Every estimator is held to the
+        # same Parseval contract, so they all arrive on the same convention and
+        # one conversion covers all of them — verified per estimator in
+        # tests/test_spectral_wiring.py rather than assumed.
         psd = spectrum.to_kind("psd")
         del self.__tr
         self.amp, self.freq = np.asarray(psd.amp), np.asarray(psd.freq)

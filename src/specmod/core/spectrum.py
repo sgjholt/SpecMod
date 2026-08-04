@@ -100,10 +100,15 @@ class Spectrum:
         return 1.0 / self.duration
 
     def to_kind(self, kind: AmplitudeKind | str) -> Spectrum:
-        """Convert between FAS, PSD and ASD.
+        """Convert between FAS, MAGNITUDE, PSD and ASD.
 
-        Conversions go via FAS rather than being enumerated pairwise, so there
-        is one place where the factor of ``2T`` lives.
+        Conversions go via FAS rather than being enumerated pairwise, so the
+        factors of ``2T`` and of the fold each live in exactly one place.
+
+        ``MAGNITUDE`` is the conversion to reach for when reading a long-period
+        level: ``Omega`` is defined on ``|X|``, not on the folded ``FAS``, and
+        the two differ by two. Asking for it by name is the point — the factor
+        is easy to apply by hand and easy to apply twice, or not at all.
         """
         target = AmplitudeKind(kind)
         if target is self.kind:
@@ -111,6 +116,9 @@ class Spectrum:
         fas = self._to_fas()
         if target is AmplitudeKind.FAS:
             return fas
+        if target is AmplitudeKind.MAGNITUDE:
+            # Undo the fold: FAS carries the negative-frequency half, |X| does not.
+            return replace(fas, amp=fas.amp / self._fold_factor(), kind=target)
         two_t = 2.0 * self.duration
         if target is AmplitudeKind.PSD:
             amp = fas.amp**2 / two_t
@@ -118,9 +126,31 @@ class Spectrum:
             amp = fas.amp / np.sqrt(two_t)
         return replace(fas, amp=amp, kind=target)
 
+    def _fold_factor(self) -> NDArray[np.float64]:
+        """Per-bin ratio between the folded ``FAS`` and the unfolded ``|X|``.
+
+        Two everywhere except DC and Nyquist, which have no negative-frequency
+        twin to fold in — a real signal's transform is conjugate-symmetric, and
+        those two bins are their own mirror image. A blanket factor of two is
+        therefore wrong at both ends, by exactly two.
+
+        Whether either bin is present depends on ``drop_dc`` and on whether the
+        record length is even, so this is decided from the frequency axis rather
+        than assumed.
+        """
+        factor = np.full(self.freq.shape, 2.0)
+        nyquist = self.sampling_rate / 2.0
+        factor[np.isclose(self.freq, 0.0)] = 1.0
+        factor[np.isclose(self.freq, nyquist)] = 1.0
+        return factor
+
     def _to_fas(self) -> Spectrum:
         if self.kind is AmplitudeKind.FAS:
             return self
+        if self.kind is AmplitudeKind.MAGNITUDE:
+            return replace(
+                self, amp=self.amp * self._fold_factor(), kind=AmplitudeKind.FAS
+            )
         two_t = 2.0 * self.duration
         if self.kind is AmplitudeKind.PSD:
             amp = np.sqrt(self.amp * two_t)
