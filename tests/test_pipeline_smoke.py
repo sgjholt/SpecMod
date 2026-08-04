@@ -241,3 +241,62 @@ def test_the_whole_pipeline_runs_on_each_estimator(estimator: str) -> None:
         assert snp.signal.estimator == estimator, name
         assert np.isfinite(snp.signal.amp).all(), name
         assert (snp.signal.amp > 0).all(), name
+
+
+# ------------------------------------------------ the noise resolution floor
+
+
+def test_the_band_respects_the_noise_window_too(spectra: Any) -> None:
+    """The noise window is the shorter one, and it sets the limit.
+
+    ``__interp_noise_to_signal`` puts the noise on the signal's frequency axis.
+    ``np.interp`` does not extrapolate — it repeats the edge value — so below
+    the noise window's own lowest frequency the "noise level" is a flat
+    continuation rather than a measurement, and the signal-to-noise computed
+    there has an invented denominator.
+
+    On these 28 pairs the noise windows run 1.2-1.6 s against 1.8-3.5 s
+    signals, and 6 selected a band opening below the noise window's ``1/T``
+    before this floor existed.
+    """
+    checked = 0
+    for name, snp in spectra.group.items():
+        band = getattr(snp, "ubfreqs", None)
+        if band is None or len(band) != 2:
+            continue
+        assert float(band[0]) >= snp.resolution_floor - 1e-12, (
+            f"{name}: band opens at {float(band[0]):.3f} Hz, below the "
+            f"resolution floor {snp.resolution_floor:.3f} Hz"
+        )
+        checked += 1
+    assert checked > 20
+
+
+def test_the_floor_is_the_stricter_of_the_two_windows(spectra: Any) -> None:
+    for name, snp in spectra.group.items():
+        assert snp.resolution_floor == pytest.approx(
+            max(snp.signal.resolution_floor, snp.noise.resolution_floor)
+        ), name
+
+
+def test_the_cwt_floor_is_stricter_than_the_multitaper_one() -> None:
+    """A wavelet needs several cycles inside the window, not one.
+
+    The cone of influence is about 2.8x stricter than ``1/T``, and taking each
+    spectrum's floor from its own frequency axis means that rule applies
+    without the pipeline knowing which estimator produced it.
+    """
+    import contextlib
+    import io
+
+    from specmod.spectral import Spectra
+
+    floors = {}
+    for estimator in ("multitaper", "cwt"):
+        signal, noise = _cut_windows()
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = Spectra.from_streams(signal, noise, estimator=estimator)
+        floors[estimator] = np.median(
+            [snp.resolution_floor for snp in result.group.values()]
+        )
+    assert floors["cwt"] > floors["multitaper"] * 1.2, floors
