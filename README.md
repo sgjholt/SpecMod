@@ -27,7 +27,7 @@ Optional extras:
 | Extra | Adds |
 |---|---|
 | `multitaper` | Prieto's `multitaper` package — jackknife confidence intervals, F-test for spectral lines |
-| `wavelet` | PyWavelets, for additional wavelet families |
+| `wavelet` | PyWavelets, for wavelet families beyond the built-in Morlet |
 | `mcmc` | `emcee`, for Markov-chain Monte Carlo parameter search |
 
 No Fortran compiler is needed. Multitaper estimation is implemented natively on
@@ -60,6 +60,18 @@ Conversions return new objects and are unit-aware:
 spectrum.to_motion("displacement")   # divides by 2*pi*f
 spectrum.to_kind("psd")              # A**2 / (2T)
 spectrum.band(0.5, 25.0)
+```
+
+The wavelet estimator additionally exposes the full time-frequency surface,
+which is what to look at when a fit comes out wrong:
+
+```python
+from specmod.transforms import CWTEstimator
+
+scalogram = CWTEstimator().scalogram(trace, dt)
+scalogram.time_average()     # an ordinary Spectrum, fits like any other
+scalogram.coi_coverage()     # how much of the window each frequency resolves
+scalogram.qc()               # concentration, coda balance, resolved bandwidth
 ```
 
 Which estimator to use, and what each one does to your data — including

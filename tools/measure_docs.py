@@ -276,6 +276,43 @@ def quadratic_table() -> str:
     return table(["Measurement", "multitaper", "quadratic"], rows)
 
 
+@synthetic("cwt_table")
+def cwt_table() -> str:
+    """Energy recovered by each estimator, including a non-stationary record.
+
+    The last row is the one the CWT exists for: multitaper assumes stationarity
+    and a burst violates it, where a wavelet transform does not assume it in
+    the first place.
+    """
+    from specmod.transforms import CWTEstimator
+
+    n = 2048
+    t = np.arange(n) * DT
+    rng = np.random.default_rng(0)
+    burst = np.zeros(n)
+    burst[n // 2 : n // 2 + n // 8] = rng.normal(0.0, 1e-6, n // 8)
+
+    records = {
+        "white noise": rng.normal(0.0, 1e-6, n),
+        "5 Hz sinusoid": 2.5 * np.sin(2 * np.pi * 5.0 * t),
+        "off-centre burst": burst,
+    }
+    estimators = {
+        "FFT": FFTEstimator(),
+        "multitaper": MultitaperEstimator(),
+        "CWT": CWTEstimator(),
+    }
+    rows = []
+    for name, x in records.items():
+        true = float(((x - x.mean()) ** 2).sum() * DT)
+        cells = []
+        for est in estimators.values():
+            ratio = est.estimate(x, DT).energy() / true
+            cells.append(f"{ratio:.3f}")
+        rows.append([name, *cells])
+    return table(["Record", *estimators], rows)
+
+
 @synthetic("leakage_table")
 def leakage_table() -> str:
     """Why adaptive weighting is the default: flat weighting does not suppress

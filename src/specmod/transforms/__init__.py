@@ -7,6 +7,7 @@ test suite pins every one of them.
 from __future__ import annotations
 
 from .base import SpectralEstimator, TaperCorrection
+from .cwt import CWTEstimator
 from .fft import FFTEstimator, WelchEstimator
 from .multitaper import MultitaperEstimator
 from .prieto import PrietoMultitaperEstimator
@@ -18,6 +19,7 @@ ESTIMATORS: dict[str, type[SpectralEstimator]] = {
     "welch": WelchEstimator,
     "multitaper": MultitaperEstimator,
     "prieto": PrietoMultitaperEstimator,
+    "cwt": CWTEstimator,
     "quadratic": QuadraticMultitaperEstimator,
 }
 
@@ -36,6 +38,7 @@ def get_estimator(name: str, **kwargs: object) -> SpectralEstimator:
 
 __all__ = [
     "ESTIMATORS",
+    "CWTEstimator",
     "FFTEstimator",
     "MultitaperEstimator",
     "PrietoMultitaperEstimator",
