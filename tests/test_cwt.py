@@ -60,28 +60,34 @@ def test_agrees_with_the_other_estimators_on_a_known_sinusoid() -> None:
     t = np.arange(N) * DT
     amplitude = 2.5
     x = amplitude * np.sin(2 * np.pi * 5.0 * t)
+    truth = time_domain_energy(x)
 
-    peaks = {}
+    found = {}
     for name, est in (
         ("fft", FFTEstimator(taper="boxcar")),
         ("multitaper", MultitaperEstimator()),
         ("cwt", CWTEstimator()),
     ):
         spectrum = est.estimate(x, DT)
-        peaks[name] = (
+        band = spectrum.band(3.0, 8.0)
+        found[name] = (
             float(spectrum.freq[np.argmax(spectrum.amp)]),
-            float(spectrum.amp.max()),
+            float(np.trapezoid(band.amp**2 / 2.0, band.freq)),
         )
 
-    for name, (freq, _) in peaks.items():
+    for name, (freq, _) in found.items():
         assert freq == pytest.approx(5.0, rel=0.10), f"{name} peaked at {freq:.2f} Hz"
 
-    # The CWT smears a line over its scale bandwidth, so it reads lower than a
-    # boxcar FFT for the same reason multitaper does. Within a factor of two of
-    # the analytic value is the contract; being out by 2*pi or by sqrt(dt) is
-    # what this catches.
-    analytic = amplitude * DURATION / 2.0
-    assert 0.3 < peaks["cwt"][1] / analytic < 1.2
+    # Energy in a band around the line, *not* peak height. Each estimator
+    # spreads a pure line over its own resolution bandwidth, so the peaks
+    # legitimately differ by a factor of four here and comparing them would
+    # assert almost nothing. The integral under the line does not care about
+    # bandwidth, so it is the quantity on which the three must actually agree —
+    # and it is what catches a normalisation out by 2*pi, by dt, or by sqrt(dt).
+    for name, (_, energy) in found.items():
+        assert energy == pytest.approx(truth, rel=0.10), (
+            f"{name} put {energy:.3f} in the 3-8 Hz band against a true {truth:.3f}"
+        )
 
 
 def test_amplitude_scales_linearly_with_the_record() -> None:
