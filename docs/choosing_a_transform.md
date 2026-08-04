@@ -438,6 +438,60 @@ equivalent (dropping numba from the dependency graph), and is cross-validated
 against the patched upstream to 1e-9 in the test suite. It does **not** need
 `specmod[multitaper]` installed.
 
+---
+
+## Zero-padding: what it fixes, and what it does not
+
+A common expectation is that padding suppresses ringing. It does not — and the
+two effects it *is* confused with pull in different directions, so they are
+worth separating.
+
+<!-- measured: padding_table -->
+| Zero-padding | sidelobes, boxcar | sidelobes, Tukey | worst peak / true |
+|---|---|---|---|
+| none | 7e-04 | 7e-07 | 0.638 |
+| 2x | 8e-04 | 7e-07 | 0.900 |
+| 8x | 7e-04 | 6e-07 | 0.995 |
+<!-- /measured -->
+
+**Leakage is the taper's job, not padding's.** Read across the first two
+columns: padding leaves the sidelobe floor exactly where it was, while
+switching from a boxcar to a 5% Tukey moves it by three orders of magnitude.
+Leakage comes from truncating the record; padding adds zeros *outside* the
+truncation, so there is nothing for it to undo. It interpolates the frequency
+grid — you see the same sidelobes sampled more finely.
+
+**Scalloping is what padding fixes.** The last column places a pure line
+worst-case between two bins: unpadded it reads **36% low**, because the peak
+falls between samples of the spectrum. Two-fold padding recovers most of it,
+eight-fold nearly all.
+
+**But that only matters for features narrower than a bin.** On a smooth
+Brune-like spectrum — which is what a source model is fitted to — padding
+changes the recovered level by a factor of 1.0000 at both 2× and 8×. So for
+`Omega`, `f_c` and `t*` there is nothing to gain. It matters when you are
+reading the amplitude of a *line*: an instrumental tone, a site resonance, the
+peaks `QuadraticMultitaperEstimator` exists to measure.
+
+Hence `n_fft` defaults to `None`. Set it when measuring a narrow feature.
+
+Padding is otherwise numerically free here: amplitude normalisation is keyed
+off the record duration, so padding is a pure interpolation and does not move
+any level. (Keyed off `len(freq)`, as the pre-refactor code was, it would have.)
+
+### A note on record length
+
+Cut windows are not round numbers. On the 28 PNR S-windows, lengths run
+181–737 samples, **17 of them odd**, and several are prime (677, 479, 271,
+181). Two consequences:
+
+- Odd lengths have **no Nyquist bin** — the top bin sits half a bin below
+  `fs/2` and is folded like any other. SpecMod handles this from the frequency
+  axis rather than assuming; see `Spectrum._fold_factor`.
+- A prime length makes the FFT slower, 1.77× across those windows. In absolute
+  terms it is 0.2 ms per event, so padding to a fast length is not worth a
+  changed default — but it is worth knowing if you ever process long records.
+
 ### `CWTEstimator`
 
 A continuous wavelet transform on an L2-normalised Morlet, time-averaged to an

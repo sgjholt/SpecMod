@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy.fft import next_fast_len
 
 from specmod.core import AmplitudeKind, Motion, Spectrum
 from specmod.transforms import (
@@ -23,6 +24,7 @@ from specmod.transforms import (
     WelchEstimator,
     get_estimator,
 )
+from specmod.transforms.base import resolve_n_fft
 
 FS = 100.0
 DT = 1.0 / FS
@@ -762,3 +764,109 @@ def test_every_estimator_reports_a_consistent_geometry(estimator, _rtol) -> None
     assert spectrum.sampling_rate == pytest.approx(FS)
     assert spectrum.duration == pytest.approx(DURATION)
     assert spectrum.freq.max() <= spectrum.nyquist * (1 + 1e-9)
+
+
+# ------------------------------------------------------------ record parity
+
+
+@pytest.mark.parametrize("n", [2000, 2001, 20001, 200001])
+def test_the_fold_respects_record_parity(n: int) -> None:
+    """Only an even-length record has a true Nyquist bin.
+
+    An ``rfft`` of even ``n`` ends exactly on ``fs/2``, which is its own mirror
+    image and so is not folded. Odd ``n`` ends half a bin below at
+    ``fs/2 * (n-1)/n``; that bin has a negative-frequency twin like any other
+    and *is* folded.
+
+    Lengths grow here because the gap between an odd top bin and Nyquist is
+    ``df/2``, which shrinks as the record lengthens. A fixed relative tolerance
+    eventually swallows it — ``np.isclose`` at its default does so from about
+    200000 samples, which at 1000 Hz is a 200 s record — and silently halves
+    that bin.
+    """
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    spectrum = FFTEstimator(taper="boxcar", drop_dc=False).estimate(x, DT)
+    factor = spectrum._fold_factor()
+
+    assert factor[0] == 1.0, "DC is never folded"
+    expected = 1.0 if n % 2 == 0 else 2.0
+    assert factor[-1] == expected, (
+        f"n={n} ({'even' if n % 2 == 0 else 'odd'}): top bin at "
+        f"{spectrum.freq[-1]:.6f} Hz against Nyquist {spectrum.nyquist}"
+    )
+    assert np.all(factor[1:-1] == 2.0), "every interior bin has a twin"
+
+
+@pytest.mark.parametrize("n", [2000, 2001])
+def test_magnitude_matches_numpy_for_both_parities(n: int) -> None:
+    """The end-to-end consequence: ``|X|`` is right whatever the record length.
+
+    Getting the fold wrong at one bin is invisible in an energy check — it is a
+    single bin out of a thousand — but it is a factor of two in that bin.
+    """
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    x = x - x.mean()
+    spectrum = FFTEstimator(taper="boxcar", drop_dc=False).estimate(x, DT)
+    reference = np.abs(np.fft.rfft(x)) * DT
+    assert spectrum.to_kind("magnitude").amp == pytest.approx(reference, rel=1e-9)
+
+
+@pytest.mark.parametrize("n", [2000, 2001])
+def test_energy_is_recovered_for_both_parities(n: int) -> None:
+    x = np.random.default_rng(0).normal(0.0, 1e-6, n)
+    expected = float(np.sum((x - x.mean()) ** 2) * DT)
+    spectrum = FFTEstimator(taper="boxcar").estimate(x, DT)
+    assert spectrum.energy() == pytest.approx(expected, rel=0.01)
+
+
+# --------------------------------------------------------- padding strategies
+
+
+def test_fast_padding_reaches_an_efficiently_factorised_length() -> None:
+    """Cut windows are not round numbers, and a prime one is slow.
+
+    ``"fast"`` is preferred to ``"pow2"`` on measurement: numpy's pocketfft
+    handles 5-smooth lengths, so a power of two overshoots. For 65537 samples
+    it pads to 131072 against 65610, doing twice the transform.
+    """
+    for n in (181, 271, 479, 677, 1999, 65537):
+        fast = resolve_n_fft("fast", n)
+        assert fast == next_fast_len(n)
+        assert fast >= n
+        assert fast <= resolve_n_fft("pow2", n), "fast should never overshoot pow2"
+
+
+def test_pow2_padding_reaches_the_next_power_of_two() -> None:
+    assert resolve_n_fft("pow2", 2000) == 2048
+    assert resolve_n_fft("pow2", 2048) == 2048
+    assert resolve_n_fft("pow2", 2049) == 4096
+
+
+@pytest.mark.parametrize("strategy", ["fast", "pow2"])
+def test_padding_strategies_do_not_move_amplitudes(strategy: str) -> None:
+    """Padding is a speed knob, not a numerical one.
+
+    The normalisation is keyed off the record duration, so a longer transform
+    refines the frequency grid and changes nothing else. If that ever stops
+    being true, ``n_fft`` has become a scientific setting rather than a
+    performance one.
+    """
+    a0 = 2.5
+    x = sinusoid(a0)
+    padded = FFTEstimator(taper="boxcar", n_fft=strategy).estimate(x, DT)
+    plain = FFTEstimator(taper="boxcar").estimate(x, DT)
+
+    # Energy is the invariant. The *peak* is not, and deliberately so: this
+    # fixture places the line exactly on a bin of the unpadded transform, and
+    # padding to a length that is not a multiple moves it off-bin, so a little
+    # scalloping appears. That is the grid changing, not the normalisation —
+    # which is why the check is on energy, duration and record length.
+    assert padded.energy() == pytest.approx(plain.energy(), rel=1e-3)
+    assert padded.duration == pytest.approx(plain.duration)
+    assert padded.n_samples == plain.n_samples, "the record did not get longer"
+    assert padded.amp.max() <= a0 * DURATION * (1 + 1e-9), "padding cannot add energy"
+
+
+def test_an_unknown_padding_strategy_names_the_valid_ones() -> None:
+    with pytest.raises(ValueError, match="'fast' or 'pow2'"):
+        resolve_n_fft("nextpow2", 2000)

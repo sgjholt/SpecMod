@@ -104,6 +104,12 @@ n_bins = 151
 
 
 [snr]
+# UNVERIFIED. Refuses bandwidth below what the shorter of the signal and noise
+# windows can resolve. The pre-refactor code had no such check, so on this
+# dataset 6 of 28 pairs selected a band whose low end was measured against an
+# extrapolated noise level. Set false to reproduce that exactly.
+resolution_floor = false
+
 # "select spectra that have a signal-to-noise ratio greater than 3 in the
 # consecutive bands 2-4 Hz, 4-6 Hz, and 6-8 Hz."
 tolerance = 3.0

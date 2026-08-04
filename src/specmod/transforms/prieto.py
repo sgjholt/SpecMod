@@ -73,7 +73,10 @@ _IADAPT: dict[str, int] = {"adaptive": 0, "constant": 1, "eigenvalue": 2}
 
 def _require_multitaper() -> Any:
     try:
-        from multitaper import MTSpec
+        # Deferred so the package stays importable without the extra: this is
+        # an optional backend, and a missing one should be a clear error at
+        # call time rather than an ImportError from `import specmod`.
+        from multitaper import MTSpec  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError(
             "The 'multitaper' package is not installed. It is an optional "

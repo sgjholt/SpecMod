@@ -36,14 +36,24 @@ fail to run belongs in ``FIELD``.
 
 from __future__ import annotations
 
+import glob
+import os
 import re
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 
 import click
 import numpy as np
+from scipy.signal import hilbert
 
-from specmod.transforms import FFTEstimator, MultitaperEstimator
+from specmod.transforms import (
+    CWTEstimator,
+    FFTEstimator,
+    MultitaperEstimator,
+    PrietoMultitaperEstimator,
+    QuadraticMultitaperEstimator,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = [
@@ -190,8 +200,6 @@ def quadratic_table() -> str:
     for, and omitting it would leave the docs recommending it for exactly the
     job it is worst at.
     """
-    from specmod.transforms import QuadraticMultitaperEstimator
-
     n, nw, k = 1024, 3.0, 5
     t = np.arange(n) * DT
     w = nw / (n * DT)  # multitaper half-bandwidth, Hz
@@ -284,8 +292,6 @@ def cwt_table() -> str:
     and a burst violates it, where a wavelet transform does not assume it in
     the first place.
     """
-    from specmod.transforms import CWTEstimator
-
     n = 2048
     t = np.arange(n) * DT
     rng = np.random.default_rng(0)
@@ -311,6 +317,55 @@ def cwt_table() -> str:
             cells.append(f"{ratio:.3f}")
         rows.append([name, *cells])
     return table(["Record", *estimators], rows)
+
+
+@synthetic("padding_table")
+def padding_table() -> str:
+    """What zero-padding does and does not do.
+
+    Two effects get conflated. Padding does not touch spectral leakage, which
+    is set by the taper; it fixes scalloping, which only matters for features
+    narrower than a bin. Reporting both together is the point.
+    """
+    n = 2000
+    t = np.arange(n) * DT
+    duration = n * DT
+    df = 1.0 / duration
+
+    def sidelobe(spectrum: object, f0: float) -> float:
+        f, a = spectrum.freq, spectrum.amp  # type: ignore[attr-defined]
+        away = np.abs(f - f0) > 0.5
+        return float(np.median(a[away]) / a.max())
+
+    rows = []
+    for pad, label in ((None, "none"), (2 * n, "2x"), (8 * n, "8x")):
+        # Leakage, measured on a line deliberately off bin centre.
+        off_centre = np.sin(2 * np.pi * 5.037 * t)
+        floors = [
+            sidelobe(
+                FFTEstimator(taper=taper, n_fft=pad).estimate(off_centre, DT), 5.037
+            )
+            for taper in ("boxcar", "tukey")
+        ]
+        # Scalloping, as the worst peak loss over sub-bin placements.
+        worst = min(
+            FFTEstimator(taper="boxcar", n_fft=pad)
+            .estimate(np.sin(2 * np.pi * (5.0 + frac * df) * t), DT)
+            .amp.max()
+            / duration
+            for frac in np.linspace(0.0, 0.5, 11)
+        )
+        rows.append([label, f"{floors[0]:.0e}", f"{floors[1]:.0e}", f"{worst:.3f}"])
+
+    return table(
+        [
+            "Zero-padding",
+            "sidelobes, boxcar",
+            "sidelobes, Tukey",
+            "worst peak / true",
+        ],
+        rows,
+    )
 
 
 @synthetic("leakage_table")
@@ -340,8 +395,6 @@ def leakage_table() -> str:
 def phase_table() -> str:
     """It is the *linear* component of phase — the group delay — that matters,
     not phase in general. The constant rotation is the decisive control."""
-    from scipy.signal import hilbert
-
     base = decaying_burst_at(0.10)
     est = MultitaperEstimator(adaptive=False)
 
@@ -408,7 +461,9 @@ def prieto_agreement() -> str:
     than merely plausible.
     """
     try:
-        from multitaper import MTSpec
+        # Optional extra: a measurement that cannot run degrades to a note in
+        # the table rather than stopping the whole tool from importing.
+        from multitaper import MTSpec  # noqa: PLC0415
     except ImportError:
         return "_Not measured: install `specmod[multitaper]` and re-run._"
 
@@ -441,13 +496,12 @@ def prieto_agreement() -> str:
 
 def _field_signals():  # type: ignore[no-untyped-def]
     """The 28 PNR S-windows, cut with the published Magna workflow."""
-    import glob
-    import os
-    import warnings
+    # obspy costs seconds to import and only the field measurements need it,
+    # so it is deferred to keep `measure_docs --help` and the synthetic-only
+    # runs fast.
+    import obspy  # noqa: PLC0415
 
-    import obspy
-
-    import specmod.preprocess as pre
+    import specmod.preprocess as pre  # noqa: PLC0415
 
     warnings.filterwarnings("ignore")
     data = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
@@ -491,8 +545,6 @@ def plateau_table() -> str:
     slid through an otherwise empty window and the spread of the recovered
     1-4 Hz level is reported relative to its mid-window value.
     """
-    from specmod.transforms import PrietoMultitaperEstimator
-
     sig = sorted(_field_signals(), key=lambda tr: -tr.stats.npts)
     tr = sig[0]
     dt = float(tr.stats.delta)

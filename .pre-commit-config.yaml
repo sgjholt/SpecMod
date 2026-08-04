@@ -1,8 +1,11 @@
 repos:
+  # Keep this rev in step with the version CI pins in .github/workflows/test.yml.
+  # They drifted once — the hook sat on 0.9.6 while CI ran latest — so a rule
+  # added in between failed CI while passing locally.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.8
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
@@ -14,9 +17,16 @@ repos:
         args: [--maxkb=1024]
       - id: check-toml
       - id: check-yaml
+      # These three rewrite files as text. `.spec` artifacts are pickles, and
+      # running the hooks over one silently stripped six bytes from the middle
+      # of it — a corrupted pickle that still looks like a plausible diff.
+      # Anything binary has to be excluded by hand; the hooks do not detect it.
       - id: end-of-file-fixer
+        exclude: '\.spec$'
       - id: trailing-whitespace
+        exclude: '\.spec$'
       - id: mixed-line-ending
+        exclude: '\.spec$'
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1

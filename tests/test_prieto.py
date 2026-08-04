@@ -10,7 +10,12 @@ import numpy as np
 import pytest
 
 from specmod.core import AmplitudeKind, Motion
-from specmod.transforms import FFTEstimator, MultitaperEstimator
+from specmod.transforms import (
+    ESTIMATORS,
+    FFTEstimator,
+    MultitaperEstimator,
+    get_estimator,
+)
 
 pytest.importorskip("multitaper", reason="optional extra: specmod[multitaper]")
 
@@ -151,8 +156,6 @@ def test_rejects_bad_setup(kwargs: dict, match: str) -> None:
 
 
 def test_registry_exposes_it() -> None:
-    from specmod.transforms import ESTIMATORS, get_estimator
-
     assert "prieto" in ESTIMATORS
     assert get_estimator("prieto").estimate(noise(), DT).kind is AmplitudeKind.FAS
 

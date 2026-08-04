@@ -120,9 +120,11 @@ class TransformConfig:
     #: FFT / Welch.
     taper: Literal["hann", "tukey", "boxcar"] = "tukey"
     taper_alpha: float = 0.05
-    #: ``None`` means no zero padding. Padding changes the normalisation, which
-    #: the old psd_to_amp got wrong by keying off len(freq) rather than duration.
-    n_fft: int | None = None
+    #: ``None`` for no padding, an integer, or "fast"/"pow2". Padding is a pure
+    #: interpolation here -- the normalisation is keyed off duration, not
+    #: len(freq), which is what the old psd_to_amp got wrong. Use "fast" to
+    #: avoid the slow FFT path on prime-length cut windows.
+    n_fft: int | str | None = None
     welch_segment_length: int | None = None
 
     #: Continuous wavelet transform.

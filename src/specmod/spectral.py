@@ -10,6 +10,9 @@ from scipy.integrate import cumulative_trapezoid
 
 from . import config as cfg
 from . import utils as ut
+from .config import load_config
+from .core import Spectrum as _CoreSpectrum
+from .transforms import ESTIMATORS
 
 
 def _mtspec(*args, **kwargs):
@@ -21,7 +24,10 @@ def _mtspec(*args, **kwargs):
     compiler, so it is resolved on first use rather than imported eagerly.
     """
     try:
-        from mtspec import mtspec
+        # Deferred on purpose: mtspec ships as Fortran source with no wheels,
+        # so importing it at module scope would make specmod itself
+        # unimportable wherever there is no compiler.
+        from mtspec import mtspec  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise ImportError(
             "The mtspec backend is not installed. It is a legacy optional "
@@ -47,9 +53,6 @@ def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
     how the legacy ``**kwargs`` passthrough from ``Spectra.from_streams``
     keeps working.
     """
-    from .config import load_config
-    from .transforms import ESTIMATORS
-
     transform = load_config().config.transform
     name = kwargs.pop("estimator", transform.estimator)
     if name == "mtspec":
@@ -177,8 +180,6 @@ class Spectrum:
         second copy of that rule is precisely how the two halves of the package
         would drift apart.
         """
-        from .core import Spectrum as _CoreSpectrum
-
         converted = _CoreSpectrum(
             freq=np.ascontiguousarray(freq, dtype=float),
             amp=np.ascontiguousarray(amp, dtype=float),
@@ -187,7 +188,7 @@ class Spectrum:
             duration=self._duration(),
             sampling_rate=float(self.meta["sampling_rate"]),
         ).to_kind(target)
-        return np.asarray(converted.amp)
+        return np.array(converted.amp, dtype=float)
 
     def _duration(self):
         """Physical record length in seconds.
@@ -243,7 +244,20 @@ class Spectrum:
         # tests/test_spectral_wiring.py rather than assumed.
         psd = spectrum.to_kind("psd")
         del self.__tr
-        self.amp, self.freq = np.asarray(psd.amp), np.asarray(psd.freq)
+        # Copies, not views. core.Spectrum marks its arrays read-only so a
+        # spectrum cannot be mutated behind its own back, but the legacy classes
+        # here update amp in place (SNP.__scale_noise_parseval, integrate,
+        # differentiate, the noise rotation). Handing out the frozen array makes
+        # every one of those raise.
+        self.amp = np.array(psd.amp, dtype=float)
+        self.freq = np.array(psd.freq, dtype=float)
+        # The lowest frequency this window actually supports, captured before
+        # anything interpolates the axis. For an FFT or multitaper that is
+        # 1/T; for the CWT it is the cone-of-influence floor, which is about
+        # 2.8x stricter because a wavelet needs several cycles in the window,
+        # not one. Taking it from the axis rather than computing it means the
+        # right rule applies to each without a special case.
+        self.resolution_floor = float(self.freq.min())
         self.motion = str(spectrum.motion)
         self.estimator = spectrum.meta.get("estimator")
 
@@ -362,6 +376,12 @@ class SNP:
         self.noise = noise
         self.pair = (self.signal, self.noise)
         self.__set_metadata(interpolate_noise)
+        # Before __interp_noise_to_signal replaces the noise axis with the
+        # signal's. After that the noise window's own limit is unrecoverable.
+        self.resolution_floor = max(
+            getattr(signal, "resolution_floor", 0.0),
+            getattr(noise, "resolution_floor", 0.0),
+        )
         if SCALE_PARSEVAL:
             self.__scale_noise_parseval()
         if self.intrp:
@@ -533,6 +553,39 @@ class SNP:
                 )
             if BW_METHOD == 2:
                 self.set_ubfreqs(self.find_optimal_signal_bandwidth_2())
+            self.__apply_resolution_floor()
+
+    def __apply_resolution_floor(self):
+        """Refuse bandwidth below what the shorter of the two windows resolves.
+
+        ``__interp_noise_to_signal`` puts the noise onto the signal's frequency
+        axis, and the noise window is usually the shorter one — 1.2 to 1.6 s
+        against 1.8 to 3.5 s on the PNR data. ``np.interp`` does not
+        extrapolate, it repeats the edge value, so below the noise window's own
+        lowest frequency the "noise level" is a flat continuation rather than a
+        measurement.
+
+        Signal-to-noise computed there is against an invented denominator, and
+        it is the band that constrains ``Omega``. Measured on those 28 pairs, 6
+        selected a band opening below the noise window's ``1/T``.
+
+        Disable with ``SnrConfig.resolution_floor = False`` to reproduce a run
+        made before this existed.
+        """
+        if not load_config().config.snr.resolution_floor:
+            return
+        band = getattr(self, "ubfreqs", None)
+        if band is None or len(band) != 2:
+            return
+        floor = self.resolution_floor
+        low, high = float(band[0]), float(band[1])
+        if low >= floor:
+            return
+        if floor >= high:
+            # Nothing survives the floor; the pair cannot constrain anything.
+            self.signal.set_pass_snr(False)
+            return
+        self.set_ubfreqs(np.array([floor, high]))
 
     def set_ubfreqs(self, ubfreqs):
         self.ubfreqs = ubfreqs
@@ -571,8 +624,6 @@ class SNP:
                 self.signal.set_pass_snr(False)
             return np.array([freq[fl], freq[fh]])
         else:
-            import matplotlib.pyplot as plt
-
             plt.plot(
                 freq,
                 np.sign(bsnr - bsnr_thresh),
