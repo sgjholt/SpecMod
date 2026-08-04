@@ -60,6 +60,22 @@ noise_shift = 0.5
 
 
 [transform]
+# Amplitudes here are unchanged by the refactor. The pipeline reports the
+# unfolded Fourier transform magnitude |X(f)| = |rfft(x)|*dt, which is the
+# convention Omega is defined in: the displacement plateau is |X(f->0)| =
+# |integral u dt| and M0 is proportional to it.
+#
+# The pre-refactor code computed the same quantity as
+# `sqrt(PSD * len(freq) / sampling_rate)`, which is identical to the
+# `sqrt(PSD * T / 2)` used now whenever `len(freq)*dt == T/2` -- i.e. for any
+# unpadded one-sided transform, which is what these windows were. Keying it off
+# T instead of len(freq) fixes the padding sensitivity (REFACTOR_PLAN §2.2)
+# without moving the values, so this study reproduces.
+#
+# Watch for it if you enable n_fft, or switch to `estimator = "prieto"`, whose
+# frequency axis is full-length: under the old formula either would have
+# silently rescaled Omega.
+#
 # "a multitaper method (Prieto et al., 2009)".
 estimator = "multitaper"
 time_bandwidth = 3.0

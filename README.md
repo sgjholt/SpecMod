@@ -118,11 +118,16 @@ outputs.
 
 ```sh
 uv venv && uv pip install -e ".[dev]"
-pytest                       # test suite
-ruff check src/ tests/ tools/  # lint
+pytest                             # test suite
+pytest --without-optional-extras   # as a default install and CI see it
+ruff check src/ tests/ tools/      # lint
 ruff format src/ tests/ tools/
-mypy                         # strict on the rewritten modules
+mypy                               # strict on the rewritten modules
 ```
+
+Run `--without-optional-extras` before pushing. A development environment
+with `specmod[multitaper]` installed will pass tests that a default install
+fails, and CI installs only `[dev]`.
 
 The `mypy` override list in `pyproject.toml` is the migration backlog: modules
 leave it as they are rewritten, and the target is an empty list.

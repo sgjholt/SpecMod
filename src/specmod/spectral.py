@@ -1,3 +1,4 @@
+import dataclasses
 import itertools
 import pickle
 
@@ -12,12 +13,12 @@ from . import utils as ut
 
 
 def _mtspec(*args, **kwargs):
-    """Call ``mtspec.mtspec``, which is an optional legacy dependency.
+    """Call ``mtspec.mtspec``, the pre-refactor backend.
 
-    mtspec 0.3.2 is distributed as Fortran source with no wheels and does not
-    build without a Fortran compiler, so importing it eagerly makes the whole
-    package uninstallable. It is resolved on first use instead and replaced by
-    the pluggable estimators in ``specmod.transforms``.
+    Retained only so a run can be compared against the original Fortran
+    library; :func:`estimate_spectrum` is what the pipeline uses. mtspec 0.3.2
+    ships as Fortran source with no wheels and does not build without a
+    compiler, so it is resolved on first use rather than imported eagerly.
     """
     try:
         from mtspec import mtspec
@@ -28,6 +29,45 @@ def _mtspec(*args, **kwargs):
             "`pip install specmod[mtspec]`, or use specmod.transforms instead."
         ) from exc
     return mtspec(*args, **kwargs)
+
+
+def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
+    """Transform a record, using whichever estimator the configuration names.
+
+    The bridge between this module and :mod:`specmod.transforms`. Every
+    estimator — FFT, Welch, multitaper, Prieto, quadratic, CWT — becomes
+    available to the pipeline through :class:`specmod.config.TransformConfig`,
+    where before there was a hardcoded call to ``mtspec(data, delta, 3)``.
+
+    Returns a :class:`specmod.core.Spectrum`, which carries its own units, so
+    the caller no longer has to track how many times the record has been
+    integrated or what amplitude convention is in force.
+
+    Keyword arguments override the configured estimator's parameters, which is
+    how the legacy ``**kwargs`` passthrough from ``Spectra.from_streams``
+    keeps working.
+    """
+    from .config import load_config
+    from .transforms import ESTIMATORS
+
+    transform = load_config().config.transform
+    name = kwargs.pop("estimator", transform.estimator)
+    if name == "mtspec":
+        raise ValueError(
+            "estimator='mtspec' is the pre-refactor Fortran backend and is not "
+            "wired into the pipeline. Use 'prieto' for the same lineage with "
+            "no compiler, or 'multitaper' for the native implementation."
+        )
+
+    cls = ESTIMATORS[name]
+    fields = {f.name for f in dataclasses.fields(cls)}
+    settings = {
+        key: value
+        for key, value in dataclasses.asdict(transform).items()
+        if key in fields
+    }
+    settings.update({k: v for k, v in kwargs.items() if k in fields})
+    return cls(**settings).estimate(data, delta, motion=motion)
 
 
 # VARIABLES READ FROM CONFIG
@@ -81,35 +121,83 @@ class Spectrum:
             self.__bin_spectrum(**BINNING_PARAMS)
 
     def psd_to_amp(self):
-        """
-        Converts Power Spectral Density (PSD) to spectral amplitude.
-        amp = [PSD*fs*len(PSD)]^0.5
-        fs is sampling rate in Hz
-        """
+        """Convert power spectral density to Fourier amplitude.
 
-        # self.amp = np.sqrt(
-        #     self.amp*self.meta['delta']*len(self.amp))
-        # if self.bamp.size > 0:
-        #     self.bamp = np.sqrt(
-        #         self.bamp*self.meta['delta']*len(self.amp))
+        ``A = sqrt(PSD * T / 2)``, which is ``|X(f)|`` — the *unfolded* Fourier
+        transform magnitude, ``|rfft(x)| * dt``.
 
-        self.amp = np.sqrt((self.amp * len(self.freq)) / self.meta["sampling_rate"])
+        .. note::
+
+           **This is not the same convention as** :class:`specmod.core.Spectrum`,
+           deliberately. That class carries a *folded* one-sided spectrum,
+           ``2|X|``, so that ``energy()`` integrates to ``sum(x**2)*dt`` over
+           non-negative frequencies alone. Both are self-consistent and both
+           recover the record's energy; they differ by exactly a factor of two.
+
+           This module uses the unfolded convention because ``Omega`` is defined
+           in it. The long-period plateau of the displacement spectrum is
+           ``|X(f -> 0)| = |integral u dt|``, and ``M0`` is proportional to that
+           — so folding would put ``M0`` out by two, which is 0.2 magnitude
+           units on every event. That is a convention to hold fixed, not to
+           improve upon.
+
+           :func:`estimate_spectrum` therefore returns a ``core.Spectrum`` in
+           the folded convention, and the factor is removed here on the way in.
+           Anyone reading ``core.Spectrum.amp`` directly and calling it
+           ``Omega`` needs to halve it first.
+
+        .. warning::
+
+           The pre-refactor code computed this same quantity, but as
+           ``sqrt(PSD * len(freq) / sampling_rate)`` — using the length of the
+           frequency axis as a stand-in for ``T/2``. That identity holds only
+           for an unpadded one-sided transform, so the result moved whenever
+           the axis length changed: zero-padding to ``4*npts`` halved the
+           amplitude, and a backend returning a full-length axis (Prieto's)
+           changed it by ``sqrt(2)``. That is the §2.2 bug, and keying off
+           ``T`` is the fix. **Unpadded, the amplitudes are unchanged**, so a
+           pre-refactor run reproduces.
+        """
+        self.amp = self._convert(self.freq, self.amp, "psd", "magnitude")
         if self.bamp.size > 0:
-            self.bamp = np.sqrt(
-                (self.bamp * len(self.freq)) / self.meta["sampling_rate"]
-            )
+            self.bamp = self._convert(self.bfreq, self.bamp, "psd", "magnitude")
 
     def amp_to_psd(self):
-        """
-        Converts Power Spectral Density (PSD) to spectral amplitude.
-        amp = [PSD*fs*len(PSD)]^0.5
-        fs is sampling rate in Hz
-        """
-        self.amp = np.power(self.amp, 2) / (self.meta["sampling_rate"] * len(self.amp))
+        """Inverse of :meth:`psd_to_amp`."""
+        self.amp = self._convert(self.freq, self.amp, "magnitude", "psd")
         if self.bamp.size > 0:
-            self.bamp = np.power(self.bamp, 2) / (
-                self.meta["sampling_rate"] * len(self.bamp)
-            )
+            self.bamp = self._convert(self.bfreq, self.bamp, "magnitude", "psd")
+
+    def _convert(self, freq, amp, source, target):
+        """Change amplitude convention via :class:`specmod.core.Spectrum`.
+
+        Delegated rather than reimplemented. The relationship is not a single
+        scalar — the fold between ``FAS`` and ``|X|`` is two in the interior but
+        one at DC and Nyquist, which have no negative-frequency twin — and a
+        second copy of that rule is precisely how the two halves of the package
+        would drift apart.
+        """
+        from .core import Spectrum as _CoreSpectrum
+
+        converted = _CoreSpectrum(
+            freq=np.ascontiguousarray(freq, dtype=float),
+            amp=np.ascontiguousarray(amp, dtype=float),
+            motion=getattr(self, "motion", "velocity"),
+            kind=source,
+            duration=self._duration(),
+            sampling_rate=float(self.meta["sampling_rate"]),
+        ).to_kind(target)
+        return np.asarray(converted.amp)
+
+    def _duration(self):
+        """Physical record length in seconds.
+
+        Taken from the trace metadata, never from ``len(freq)``. That is the
+        whole point: the frequency axis lengthens under zero-padding while the
+        record does not, and keying the normalisation off the axis is what made
+        the pre-refactor amplitudes padding-dependent.
+        """
+        return float(self.meta["npts"]) * float(self.meta["delta"])
 
     def quick_vis(self, **kwargs):
         _fig, ax = plt.subplots(1, 1)
@@ -138,10 +226,26 @@ class Spectrum:
             self.event = None
 
     def __calc_spectra(self, **kwargs):
-        amp, freq = _mtspec(self.__tr.data, self.meta["delta"], 3, **kwargs)
+        """Transform the trace with the configured estimator.
+
+        Stores a PSD, because ``__init__`` calls :meth:`psd_to_amp` next and
+        the legacy call sequence is preserved. The estimator itself works in
+        Fourier amplitude and the conversion is exact, so nothing is lost by
+        going round that way — it just keeps ``Spectra``, ``SNP`` and the
+        fitting code working unchanged.
+        """
+        spectrum = estimate_spectrum(
+            self.__tr.data.astype(float), float(self.meta["delta"]), **kwargs
+        )
+        # PSD here, MAGNITUDE after psd_to_amp. Every estimator is held to the
+        # same Parseval contract, so they all arrive on the same convention and
+        # one conversion covers all of them — verified per estimator in
+        # tests/test_spectral_wiring.py rather than assumed.
+        psd = spectrum.to_kind("psd")
         del self.__tr
-        # forget the 0 frequency, probably just noise anyway
-        self.amp, self.freq = amp[1:], freq[1:]
+        self.amp, self.freq = np.asarray(psd.amp), np.asarray(psd.freq)
+        self.motion = str(spectrum.motion)
+        self.estimator = spectrum.meta.get("estimator")
 
     def __sanitise_trace_meta(self, m):
         nm = {}
@@ -155,6 +259,22 @@ class Spectrum:
         return nm
 
     def __bin_spectrum(self, smin=0.001, smax=200, bins=101):
+        """Average into log-spaced bins.
+
+        The default edges are wider than any real record: 0.001 Hz is far below
+        ``1/T`` and 200 Hz far above Nyquist for a 100 sps trace, so on the
+        Magna data roughly a third of the requested bins sit below the lowest
+        frequency present and a third above the highest. Those come out empty
+        and are dropped, which is why the surviving axis has always been much
+        shorter than ``bins``.
+
+        Clamped to the record's own range so the requested bin count is the
+        count you get. :class:`specmod.smoothing.LogBinner` is the rewritten
+        version of this and derives its edges the same way; this stays here
+        because the legacy pipeline reads ``bamp``/``bfreq`` directly.
+        """
+        smin = max(smin, float(self.freq.min()))
+        smax = min(smax, float(self.freq.max()))
         # define the range of bins to use to average amplitudes and smooth spectrum
         space = np.logspace(np.log10(smin), np.log10(smax), bins)
         # initialise numpy arrays
@@ -163,8 +283,12 @@ class Spectrum:
         # iterate through bins to find mean log-amplitude and bin center (log space)
         for i, bbb in enumerate(itertools.pairwise(space)):
             bb, bf = bbb
-            a = 10 ** np.log10(self.amp[(self.freq >= bb) & (self.freq <= bf)]).mean()
-            bamps[i] = a
+            inside = self.amp[(self.freq >= bb) & (self.freq <= bf)]
+            # Log bins over a linear frequency grid are inevitably sparse at the
+            # low end, so empty bins are expected rather than exceptional. They
+            # are marked NaN and dropped below; taking the mean of an empty
+            # slice would reach the same answer via a RuntimeWarning per bin.
+            bamps[i] = 10 ** np.log10(inside).mean() if inside.size else np.nan
             bfreqs[i] = 10 ** (np.mean([np.log10(bb), np.log10(bf)]))
 
         # remove nan values

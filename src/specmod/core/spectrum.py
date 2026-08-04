@@ -20,6 +20,59 @@ from .units import AmplitudeKind, Motion
 
 __all__ = ["Spectrum"]
 
+#: Tolerance on the derived sample count. ``duration`` is ``n * dt`` and
+#: ``sampling_rate`` is ``1 / dt``, so their product is ``n`` exactly up to
+#: floating-point representation — anything further out is a real mismatch,
+#: not rounding.
+_SAMPLE_COUNT_TOL = 1e-6
+
+
+def _validate_record_geometry(
+    freq: NDArray[np.float64], duration: float, sampling_rate: float
+) -> None:
+    """Check the three quantities every correction is built on agree.
+
+    Sample count, duration and sampling rate are not independent: ``duration =
+    n * dt`` and ``sampling_rate = 1 / dt``, so any two determine the third and
+    the frequency axis they imply. Every normalisation in this package — the
+    ``2T`` between amplitude and power, the fold at DC and Nyquist, the taper
+    corrections, the wavelet scale grid — is a function of them.
+
+    That makes an inconsistent triple the most dangerous thing a caller can
+    construct: it produces a spectrum that is wrong by a clean factor
+    everywhere, which looks like a plausible spectrum and survives every check
+    that inspects shape rather than scale. Catching it here is cheap; catching
+    it downstream has historically meant noticing that a magnitude looks odd.
+    """
+    implied = duration * sampling_rate
+    if abs(implied - round(implied)) > _SAMPLE_COUNT_TOL * max(1.0, implied):
+        raise ValueError(
+            f"duration={duration} s at {sampling_rate} Hz implies "
+            f"{implied} samples, which is not a whole number. These are not "
+            f"independent: duration = n_samples / sampling_rate. One of them "
+            f"is wrong, and every amplitude conversion depends on both."
+        )
+
+    if freq.size == 0:
+        return
+    if freq[0] < 0.0:
+        raise ValueError(f"frequencies must be non-negative, got {freq.min()}")
+    if freq.size > 1 and not np.all(np.diff(freq) > 0):
+        raise ValueError(
+            "freq must be strictly increasing; band() and the smoothers both "
+            "assume it, and an unsorted axis integrates to nonsense"
+        )
+
+    nyquist = sampling_rate / 2.0
+    if freq[-1] > nyquist * (1.0 + 1e-9):
+        raise ValueError(
+            f"frequency axis reaches {freq[-1]} Hz but the Nyquist frequency "
+            f"for {sampling_rate} Hz sampling is {nyquist} Hz. Either "
+            f"sampling_rate is wrong or the axis does not belong to this "
+            f"record; energy() would silently integrate over a band the "
+            f"record cannot represent."
+        )
+
 
 @dataclass(frozen=True)
 class Spectrum:
@@ -70,6 +123,7 @@ class Spectrum:
             raise ValueError(
                 f"sampling_rate must be positive, got {self.sampling_rate}"
             )
+        _validate_record_geometry(freq, self.duration, self.sampling_rate)
         freq.setflags(write=False)
         amp.setflags(write=False)
         object.__setattr__(self, "freq", freq)
@@ -86,6 +140,20 @@ class Spectrum:
         return self.kind.unit(self.motion)
 
     @property
+    def n_samples(self) -> int:
+        """Samples in the source record, ``duration * sampling_rate``.
+
+        The third of the triple, derived rather than stored so it cannot
+        disagree with the other two. Validated on construction — see
+        :func:`_validate_record_geometry` for why that matters.
+
+        Note this is the *record* length, not ``len(freq)``. Zero-padding
+        changes the second and not the first, and confusing them is the §2.2
+        bug.
+        """
+        return round(self.duration * self.sampling_rate)
+
+    @property
     def nyquist(self) -> float:
         return self.sampling_rate / 2.0
 
@@ -100,10 +168,15 @@ class Spectrum:
         return 1.0 / self.duration
 
     def to_kind(self, kind: AmplitudeKind | str) -> Spectrum:
-        """Convert between FAS, PSD and ASD.
+        """Convert between FAS, MAGNITUDE, PSD and ASD.
 
-        Conversions go via FAS rather than being enumerated pairwise, so there
-        is one place where the factor of ``2T`` lives.
+        Conversions go via FAS rather than being enumerated pairwise, so the
+        factors of ``2T`` and of the fold each live in exactly one place.
+
+        ``MAGNITUDE`` is the conversion to reach for when reading a long-period
+        level: ``Omega`` is defined on ``|X|``, not on the folded ``FAS``, and
+        the two differ by two. Asking for it by name is the point — the factor
+        is easy to apply by hand and easy to apply twice, or not at all.
         """
         target = AmplitudeKind(kind)
         if target is self.kind:
@@ -111,6 +184,9 @@ class Spectrum:
         fas = self._to_fas()
         if target is AmplitudeKind.FAS:
             return fas
+        if target is AmplitudeKind.MAGNITUDE:
+            # Undo the fold: FAS carries the negative-frequency half, |X| does not.
+            return replace(fas, amp=fas.amp / self._fold_factor(), kind=target)
         two_t = 2.0 * self.duration
         if target is AmplitudeKind.PSD:
             amp = fas.amp**2 / two_t
@@ -118,9 +194,31 @@ class Spectrum:
             amp = fas.amp / np.sqrt(two_t)
         return replace(fas, amp=amp, kind=target)
 
+    def _fold_factor(self) -> NDArray[np.float64]:
+        """Per-bin ratio between the folded ``FAS`` and the unfolded ``|X|``.
+
+        Two everywhere except DC and Nyquist, which have no negative-frequency
+        twin to fold in — a real signal's transform is conjugate-symmetric, and
+        those two bins are their own mirror image. A blanket factor of two is
+        therefore wrong at both ends, by exactly two.
+
+        Whether either bin is present depends on ``drop_dc`` and on whether the
+        record length is even, so this is decided from the frequency axis rather
+        than assumed.
+        """
+        factor = np.full(self.freq.shape, 2.0)
+        nyquist = self.sampling_rate / 2.0
+        factor[np.isclose(self.freq, 0.0)] = 1.0
+        factor[np.isclose(self.freq, nyquist)] = 1.0
+        return factor
+
     def _to_fas(self) -> Spectrum:
         if self.kind is AmplitudeKind.FAS:
             return self
+        if self.kind is AmplitudeKind.MAGNITUDE:
+            return replace(
+                self, amp=self.amp * self._fold_factor(), kind=AmplitudeKind.FAS
+            )
         two_t = 2.0 * self.duration
         if self.kind is AmplitudeKind.PSD:
             amp = np.sqrt(self.amp * two_t)
