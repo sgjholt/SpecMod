@@ -10,6 +10,8 @@ prompted vendoring in the first place.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -225,6 +227,88 @@ def test_does_not_bias_a_corner_frequency_low() -> None:
     assert abs(q - 4.0) <= abs(p - 4.0) + 0.05, (
         f"quadratic ({q:.3f}) should not be further from the true corner than "
         f"the ordinary estimate ({p:.3f})"
+    )
+
+
+# ---------------------------------------------------------------- robustness
+
+
+@pytest.mark.parametrize(
+    ("name", "record"),
+    [
+        ("all zeros", np.zeros(N)),
+        ("constant offset", np.full(N, 5.0)),
+        ("single spike", np.eye(1, N, N // 2)[0] * 1e-6),
+        ("denormal amplitudes", np.random.default_rng(0).normal(0.0, 1e-300, N)),
+    ],
+)
+def test_degenerate_records_do_not_produce_nan(name: str, record: np.ndarray) -> None:
+    """The correction's damping term is 0/0 for a record with no curvature.
+
+    ``weight = quad**2 / (quad**2 + quad_var)`` divides zero by zero when every
+    cross-spectrum is zero, which is what a dead channel or a zero-filled gap
+    demeans to. Upstream divides through regardless and returns NaN for the
+    whole spectrum — and NaN here propagates silently into a fit.
+
+    The ordinary estimator handles all of these, so the quadratic one has to as
+    well or it cannot be a drop-in alternative.
+    """
+    estimator = QuadraticMultitaperEstimator(time_bandwidth=NW, n_tapers=K)
+    spectrum = estimator.estimate(record, DT)
+    assert np.isfinite(spectrum.amp).all(), f"{name} produced a non-finite spectrum"
+    assert (spectrum.amp >= 0.0).all(), f"{name} produced negative amplitude"
+
+
+def test_extreme_amplitudes_stay_correct_then_fail_loudly() -> None:
+    """Absurd amplitudes must not return quietly wrong numbers.
+
+    At 1e150 the record squares to near the top of float64 and SciPy's ``lstsq``
+    overflows computing a residual norm — but ``qiinv`` discards that residual,
+    so the estimate itself is unaffected and still agrees with the ordinary
+    multitaper estimate. Beyond that ``scipy.optimize.nnls`` refuses a
+    non-finite input and raises.
+
+    Correct, then loudly broken, is the acceptable pair. Silently plausible is
+    not, and that is what this guards.
+    """
+    plain = MultitaperEstimator(time_bandwidth=NW, n_tapers=K)
+    quad = QuadraticMultitaperEstimator(time_bandwidth=NW, n_tapers=K)
+
+    with warnings.catch_warnings():
+        # SciPy's overflow is in an unused residual; see the docstring.
+        warnings.simplefilter("ignore", RuntimeWarning)
+        x = np.random.default_rng(0).normal(0.0, 1e150, N)
+        ratio = float(
+            np.median(quad.estimate(x, DT).band(2.0, 40.0).amp)
+            / np.median(plain.estimate(x, DT).band(2.0, 40.0).amp)
+        )
+    assert ratio == pytest.approx(1.0, abs=0.05)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with pytest.raises(ValueError, match="must not contain infs or NaNs"):
+            quad.estimate(np.random.default_rng(0).normal(0.0, 1e160, N), DT)
+
+
+def test_measurements_are_invariant_to_input_scale() -> None:
+    """Every ratio SpecMod documents is dimensionless, so rescaling the record
+    must not move it. This is what rules out floating-point range effects as an
+    explanation for the taper and curvature biases: they survive 24 orders of
+    magnitude unchanged.
+    """
+    t = np.arange(N) * DT
+    ratios = []
+    for amplitude in (1e-12, 1e-6, 1.0, 1e6, 1e12):
+        x = amplitude * np.sin(2 * np.pi * 5.0 * t)
+        x = x + np.random.default_rng(3).normal(0.0, amplitude * 0.02, N)
+        spectrum = QuadraticMultitaperEstimator(time_bandwidth=NW, n_tapers=K).estimate(
+            x, DT
+        )
+        ratios.append(float(spectrum.amp.max() / (amplitude * (N * DT) / 2.0)))
+    assert max(ratios) - min(ratios) < 1e-9, (
+        f"peak recovery varies with input scale ({min(ratios):.6f} to "
+        f"{max(ratios):.6f}); a dimensionless ratio that moves with amplitude "
+        f"is a numerical-range problem, not a property of the estimator"
     )
 
 
