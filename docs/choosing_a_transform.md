@@ -15,6 +15,7 @@ The short version:
 | Confidence intervals, or testing for instrumental tones | `PrietoMultitaperEstimator` |
 | A stationary record — noise windows, ambient measurements | `MultitaperEstimator` or `WelchEstimator` |
 | Resolving a peak, tone or resonance without smoothing it down | `QuadraticMultitaperEstimator` |
+| A record that is clearly non-stationary, or seeing *where* energy sits in time | `CWTEstimator` |
 
 ---
 
@@ -436,6 +437,60 @@ replaces a numba-jitted Goertzel recursion with an exact vectorised
 equivalent (dropping numba from the dependency graph), and is cross-validated
 against the patched upstream to 1e-9 in the test suite. It does **not** need
 `specmod[multitaper]` installed.
+
+### `CWTEstimator`
+
+A continuous wavelet transform on an L2-normalised Morlet, time-averaged to an
+ordinary `Spectrum`. **It is the only estimator here that does not assume
+stationarity**, which is the assumption a seismic arrival breaks.
+
+<!-- measured: cwt_table -->
+| Record | FFT | multitaper | CWT |
+|---|---|---|---|
+| white noise | 0.998 | 0.995 | 0.995 |
+| 5 Hz sinusoid | 0.999 | 0.996 | 1.061 |
+| off-centre burst | 1.032 | 1.118 | 0.998 |
+<!-- /measured -->
+
+The last row is the point: multitaper reads the burst 12% high because the
+taper envelope does not know where the energy sits, while the wavelet transform
+recovers it to 0.2%. The cost is frequency resolution — the CWT smears a line
+over its scale bandwidth, which is why it reads 6% high on the sinusoid.
+
+It gives you **two outputs from one transform**:
+
+```python
+scalogram = CWTEstimator().scalogram(trace, dt)   # full time-frequency surface
+spectrum  = scalogram.time_average()              # ordinary Spectrum, fits as usual
+qc        = scalogram.qc()                        # the checks below
+```
+
+`Scalogram.power` is `|W(a,b)|²` in the L2-Morlet convention, which is **not**
+an amplitude spectrum — the units are `[signal]²·time`. The conversion happens
+in exactly one place, `time_average()`, so there is one normalisation path and
+one test rather than two things to get wrong.
+
+**The cone of influence is a real bandwidth limit, not decoration.** A window
+cannot resolve a period longer than itself, and the CWT is the only estimator
+here that makes that explicit. `time_average()` drops frequencies with no
+edge-free samples rather than emitting zero for them, so a masked spectrum is
+shorter than an unmasked one. That is the honest answer — zero would read as
+"no energy here" instead of "no measurement here", and would take a log-space
+fit to `-inf`.
+
+`scalogram.qc()` returns the §4.4.2 checks: lowest resolved frequency, median
+COI coverage, temporal energy concentration (a Gini coefficient — this is what
+separates a glitch from an arrival, which amplitude-only SNR cannot do), and
+the first-half/second-half spectral ratio. They are computed and recorded,
+never used to silently drop a trace.
+
+> **Gotcha if you port this.** `C_δ`, the reconstruction constant, is *computed*
+> against the actual scale grid rather than taken from Torrence & Compo's table.
+> Substituting the tabulated 0.776 for ω₀=6 looks like a tidy-up and is not: the
+> published figure is the continuum limit, the reconstruction sum is discrete,
+> and using it leaves recovered energy about 7% low. The computed value drifts
+> with `dj` precisely because it is absorbing that discretisation — which is why
+> the recovered *energy* does not drift with `dj`.
 
 ### `WelchEstimator`
 

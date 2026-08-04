@@ -219,7 +219,25 @@ def qiinv(
 
     # Damp the correction where the curvature estimate is itself noisy, so a
     # poorly-determined second derivative cannot drag the spectrum around.
-    weight = quad**2 / (quad**2 + quad_var)
+    #
+    # Guarded against a zero or non-finite denominator, which upstream divides
+    # through blindly and so returns NaN for the whole spectrum. The case that
+    # matters is 0/0: a dead channel or a zero-filled gap demeans to all zeros,
+    # every cross-spectrum is zero, and NaN from here propagates silently into
+    # a fit. Weight zero is the right answer — no usable curvature information
+    # means apply no correction.
+    #
+    # The non-finite arm only triggers for amplitudes around 1e150, where the
+    # squares approach the top of float64. It is cheap insurance rather than a
+    # real case: above roughly 1e155 ``scipy.optimize.nnls`` rejects the input
+    # outright, so the failure is loud either way.
+    denominator = quad**2 + quad_var
+    weight = np.divide(
+        quad**2,
+        denominator,
+        out=np.zeros_like(denominator),
+        where=np.isfinite(denominator) & (denominator > 0.0),
+    )
     qispec = cte2 - weight * (1.0 / 6.0) * bp**2 * quad
 
     return qispec, slope, quad
