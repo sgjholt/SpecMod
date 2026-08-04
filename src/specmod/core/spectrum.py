@@ -202,14 +202,30 @@ class Spectrum:
         those two bins are their own mirror image. A blanket factor of two is
         therefore wrong at both ends, by exactly two.
 
-        Whether either bin is present depends on ``drop_dc`` and on whether the
-        record length is even, so this is decided from the frequency axis rather
-        than assumed.
+        **Parity matters here.** An ``rfft`` of an even-length record ends
+        exactly on Nyquist; an odd-length one ends half a bin below it, at
+        ``fs/2 * (n-1)/n``, and that bin *does* have a twin and *is* folded. So
+        which bins are special depends on the record length as well as on
+        ``drop_dc``, and is read off the axis rather than assumed.
+
+        The tolerance is derived from the axis's own bin spacing rather than
+        being a fixed relative one. For an odd-length record the top bin sits
+        ``df/2`` below Nyquist, and ``df`` shrinks as the record lengthens — so
+        a fixed ``rtol`` eventually swallows the gap and folds that bin wrongly.
+        With ``numpy``'s default it does so from about 200000 samples, which at
+        1000 Hz is a 200 s record. Scaling with ``df`` keeps the two cases
+        separated at any length.
         """
         factor = np.full(self.freq.shape, 2.0)
-        nyquist = self.sampling_rate / 2.0
-        factor[np.isclose(self.freq, 0.0)] = 1.0
-        factor[np.isclose(self.freq, nyquist)] = 1.0
+        if self.freq.size == 0:
+            return factor
+        # A hundredth of the narrowest spacing: far tighter than the df/2 gap
+        # that separates an odd-length top bin from Nyquist, and far looser
+        # than floating-point error on an even-length one, which lands exactly.
+        spacing = float(np.min(np.diff(self.freq))) if self.freq.size > 1 else 0.0
+        tol = 0.01 * spacing if spacing > 0 else 1e-12
+        factor[self.freq < tol] = 1.0
+        factor[np.abs(self.freq - self.nyquist) < tol] = 1.0
         return factor
 
     def _to_fas(self) -> Spectrum:
