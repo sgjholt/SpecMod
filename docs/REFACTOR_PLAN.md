@@ -275,7 +275,7 @@ src/specmod/
     bandwidth.py           # BandwidthSelector strategies (methods 1 and 2)
     rotation.py            # the two noise-rotation schemes, as pure functions
   models/
-    source.py              # BruneSource, BoatwrightSource as objects
+    source.py              # BruneSource, BoatwrightSource as objects (+ see below)
     attenuation.py         # ConstantQ / FrequencyDependentQ
     composite.py           # SourceModel composition + motion scaling
   fitting/
@@ -635,6 +635,45 @@ Two ways out, and the first is much better:
 
 Recommendation: option 1, and run it over any `.spec` files you care about
 *during* Phase 0, while the image is fresh.
+
+#### 4.6.5 Source models: widen the set when `models/` is built
+
+Two source models exist today, `BRUNE_MODEL = (1, 2)` and
+`BOATWRIGHT_MODEL = (2, 2)`, and neither is reachable from configuration —
+see the note in §4.2 on `config.model.source` being wired to nothing. When
+`models/source.py` is written, build it to hold more than the two, because at
+least one more is wanted:
+
+**Madariaga.** Requested explicitly. Madariaga (1976), *Dynamics of an
+expanding circular fault*, BSSA 66(3), with the later review at
+<https://www.geologie.ens.fr/~madariag/Papers/Madariaga_Ruiz2016.pdf>.
+
+There is a trap in adding it, and it is the reason this note exists rather
+than a one-line TODO. **Madariaga's difference from Brune is not primarily the
+spectral shape.** Both are omega-squared; in the generalised Boatwright form
+
+```
+A(f) = Omega / (1 + (f/fc)^(gamma*n))^(1/gamma)
+```
+
+Madariaga sits at the same `(gamma, n) = (1, 2)` as Brune. What differs is the
+constant relating corner frequency to source radius — Madariaga's dynamic
+circular-crack solution gives a substantially smaller `k` than Brune's
+kinematic one, and since stress drop goes as `r^-3`, choosing between them
+moves inferred stress drop by roughly an order of magnitude on identical data.
+
+So the design consequence is: `SourceModel` must carry the `fc`-to-radius
+scaling as a named property of the model, not as a constant buried in whatever
+computes stress drop. If it is only a spectral shape, adding Madariaga will
+appear to do nothing — the fit will be identical to Brune — and the actual
+difference will be silently lost. A model that changes no fitted parameter but
+changes every derived one is exactly the kind of thing this refactor is
+supposed to make impossible to get wrong by accident.
+
+Worth checking against the source paper when implementing rather than taking
+the above on trust: the `k` values differ between P and S and between authors,
+and the plan should not be the citation of record for a number that ends up in
+published stress drops.
 
 ### 4.7 Configuration: semantic groups, layered overrides, recorded provenance
 
