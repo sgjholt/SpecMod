@@ -15,6 +15,7 @@ import numpy as np
 import obspy
 import pytest
 
+import specmod.fitting as fit
 import specmod.preprocess as pre
 import specmod.spectral as sp
 import specmod.utils as ut
@@ -95,8 +96,6 @@ def test_no_undefined_names_in_plot_branches(func, bad_name) -> None:
 
 def test_fit_spectra_reset_uses_the_right_attribute() -> None:
     """`self.model[name]` should have been `self.models[name]`."""
-    import specmod.fitting as fit
-
     src = inspect.getsource(fit.FitSpectra.reset)
     assert "self.model[" not in src
     assert "self.models[" in src

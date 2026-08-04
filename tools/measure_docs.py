@@ -36,14 +36,24 @@ fail to run belongs in ``FIELD``.
 
 from __future__ import annotations
 
+import glob
+import os
 import re
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 
 import click
 import numpy as np
+from scipy.signal import hilbert
 
-from specmod.transforms import FFTEstimator, MultitaperEstimator
+from specmod.transforms import (
+    CWTEstimator,
+    FFTEstimator,
+    MultitaperEstimator,
+    PrietoMultitaperEstimator,
+    QuadraticMultitaperEstimator,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = [
@@ -190,8 +200,6 @@ def quadratic_table() -> str:
     for, and omitting it would leave the docs recommending it for exactly the
     job it is worst at.
     """
-    from specmod.transforms import QuadraticMultitaperEstimator
-
     n, nw, k = 1024, 3.0, 5
     t = np.arange(n) * DT
     w = nw / (n * DT)  # multitaper half-bandwidth, Hz
@@ -284,8 +292,6 @@ def cwt_table() -> str:
     and a burst violates it, where a wavelet transform does not assume it in
     the first place.
     """
-    from specmod.transforms import CWTEstimator
-
     n = 2048
     t = np.arange(n) * DT
     rng = np.random.default_rng(0)
@@ -389,8 +395,6 @@ def leakage_table() -> str:
 def phase_table() -> str:
     """It is the *linear* component of phase — the group delay — that matters,
     not phase in general. The constant rotation is the decisive control."""
-    from scipy.signal import hilbert
-
     base = decaying_burst_at(0.10)
     est = MultitaperEstimator(adaptive=False)
 
@@ -457,7 +461,9 @@ def prieto_agreement() -> str:
     than merely plausible.
     """
     try:
-        from multitaper import MTSpec
+        # Optional extra: a measurement that cannot run degrades to a note in
+        # the table rather than stopping the whole tool from importing.
+        from multitaper import MTSpec  # noqa: PLC0415
     except ImportError:
         return "_Not measured: install `specmod[multitaper]` and re-run._"
 
@@ -490,13 +496,12 @@ def prieto_agreement() -> str:
 
 def _field_signals():  # type: ignore[no-untyped-def]
     """The 28 PNR S-windows, cut with the published Magna workflow."""
-    import glob
-    import os
-    import warnings
+    # obspy costs seconds to import and only the field measurements need it,
+    # so it is deferred to keep `measure_docs --help` and the synthetic-only
+    # runs fast.
+    import obspy  # noqa: PLC0415
 
-    import obspy
-
-    import specmod.preprocess as pre
+    import specmod.preprocess as pre  # noqa: PLC0415
 
     warnings.filterwarnings("ignore")
     data = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
@@ -540,8 +545,6 @@ def plateau_table() -> str:
     slid through an otherwise empty window and the spread of the recovered
     1-4 Hz level is reported relative to its mid-window value.
     """
-    from specmod.transforms import PrietoMultitaperEstimator
-
     sig = sorted(_field_signals(), key=lambda tr: -tr.stats.npts)
     tr = sig[0]
     dt = float(tr.stats.delta)

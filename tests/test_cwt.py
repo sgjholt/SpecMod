@@ -13,6 +13,8 @@ energy of a record.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 
@@ -133,8 +135,6 @@ def test_the_reconstruction_constant_beats_the_tabulated_one() -> None:
     absorbing that discretisation, which is also why recovered energy does not
     drift with ``dj``.
     """
-    import dataclasses
-
     x = noise()
     truth = time_domain_energy(x)
     surface = CWTEstimator().scalogram(x, DT)

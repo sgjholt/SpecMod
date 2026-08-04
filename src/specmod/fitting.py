@@ -118,8 +118,6 @@ class FitSpectrum:
             return "NaN"
 
     def quick_vis(self, ax=None):
-        import matplotlib.pyplot as plt
-
         if ax is None:
             _fig, ax = plt.subplots(1, 1)
 

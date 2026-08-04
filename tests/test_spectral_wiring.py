@@ -14,6 +14,8 @@ they moved.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import obspy
 import pytest
@@ -182,10 +184,8 @@ def test_every_estimator_lands_on_the_same_amplitude_convention(
     asserts that directly, so a new estimator arriving on a different convention
     fails here instead of silently rescaling ``Omega``.
     """
-    from specmod.spectral import estimate_spectrum as estimate
-
     tr = trace()
-    spectrum = estimate(tr.data, DT, estimator=estimator)
+    spectrum = estimate_spectrum(tr.data, DT, estimator=estimator)
     energy = float(np.trapezoid(spectrum.amp**2 / 2.0, spectrum.freq))
     assert energy == pytest.approx(time_domain_energy(tr), rel=0.10), (
         f"{estimator} is not on the folded FAS convention the pipeline assumes"
@@ -201,10 +201,8 @@ def test_the_pipeline_conversion_matches_the_typed_one(estimator: str) -> None:
     as a named kind. Two implementations of one relationship is exactly how a
     factor of two survives, so they are pinned against each other here.
     """
-    from specmod.spectral import estimate_spectrum as estimate
-
     tr = trace()
-    typed = estimate(tr.data, DT, estimator=estimator).to_kind("magnitude")
+    typed = estimate_spectrum(tr.data, DT, estimator=estimator).to_kind("magnitude")
     through_pipeline = Signal(tr.copy(), estimator=estimator)
 
     assert through_pipeline.amp == pytest.approx(np.asarray(typed.amp), rel=1e-9)
@@ -272,8 +270,6 @@ def test_binning_uses_the_requested_number_of_bins() -> None:
 def test_binning_does_not_warn_on_empty_bins() -> None:
     """Log bins over a linear grid are sparse at the low end by construction,
     so an empty bin is expected and must not raise a warning per bin."""
-    import warnings
-
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         Signal(trace())

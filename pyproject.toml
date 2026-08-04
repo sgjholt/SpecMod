@@ -104,16 +104,11 @@ ignore = [
 # Legacy modules awaiting decomposition; see docs/REFACTOR_PLAN.md phases 2-5.
 # E501 stays here because ruff format does not split long strings or comments,
 # and rewrapping legacy prose is decomposition work, not formatting.
-"src/specmod/spectral.py" = ["PLW0603", "RUF012", "N", "B", "SIM", "PLR", "PLW", "E501", "E741", "C4", "RUF", "PLC0415", "F811"]
-"src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741", "PLC0415"]
+"src/specmod/spectral.py" = ["PLW0603", "RUF012", "N", "B", "SIM", "PLR", "PLW", "E501", "E741", "C4", "RUF", "F811"]
+"src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741"]
 "src/specmod/preprocess.py" = ["B006", "PLR", "SIM", "E501", "PLW2901", "PLW0602"]
 "src/specmod/utils.py" = ["RUF012", "B", "SIM", "PLR", "E501", "E741", "PLW2901", "E402", "UP", "C4", "RUF"]
 "src/specmod/models.py" = ["PLW0603", "PLW0602"]
-
-# Measurements import lazily on purpose: obspy and multitaper are slow or
-# optional, and a measurement that cannot run should degrade to a note in the
-# table rather than stop the whole tool from importing.
-"tools/measure_docs.py" = ["PLC0415"]
 
 # Vendored third-party code. Its structure is kept close to upstream so the
 # diff stays reviewable; restructuring it to suit our lint rules would defeat
@@ -124,11 +119,12 @@ ignore = [
 # green while the modules that carry them are still awaiting rewrite:
 #   PLW0602/PLW0603  import-time global state              (§2.3, phase 2)
 #   F811             `bsnr` class attr shadowed by the property (§2.4, phase 5)
-#   PLC0415          the deliberate lazy mtspec import      (§2.1)
-# Optional backend: the import is deferred so the package stays importable
-# without the extra installed.
-"src/specmod/transforms/prieto.py" = ["PLC0415"]
-"tests/**" = ["PLR2004", "PLR0913", "PLC0415"]
+#
+# PLC0415 (imports not at top level) is deliberately NOT suppressed anywhere.
+# Every remaining deferred import carries a `# noqa: PLC0415` with the reason
+# at the site — an optional extra, or an import that is itself the assertion.
+# A blanket ignore hid 48 of them, nearly all pure habit.
+"tests/**" = ["PLR2004", "PLR0913"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
