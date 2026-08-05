@@ -1,4 +1,45 @@
-"""Lifting a noise spectrum toward the signal before the ratio is taken.
+"""Models for the noise level a signal is judged against.
+
+A recorded noise window understates the noise underneath a strong signal: it
+is a sample of the same process, but taken where the signal is not. Comparing
+a signal against it unmodified selects a band wider than the data supports,
+particularly at the low end where ``Omega`` is read.
+
+How to correct for that is a modelling choice, not a fact, so this module
+holds a **set** of methods rather than one. They share a signature — given the
+frequencies, the noise and the signal, return a multiplicative factor to apply
+to the noise — which is what lets the band search stay indifferent to which
+was used. :data:`NOISE_MODELS` maps names to implementations and
+:func:`get_noise_model` resolves one, mirroring how
+:mod:`specmod.transforms` handles estimators.
+
+The factor is returned rather than the corrected array because it has to be
+applied to two things: the binned noise and the unbinned noise, the latter by
+interpolation onto the finer axis. Returning the factor keeps those two from
+drifting apart.
+
+Currently implemented
+---------------------
+``boost``
+    The default, described below. Lifts the low and high tails independently
+    until each touches the signal.
+
+Not yet ported
+--------------
+``rotate``
+    ``utils.rotate_noise_full`` — the legacy ``ROT_METHOD = 1``. Rotates the
+    spectrum in log-log space through an angle found by iteration, forwards
+    and backwards, and splices the two. It still lives in ``utils`` and still
+    prints diagnostics; when it moves here it registers alongside ``boost``
+    and the integer ``ROT_METHOD`` global goes away.
+
+Anything added here should say what it assumes about the noise, because that
+assumption is the whole content of the method — and it propagates into every
+bandwidth, and so into every ``Omega``.
+
+
+The boost method
+----------------
 
 Noise rotation exists because a raw noise spectrum understates the noise at the
 edges of the band. The recorded noise window is a sample of a process, and at
@@ -6,24 +47,33 @@ frequencies where the signal is strong the *same* process is present underneath
 it — so a band chosen against the unmodified noise level runs wider than the
 data supports, particularly at the low end where ``Omega`` is read.
 
-The scheme here is the "boost" method (``ROT_METHOD = 2`` in the legacy
-module), which is the shipped default and the one the Magna study uses. It
-raises the low and high tails independently until each touches the signal,
-then keeps the larger of the two at every frequency.
+``ROT_METHOD = 2`` in the legacy module, the shipped default, and the one the
+Magna study uses. It raises the low and high tails independently until each
+touches the signal, then keeps the larger of the two at every frequency.
 
-Ported verbatim from ``utils.non_lin_boost_noise_func``, including the
-iteration order — the increment happens *after* the trial array is computed, so
-the array kept on break corresponds to the previous exponent, not the one the
-counter has just reached. That off-by-one is behaviour, not an accident to fix
-here: changing it moves the selected band on real data.
+**It assumes** the noise beneath the signal follows the same spectral shape as
+the recorded noise, scaled by a power of a frequency ramp — so it can be
+corrected by a smooth monotone lift anchored at the point where noise first
+meets signal. That is an assumption about the noise process, and a different
+one would give a different band.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
+
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["boost_noise", "centroid_frequency"]
+__all__ = [
+    "NOISE_MODELS",
+    "BoostNoise",
+    "NoiseModel",
+    "boost_noise",
+    "centroid_frequency",
+    "get_noise_model",
+]
 
 
 def centroid_frequency(freq: NDArray[np.float64], amp: NDArray[np.float64]) -> float:
@@ -137,3 +187,91 @@ def _lift(
     needed = np.log(signal[rises] / noise[rises]) / -log_scale[rises]
     exponent = float(np.min(needed))
     return np.asarray(noise_amp / sample**exponent)
+
+
+@runtime_checkable
+class NoiseModel(Protocol):
+    """Anything that produces a multiplicative correction to a noise spectrum.
+
+    Implementations are frozen dataclasses carrying their own parameters, so a
+    configured model can be stored, compared and recorded in provenance.
+    """
+
+    @property
+    def name(self) -> str:
+        """Short identifier, recorded alongside the result."""
+        ...
+
+    def factor(
+        self,
+        freq: NDArray[np.float64],
+        noise_amp: NDArray[np.float64],
+        signal_amp: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """Multiply the noise by this to get the level to judge against."""
+        ...
+
+
+@dataclass(frozen=True)
+class BoostNoise:
+    """The default: lift each tail until it touches the signal.
+
+    See the module docstring for the assumption this encodes and
+    :func:`boost_noise` for the derivation of the exponent.
+    """
+
+    space: tuple[float, float] = (0.001, 1.001)
+
+    @property
+    def name(self) -> str:
+        return "boost"
+
+    def factor(
+        self,
+        freq: NDArray[np.float64],
+        noise_amp: NDArray[np.float64],
+        signal_amp: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        return boost_noise(freq, noise_amp, signal_amp, space=self.space)
+
+
+@dataclass(frozen=True)
+class NoNoiseModel:
+    """Use the recorded noise as measured.
+
+    Not a placeholder — it is the honest choice when the noise window is
+    genuinely representative, and it is what a run needs in order to show what
+    the correction is doing. Every other model here should be compared against
+    it before being trusted.
+    """
+
+    @property
+    def name(self) -> str:
+        return "none"
+
+    def factor(
+        self,
+        freq: NDArray[np.float64],
+        noise_amp: NDArray[np.float64],
+        signal_amp: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        del freq, signal_amp
+        return np.ones_like(noise_amp)
+
+
+#: Registered noise models, by the name configuration refers to them by.
+NOISE_MODELS: dict[str, type[BoostNoise] | type[NoNoiseModel]] = {
+    "boost": BoostNoise,
+    "none": NoNoiseModel,
+}
+
+
+def get_noise_model(name: str) -> NoiseModel:
+    """Resolve a registered model by name, with its defaults."""
+    try:
+        cls = NOISE_MODELS[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown noise model {name!r}. Available: {sorted(NOISE_MODELS)}."
+        ) from None
+    return cls()

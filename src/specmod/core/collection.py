@@ -32,7 +32,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from .rotation import boost_noise
+from .noise import boost_noise
 from .spectrum import Spectrum
 
 __all__ = [

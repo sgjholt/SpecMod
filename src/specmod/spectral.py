@@ -12,7 +12,7 @@ from . import utils as ut
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
 from .core.collection import find_bandwidth, log_bin
-from .core.rotation import boost_noise
+from .core.noise import boost_noise
 from .transforms import ESTIMATORS
 
 
@@ -254,9 +254,9 @@ class Spectrum:
         self.freq = np.array(psd.freq, dtype=float)
         # The lowest frequency this window actually supports, captured before
         # anything interpolates the axis. For an FFT or multitaper that is
-        # 1/T; for the CWT it is the cone-of-influence floor, which is about
-        # 2.8x stricter because a wavelet needs several cycles in the window,
-        # not one. Taking it from the axis rather than computing it means the
+        # 1/T; for the CWT it is the cone-of-influence floor, which measures
+        # about 1.4x stricter on these windows because a wavelet needs several
+        # cycles in the window, not one. Taking it from the axis rather than
         # right rule applies to each without a special case.
         self.resolution_floor = float(self.freq.min())
         self.motion = str(spectrum.motion)

@@ -42,7 +42,12 @@ from specmod.core.collection import (  # noqa: E402
     log_bin,
     parseval_scale,
 )
-from specmod.core.rotation import boost_noise  # noqa: E402
+from specmod.core.noise import (  # noqa: E402
+    NOISE_MODELS,
+    NoiseModel,
+    boost_noise,
+    get_noise_model,
+)
 from specmod.spectral import (  # noqa: E402
     BINNING_PARAMS,
     ROTATE_NOISE,
@@ -375,3 +380,65 @@ def _spectrum(freq: np.ndarray, amp: np.ndarray) -> Spectrum:
         duration=float(freq.size),
         sampling_rate=100.0,
     )
+
+
+# ------------------------------------------------------------- noise models
+
+
+def test_the_registry_resolves_the_default() -> None:
+    model = get_noise_model("boost")
+    assert model.name == "boost"
+    assert isinstance(model, NoiseModel)
+
+
+def test_an_unknown_noise_model_names_the_available_ones() -> None:
+    with pytest.raises(ValueError, match="Unknown noise model"):
+        get_noise_model("rotate")
+    # `rotate` is the legacy ROT_METHOD = 1, not yet ported. When it lands it
+    # registers here and this test changes to assert it resolves.
+    assert "rotate" not in NOISE_MODELS
+
+
+def test_every_registered_model_satisfies_the_protocol() -> None:
+    """The point of the registry: a new method needs no change anywhere else.
+
+    Each is exercised on the same input, so a model returning the wrong shape
+    or a non-positive factor fails here rather than deep in a band search.
+    """
+    freq = np.linspace(1.0, 50.0, 60)
+    signal = 1e-6 * np.exp(-freq / 20.0)
+    noise = signal * 0.05
+
+    for name in NOISE_MODELS:
+        model = get_noise_model(name)
+        assert isinstance(model, NoiseModel), name
+        assert model.name == name
+        factor = model.factor(freq, noise, signal)
+        assert factor.shape == noise.shape, name
+        assert np.isfinite(factor).all(), name
+        assert (factor > 0).all(), name
+        # A noise model may raise the noise; none of them may lower it.
+        assert (factor >= 1.0 - 1e-12).all(), f"{name} lowered the noise"
+
+
+def test_the_null_model_is_the_identity() -> None:
+    """`none` exists so a run can show what the correction is doing."""
+    freq = np.linspace(1.0, 50.0, 40)
+    noise = np.full_like(freq, 1e-8)
+    factor = get_noise_model("none").factor(freq, noise, noise * 20)
+    assert factor == pytest.approx(np.ones_like(noise))
+
+
+def test_boost_lifts_the_noise_to_touch_the_signal() -> None:
+    """The defining property, stated as a test rather than left in a docstring.
+
+    The lifted noise should reach the signal somewhere and, in the half being
+    lifted, not overshoot it — that is what "until it touches" means.
+    """
+    rng = np.random.default_rng(5)
+    freq = np.sort(rng.uniform(0.5, 50.0, 60))
+    signal = 10 ** rng.normal(-6, 1, 60)
+    noise = signal * 10 ** rng.normal(-1.5, 0.3, 60)
+
+    lifted = noise * get_noise_model("boost").factor(freq, noise, signal)
+    assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
