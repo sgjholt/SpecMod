@@ -38,6 +38,7 @@ from .spectrum import Spectrum
 
 __all__ = [
     "BinnedSpectrum",
+    "FittableView",
     "SpectrumPair",
     "SpectrumSet",
     "find_bandwidth",
@@ -202,6 +203,10 @@ class SpectrumPair:
         """Whether a usable band survived."""
         return self.band is not None
 
+    def for_fitting(self, id: str = "") -> FittableView:
+        """This pair as the flat view a fitter reads. See :class:`FittableView`."""
+        return FittableView(pair=self, id=id)
+
     @classmethod
     def compare(
         cls,
@@ -315,6 +320,57 @@ def _clamp_to_floor(
     if floor >= high:
         return None
     return floor, high
+
+
+@dataclass(frozen=True)
+class FittableView:
+    """A pair presented as the flat thing a fitter reads.
+
+    ``SpectrumPair`` keeps the unbinned spectrum and its binned form as
+    separate objects, which is right for the comparison — they are different
+    kinds of thing, and conflating them is how a binned axis ends up somewhere
+    that assumes an FFT grid. A fitter wants them side by side, so this is the
+    view that puts them there.
+
+    A view rather than a conversion: it holds the pair and reads through, so
+    there is one copy of the arrays and no question of which is authoritative.
+    """
+
+    pair: SpectrumPair
+    id: str = ""
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        # A plain dict, not the Spectrum's `MappingProxyType`. The proxy is
+        # right for an immutable spectrum but cannot be deepcopied, and the
+        # fitter deepcopies metadata so a fit cannot write back into the
+        # spectrum it was built from. Converting here is the adapter earning
+        # its keep.
+        return dict(self.pair.signal.meta)
+
+    @property
+    def freq(self) -> NDArray[np.float64]:
+        return self.pair.signal.freq
+
+    @property
+    def amp(self) -> NDArray[np.float64]:
+        return self.pair.signal.amp
+
+    @property
+    def bfreq(self) -> NDArray[np.float64]:
+        return self.pair.binned_signal.freq
+
+    @property
+    def bamp(self) -> NDArray[np.float64]:
+        return self.pair.binned_signal.amp
+
+    @property
+    def band(self) -> tuple[float, float] | None:
+        return self.pair.band
+
+    @property
+    def passes(self) -> bool:
+        return self.pair.passes
 
 
 @dataclass(frozen=True)
