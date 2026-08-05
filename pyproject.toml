@@ -108,7 +108,6 @@ ignore = [
 "src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741"]
 "src/specmod/preprocess.py" = ["B006", "PLR", "SIM", "E501", "PLW2901", "PLW0602"]
 "src/specmod/utils.py" = ["RUF012", "B", "SIM", "PLR", "E501", "E741", "PLW2901", "E402", "UP", "C4", "RUF"]
-"src/specmod/models.py" = ["PLW0603", "PLW0602"]
 
 # Vendored third-party code. Its structure is kept close to upstream so the
 # diff stays reviewable; restructuring it to suit our lint rules would defeat
@@ -154,8 +153,6 @@ module = [
     "specmod.fitting",
     "specmod.preprocess",
     "specmod.utils",
-    "specmod.models",
-    "specmod.model_guess",
 ]
 ignore_errors = true
 

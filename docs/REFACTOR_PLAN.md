@@ -108,7 +108,8 @@ Consequences:
 - Changing `cfg.SPECTRAL[...]` after import has no effect. Users must edit
   `config.py` in the installed package.
 - **You cannot fit a Brune and a Boatwright model in the same session.**
-  `MODEL` is bound once at import.
+  `MODEL` is bound once at import. **Fixed** — `models.py` is deleted and
+  models are values resolved through `specmod.sources`; see §4.6.5.
 - Tests cannot vary configuration without reimporting modules, and cannot run in
   parallel.
 - `Spectral.py:490` `global PLOT_COLUMNS` sits inside a class body, above the
