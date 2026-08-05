@@ -32,6 +32,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from .bandwidth import get_bandwidth_selector
 from .noise import boost_noise
 from .spectrum import Spectrum
 
@@ -167,66 +168,16 @@ def find_bandwidth(
     snr: NDArray[np.float64],
     threshold: float,
     *,
-    max_gap: int = 1,
-    min_width: int = 3,
+    method: str = "peak",
 ) -> tuple[float, float] | None:
-    """Widest run of bins whose signal-to-noise stays above ``threshold``.
+    """Select the usable band with a named strategy.
 
-    Returns ``None`` when no run of at least ``min_width`` bins survives —
-    unlike the legacy ``find_optimal_signal_bandwidth``, which returned a band
-    anyway and set a ``pass_snr`` flag beside it, so a caller reading the band
-    without checking the flag got numbers that looked like a measurement.
-
-    Single noisy bins do not end a band. A gap of up to ``max_gap`` failing
-    bins is bridged, which is what the old integral-of-the-sign was reaching
-    for: a spectrum can dip below threshold at one bin without that being the
-    end of the usable range.
-
-    Why this replaced the percentile search
-    ---------------------------------------
-    The old method took ``sign(snr - threshold)``, integrated it, normalised
-    by the maximum, read the edges off the 1st and 99th percentiles of that
-    integral, and ran a retry loop when the edges crossed. Every one of those
-    steps is discontinuous, and they compound: on ``LV.L001..HHN`` the low edge
-    moved about 13 bins between two machines running identical library
-    versions.
-
-    Taking the run directly is discontinuous only at the threshold itself, and
-    only for bins genuinely sitting on it — so a bin flipping moves an edge by
-    one bin, not thirteen. It also removes the percentile bias: reading the low
-    edge off the 1st percentile of a cumulative integral lags the true onset,
-    measured at about 4 Hz on a clean 5-30 Hz test case, and the low edge is
-    what constrains ``Omega``.
+    A thin front for :data:`specmod.core.bandwidth.BANDWIDTH_SELECTORS`. The
+    default is ``"peak"``, which is what the shipped configuration has always
+    used — the legacy ``BW_METHOD = 2``. See that module for what the
+    strategies assume and why the choice matters.
     """
-    if freq.size == 0 or snr.size != freq.size:
-        return None
-
-    passing = snr >= threshold
-    if not passing.any():
-        return None
-
-    # Bridge short gaps, so one noisy bin does not split a band in two.
-    bridged = passing.copy()
-    (failing,) = np.where(~passing)
-    for i in failing:
-        left, right = i - 1, i + max_gap
-        if left >= 0 and right < passing.size and passing[left] and passing[right]:
-            bridged[i : i + max_gap] = True
-
-    # Longest contiguous True run.
-    edges = np.diff(np.concatenate(([0], bridged.view(np.int8), [0])))
-    starts = np.flatnonzero(edges == 1)
-    ends = np.flatnonzero(edges == -1)
-    if starts.size == 0:
-        return None
-
-    widths = ends - starts
-    best = int(np.argmax(widths))
-    if widths[best] < min_width:
-        return None
-
-    low, high = int(starts[best]), int(ends[best]) - 1
-    return float(freq[low]), float(freq[high])
+    return get_bandwidth_selector(method).select(freq, snr, threshold)
 
 
 @dataclass(frozen=True)
@@ -264,6 +215,7 @@ class SpectrumPair:
         scale_parseval: bool = True,
         resolution_floor: bool = True,
         rotate_noise: bool = True,
+        bandwidth: str = "peak",
         rotation_inc: float = 0.05,
         rotation_space: tuple[float, float] = (0.001, 1.001),
         meta: Mapping[str, Any] | None = None,
@@ -321,7 +273,7 @@ class SpectrumPair:
             )
 
         snr = binned_signal.amp / binned_noise.amp
-        band = find_bandwidth(binned_signal.freq, snr, threshold)
+        band = find_bandwidth(binned_signal.freq, snr, threshold, method=bandwidth)
         if band is not None and resolution_floor:
             band = _clamp_to_floor(band, floor)
 

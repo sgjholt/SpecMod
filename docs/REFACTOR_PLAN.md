@@ -586,10 +586,11 @@ them for binning and rotation. What is done, and what is deliberately not:
 |---|---|
 | `log_bin` | Shared. `spectral.Spectrum.__bin_spectrum` calls it. |
 | `boost_noise` (`ROT_METHOD = 2`) | Shared. Verified bit-identical against `non_lin_boost_noise_func` over 200 randomised cases. |
-| `parseval_scale`, `interpolate_onto` | In `collection.py`; the legacy still has its own copies. |
-| `find_bandwidth` | **Not shared, on purpose** — see below. |
-| `rotate_noise_full` (`ROT_METHOD = 1`) | Not ported. Still in `utils.py`, still prints. |
-| `SpectrumPair` / `SpectrumSet` | Built and tested; `SNP` / `Spectra` not yet switched onto them. |
+| `parseval_scale`, `interpolate_onto` | Shared. The legacy copies are deleted. |
+| `find_bandwidth` | Shared, as a registry — `peak` (was `BW_METHOD = 2`, the default) and `widest`. |
+| `rotate_noise_full` (`ROT_METHOD = 1`) | Still not ported. `SNP` now **raises** rather than silently doing something else. |
+| `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
+| `SpectrumSet` | `Spectra` presents the same interface but still holds `SNP`; swapping what it holds needs the `fitting` rewrite (stage 2). |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and

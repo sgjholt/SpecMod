@@ -8,11 +8,10 @@ from matplotlib.ticker import NullFormatter, StrMethodFormatter
 from scipy.integrate import cumulative_trapezoid
 
 from . import config as cfg
-from . import utils as ut
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
-from .core.collection import find_bandwidth, log_bin
-from .core.noise import boost_noise
+from .core.collection import SpectrumPair as _CorePair
+from .core.collection import log_bin
 from .transforms import ESTIMATORS
 
 
@@ -181,9 +180,13 @@ class Spectrum:
         second copy of that rule is precisely how the two halves of the package
         would drift apart.
         """
+        # Copies: `core.Spectrum` freezes what it is handed, and
+        # `np.ascontiguousarray` returns the same object for an array that is
+        # already float64 and contiguous — so passing them through would mark
+        # this object's own `freq` read-only as a side effect of a conversion.
         converted = _CoreSpectrum(
-            freq=np.ascontiguousarray(freq, dtype=float),
-            amp=np.ascontiguousarray(amp, dtype=float),
+            freq=np.array(freq, dtype=float),
+            amp=np.array(amp, dtype=float),
             motion=getattr(self, "motion", "velocity"),
             kind=source,
             duration=self._duration(),
@@ -359,17 +362,98 @@ class SNP:
         self.noise = noise
         self.pair = (self.signal, self.noise)
         self.__set_metadata(interpolate_noise)
-        # Before __interp_noise_to_signal replaces the noise axis with the
-        # signal's. After that the noise window's own limit is unrecoverable.
-        self.resolution_floor = max(
-            getattr(signal, "resolution_floor", 0.0),
-            getattr(noise, "resolution_floor", 0.0),
+        self.__compare()
+
+    def __compare(self):
+        """Run the comparison through :class:`specmod.core.SpectrumPair`.
+
+        The rescale, the interpolation onto the signal's axis, the binning, the
+        noise lift, the ratio and the band selection all live in ``core`` now.
+        This method is the adapter: it hands the core the two spectra, then
+        writes the results back onto the legacy objects, which the rest of this
+        module and ``fitting`` still read directly.
+
+        Two configurations are not expressible in the core yet and are refused
+        rather than silently approximated — a wrong band is worse than an
+        error, and both of these would produce one.
+        """
+        if not self.intrp:
+            raise NotImplementedError(
+                "SNP(interpolate_noise=False) is not supported: the comparison "
+                "needs the noise on the signal's frequency axis to share bin "
+                "edges with it."
+            )
+        if ROTATE_NOISE and ROT_METHOD != 2:
+            raise NotImplementedError(
+                f"ROT_METHOD={ROT_METHOD} (rotate_noise_full) has not been "
+                "ported to specmod.core.noise; only the boost method (2) is "
+                "available. See REFACTOR_PLAN.md §4.5."
+            )
+
+        pair = _CorePair.compare(
+            self.__as_core(self.signal),
+            self.__as_core(self.noise),
+            threshold=SNR_TOLERENCE,
+            f_min=BINNING_PARAMS["smin"],
+            f_max=BINNING_PARAMS["smax"],
+            n_bins=BINNING_PARAMS["bins"],
+            scale_parseval=SCALE_PARSEVAL,
+            rotate_noise=ROTATE_NOISE,
+            resolution_floor=load_config().config.snr.resolution_floor,
+            bandwidth="peak" if BW_METHOD == 2 else "widest",
         )
-        if SCALE_PARSEVAL:
-            self.__scale_noise_parseval()
-        if self.intrp:
-            self.__interp_noise_to_signal()
-        self.__get_snr()
+
+        # The noise is rewritten in place because everything downstream — the
+        # plots, `fitting`, the golden reference — reads `snp.noise.amp`.
+        self.noise.amp = np.array(pair.noise.amp, dtype=float)
+        self.noise.freq = np.array(self.signal.freq, dtype=float)
+        self.noise.bfreq = np.array(pair.binned_noise.freq, dtype=float)
+        self.noise.bamp = np.array(pair.binned_noise.amp, dtype=float)
+        self.signal.bfreq = np.array(pair.binned_signal.freq, dtype=float)
+        self.signal.bamp = np.array(pair.binned_signal.amp, dtype=float)
+
+        self.bsnr = np.array(pair.snr, dtype=float)
+        self.resolution_floor = pair.resolution_floor
+        self.ROTATED = ROTATE_NOISE
+
+        # `MIN_POINTS` is a separate gate from the band search: too few bins
+        # above threshold anywhere means the station is unusable regardless of
+        # whether a contiguous run could be found among them.
+        if np.count_nonzero(self.bsnr >= SNR_TOLERENCE) <= MIN_POINTS:
+            self.signal.set_pass_snr(False)
+            self.set_ubfreqs(np.array([]))
+        elif pair.band is None:
+            self.signal.set_pass_snr(False)
+            self.set_ubfreqs(np.array([]))
+        else:
+            self.set_ubfreqs(np.array(pair.band, dtype=float))
+
+        self.__update_lims_to_meta()
+        if ASSERT_BANDWIDTHS:
+            self.__assert_bandwidths_test()
+
+    @staticmethod
+    def __as_core(spectrum):
+        """Wrap a legacy spectrum's arrays in a :class:`specmod.core.Spectrum`.
+
+        **Copies, and that is not incidental.** ``core.Spectrum`` marks its
+        arrays read-only so a spectrum cannot be mutated behind its own back.
+        ``np.ascontiguousarray`` returns the *same object* when the input is
+        already float64 and contiguous, so wrapping without copying would set
+        that flag on the legacy object's own arrays — and the legacy classes
+        mutate ``amp`` in place in ``integrate``, ``differentiate`` and the
+        plots. That is the read-only break from the estimator rewiring,
+        reintroduced through the adapter; ``tests/test_pipeline_smoke.py``
+        caught it again.
+        """
+        return _CoreSpectrum(
+            freq=np.array(spectrum.freq, dtype=float),
+            amp=np.array(spectrum.amp, dtype=float),
+            motion=getattr(spectrum, "motion", "velocity"),
+            kind="magnitude",
+            duration=spectrum.meta["npts"] * spectrum.meta["delta"],
+            sampling_rate=float(spectrum.meta["sampling_rate"]),
+        )
 
     def integrate(self):
         for s in self.pair:
@@ -401,59 +485,6 @@ class SNP:
     def bsnr(self, arr):
         # assert type(arr) is type(np.array())
         self._bsnr = arr
-
-    def __scale_noise_parseval(self):
-        self.noise.amp *= np.sqrt(len(self.signal.amp) / len(self.noise.amp))
-        self.noise.bamp *= np.sqrt(len(self.signal.amp) / len(self.noise.amp))
-
-    def __rotate_noise(self):
-        if ROT_METHOD == 1:
-            self.noise.bamp, th1, th2 = ut.rotate_noise_full(
-                self.noise.bfreq,
-                self.noise.bamp,
-                self.signal.bamp,
-                ret_angle=True,
-                **ROT_PARS,
-            )
-            if th1 == 0 or th2 == 0:
-                print(f"th1={th1}, th2={th2}")
-                print(f"rotation failed for {self.signal.id}")
-
-            self.noise.amp = ut.rotate_noise_full(
-                self.noise.freq,
-                self.noise.amp,
-                self.signal.amp,
-                th1=th1,
-                th2=th2,
-                **ROT_PARS,
-            )
-
-        if ROT_METHOD == 2:
-            rot = boost_noise(
-                self.noise.bfreq,
-                self.noise.bamp,
-                self.signal.bamp,
-                inc=ROT_PARS["inc"],
-                space=tuple(ROT_PARS["space"]),
-            )
-
-            self.noise.bamp *= rot
-
-            self.noise.amp *= np.interp(self.noise.freq, self.noise.bfreq, rot)
-
-    def __calc_bsnr(self):
-        if ROTATE_NOISE and not self.ROTATED:
-            self.ROTATED = True
-            self.__rotate_noise()
-        # set bsnr to the object
-        self.bsnr = self.signal.bamp / self.noise.bamp
-
-    def __get_snr(self):
-        self.__calc_bsnr()
-        self.__find_bsnr_limits()
-        self.__update_lims_to_meta()
-        if ASSERT_BANDWIDTHS:
-            self.__assert_bandwidths_test()
 
     def __assert_bandwidths_test(self):
         mns = np.zeros(len(SBANDS))
@@ -522,63 +553,6 @@ class SNP:
         self.event = self.signal.event
         self.id = self.signal.id
 
-    def __find_bsnr_limits(self):
-        """
-        Find the upper and lower frequncy limits of the bandwidth measure of
-        signal-to-noise.
-        """
-
-        blw = np.where(self.bsnr >= SNR_TOLERENCE)[0]
-        if blw.size <= MIN_POINTS:
-            self.signal.set_pass_snr(False)
-        else:
-            if BW_METHOD == 1:
-                # `find_bandwidth` returns None when nothing usable survives,
-                # where the old search returned a band anyway and flagged it.
-                # The flag is still set here so the legacy attribute keeps its
-                # meaning, but a failing station no longer carries a band that
-                # reads like a measurement.
-                band = find_bandwidth(self.signal.bfreq, self.bsnr, SNR_TOLERENCE)
-                if band is None:
-                    self.signal.set_pass_snr(False)
-                    return
-                self.set_ubfreqs(np.array(band))
-            if BW_METHOD == 2:
-                self.set_ubfreqs(self.find_optimal_signal_bandwidth_2())
-            self.__apply_resolution_floor()
-
-    def __apply_resolution_floor(self):
-        """Refuse bandwidth below what the shorter of the two windows resolves.
-
-        ``__interp_noise_to_signal`` puts the noise onto the signal's frequency
-        axis, and the noise window is usually the shorter one — 1.2 to 1.6 s
-        against 1.8 to 3.5 s on the PNR data. ``np.interp`` does not
-        extrapolate, it repeats the edge value, so below the noise window's own
-        lowest frequency the "noise level" is a flat continuation rather than a
-        measurement.
-
-        Signal-to-noise computed there is against an invented denominator, and
-        it is the band that constrains ``Omega``. Measured on those 28 pairs, 6
-        selected a band opening below the noise window's ``1/T``.
-
-        Disable with ``SnrConfig.resolution_floor = False`` to reproduce a run
-        made before this existed.
-        """
-        if not load_config().config.snr.resolution_floor:
-            return
-        band = getattr(self, "ubfreqs", None)
-        if band is None or len(band) != 2:
-            return
-        floor = self.resolution_floor
-        low, high = float(band[0]), float(band[1])
-        if low >= floor:
-            return
-        if floor >= high:
-            # Nothing survives the floor; the pair cannot constrain anything.
-            self.signal.set_pass_snr(False)
-            return
-        self.set_ubfreqs(np.array([floor, high]))
-
     def set_ubfreqs(self, ubfreqs):
         self.ubfreqs = ubfreqs
         self.signal.set_ubfreqs(ubfreqs)
@@ -638,44 +612,6 @@ class SNP:
             plt.ylabel("arb. units")
             plt.xlabel("freq [Hz]")
 
-    def find_optimal_signal_bandwidth_2(self, plot=False):
-        # get freq and ratio function
-        f = self.signal.bfreq
-        a = self.bsnr
-        # get index of freqs > peak bsnr  and < peak bsnr
-        indsgt = np.where(f > f[a == a.max()])
-        indslt = np.where(f < f[a == a.max()])
-        # get those freqs
-        fh = f[indsgt]
-        fl = f[indslt]
-
-        try:
-            ufl = fh[np.where(a[indsgt] - SNR_TOLERENCE <= 0)[0] - 1][0]
-            lfl = fl[np.where(a[indslt] - SNR_TOLERENCE <= 0)[0] + 1][-1]
-        except IndexError as msg:
-            print(msg)
-            print("-" * 20)
-            print("Doesn't meet at one end")
-            self.signal.pass_snr = False
-            return np.array([])
-
-        if not plot:
-            return np.array([lfl, ufl])
-        else:
-            plt.loglog(f, a, label=str(self.id))
-            plt.hlines(SNR_TOLERENCE, f.min(), f.max())
-            plt.vlines(f[a == a.max()], a.min(), a.max())
-            plt.vlines(
-                fh[np.where(a[indsgt] - SNR_TOLERENCE <= 0)[0] - 1][0],
-                a.min() * 2,
-                a.max() / 2,
-            )
-            plt.vlines(
-                fl[np.where(a[indslt] - SNR_TOLERENCE <= 0)[0] + 1][-1],
-                a.min() * 2,
-                a.max() / 2,
-            )
-
     def __check_ids(self, signal, noise):
         if signal.id.upper() != noise.id.upper():
             raise ValueError(f"ID mismatch between signal: {signal.id} and noise: ")
@@ -683,14 +619,6 @@ class SNP:
             raise ValueError(
                 f"Cannot pair similar spectrum kinds: {signal.kind} with {noise.kind}"
             )
-
-    def __interp_noise_to_signal(self):
-        self.noise.amp = np.interp(self.signal.freq, self.noise.freq, self.noise.amp)
-        # self.noise.diff_freq = self.noise.freq[np.where(self.noise.freq <= self.signal.freq.min())]
-        self.noise.freq = self.signal.freq.copy()
-        self.noise._Spectrum__bin_spectrum(
-            **BINNING_PARAMS
-        )  # need to recalc bins after interp.
 
     def __str__(self):
         return f"SNP(id:{self.id}, event:{self.event})"
@@ -716,6 +644,37 @@ class Spectra:
         if group is not None:
             self.__check_group(group)
             self.__set_group_dict(group)
+
+    # -- the mapping interface `specmod.core.SpectrumSet` presents ----------
+    #
+    # `Spectra` cannot yet *be* a `SpectrumSet`: that is typed over
+    # `SpectrumPair`, and `group` still holds `SNP`. Swapping what it holds
+    # means rewriting `fitting`, which reads `spectra.group.items()` and
+    # `signal.ubfreqs` directly, and that is the next stage. Presenting the
+    # same interface is what lets callers migrate first and the container be
+    # swapped underneath them afterwards, rather than both at once.
+
+    def __getitem__(self, key):
+        return self.group[key]
+
+    def __iter__(self):
+        return iter(self.group)
+
+    def __len__(self):
+        return len(self.group)
+
+    def __contains__(self, key):
+        return key in self.group
+
+    def ids(self):
+        """Trace ids in this event, sorted."""
+        return sorted(self.group)
+
+    def passing(self):
+        """Only the pairs that yielded a usable band."""
+        return Spectra(
+            [s for s in self.group.values() if getattr(s.signal, "pass_snr", True)]
+        )
 
     @classmethod
     def from_streams(cls, sig, noise, **kwargs):
