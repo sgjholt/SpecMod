@@ -25,63 +25,33 @@ A reference that only holds on the machine that wrote it is not a reference,
 so the comparison is now a relative tolerance over a distributional summary —
 still far tighter than any real change in level or shape.
 
-What is and is not reproducible across machines
-------------------------------------------------
-The signal spectra are. The noise, the signal-to-noise and the selected band
-are not, and the reason is three discontinuities in the legacy pipeline that
-turn a last-bit difference into a large one:
+Reproducibility, and how it was won
+------------------------------------
+This suite once could not run its own noise comparison on CI. Identical code
+on a runner matching this machine exactly — same system, arch, Python, numpy
+and scipy — produced noise levels 41% and 82% apart. Not floating-point
+sensitivity: the pipeline was *piecewise constant*, and three decision points
+turned a last-bit difference into a large one.
 
-1. **The rotation's break condition.** ``boost_noise`` raises the noise by
-   ``inc = 0.05`` in the exponent per iteration and stops when any point
-   reaches the signal. Landing one iteration differently changes the noise by
-   a factor of ``0.001 ** -0.05 = 1.41`` at the low-frequency end. The
-   differences seen on CI — 41% and 82% — are exactly one and two steps.
-2. **Empty-bin dropping.** ``log_bin`` keeps a bin if any sample falls within
-   its edges. A sample sitting on an edge can fall either side depending on
-   the last bit of ``np.logspace``, changing the surviving bin count by one
-   and hence the length of ``bsnr``.
-3. **The band search**, below.
+1. **The rotation stepped its exponent** by ``inc = 0.05`` and stopped at the
+   first step past the touching point, so landing one iteration either side
+   changed the noise by ``0.001 ** -0.05 = 1.41``. The exponent now has a
+   closed form and is used exactly.
+2. **The binning tested closed intervals** against each edge, so a sample on
+   an edge belonged to two bins and the surviving count depended on the last
+   bit of ``np.logspace``. Membership is now computed from position.
+3. **The band search** took percentiles of an integrated sign function with a
+   retry loop, moving an edge by up to 13 bins. It now takes the widest
+   contiguous passing run.
 
-This was first assumed to be a library-version effect and gated on the
-recorded numpy/scipy versions. **That was wrong.** A runner matching the
-reference exactly — same system, machine, Python, numpy 2.4.6, scipy 1.17.1 —
-still diverged by 41%. The divergence originates below the version level, in
-whichever CPU and BLAS kernel paths the arrays happen to take, so *no*
-recordable property of the environment predicts it.
+Measured after the fix, end to end over all 28 windows: perturbing the input
+by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The response
+is linear, so machine-level differences land far below ``RTOL``. That is why
+the exact comparison runs unconditionally again.
 
-The consequence is that **the post-rotation noise and signal-to-noise cannot
-be pinned by a committed reference at all**. What runs everywhere is a
-structural check — finite, positive, the right length to within the one bin
-that empty-bin dropping can move, and the right order of magnitude — which
-still catches every refactor error this suite exists for: a factor of two, a
-normalisation keyed off the wrong length, a units slip.
-
-The exact comparison is still available, and is genuinely useful when
-refactoring on one machine: set ``SPECMOD_STRICT_GOLDEN=1``. It is off by
-default because a check that fails on hardware rather than on changes trains
-people to ignore it.
-
-None of this leaves the rotation or the binning unpinned. Both have dedicated
-tests in ``tests/test_collection.py`` that compare against the legacy
-implementations directly — the rotation bit-for-bit over 200 randomised cases,
-the binning to 1e-12 on all 28 real windows. Those are stronger guarantees
-than the golden reference could give, and they do not depend on two machines
-agreeing.
-
-The band is the exception, and for a reason worth knowing
----------------------------------------------------------
-``find_optimal_signal_bandwidth`` thresholds with ``sign(bsnr - tolerance)``
-and reads the band off percentiles of the integral, with a retry loop when the
-edges cross. All three steps are discontinuous, so an input difference far
-below anything visible can move an edge by *many* bins — on ``LV.L001..HHN``
-the low edge moved by about 13 bins between two runners on identical library
-versions, and the narrower band sat entirely inside the wider one.
-
-**The selected band is therefore not reproducible across platforms**, and the
-band is what constrains ``Omega``. That is a property of the search, not of
-this test and not of the refactor. It is checked here by containment rather
-than equality, and it is the strongest argument for the band-search rework
-tracked in ``docs/REFACTOR_PLAN.md`` §4.5.1.
+The band is still compared by containment rather than equality — one bin
+genuinely sitting on the threshold can still flip, which now moves an edge by
+one bin instead of thirteen.
 """
 
 from __future__ import annotations
@@ -215,19 +185,9 @@ def _run(estimator: str) -> Any:
 ESTIMATORS = ["fft", "welch", "multitaper", "quadratic", "cwt"]
 
 
-#: Opt-in, because the exact noise comparison fails on hardware differences
-#: rather than on changes to the code. Set it when refactoring on one machine,
-#: where it is the tightest check available.
-STRICT = os.environ.get("SPECMOD_STRICT_GOLDEN") == "1"
-
-only_when_strict = pytest.mark.skipif(
-    not STRICT,
-    reason=(
-        "post-rotation noise and SNR are not reproducible across machines; "
-        "set SPECMOD_STRICT_GOLDEN=1 to compare them exactly on the machine "
-        "that generated the reference"
-    ),
-)
+# The exact noise comparison used to be opt-in, because the three
+# discontinuities below made it fail on hardware differences rather than on
+# changes to the code. They are fixed, so it runs everywhere again.
 
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
@@ -299,7 +259,6 @@ def test_the_noise_and_snr_are_structurally_sound(estimator: str) -> None:
     )
 
 
-@only_when_strict
 @pytest.mark.parametrize("estimator", ESTIMATORS)
 def test_the_noise_and_snr_are_exactly_unchanged(estimator: str) -> None:
     """Separate from the amplitudes because it fails for different reasons.

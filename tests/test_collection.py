@@ -105,29 +105,27 @@ def test_parseval_scale_is_unity_for_equal_lengths() -> None:
     assert parseval_scale(2000, 1000) == pytest.approx(np.sqrt(2.0))
 
 
-def test_find_bandwidth_selects_the_passing_run() -> None:
-    """Brackets the passing region — but note where the low edge actually lands.
+def test_find_bandwidth_tracks_the_true_edges() -> None:
+    """The band should sit on the passing region, not lag behind it.
 
-    The signal-to-noise here passes cleanly between 5 and 30 Hz, and the
-    selected band is roughly 9.4 to 28.7. The high edge is close; **the low
-    edge lags the true onset by about 4 Hz.** That is inherent to reading the
-    band off percentiles of the integrated sign function rather than a defect
-    in the port — the values above are bit-identical to the pre-refactor
-    implementation, which was checked directly against it.
+    The old percentile-of-the-sign-integral search returned 9.41 to 28.72 for
+    this input — the high edge close, but **the low edge 4.4 Hz late**, which
+    matters because the low edge is what constrains ``Omega``. Taking the
+    contiguous run directly lands within one bin of the true 5 Hz onset.
 
-    It matters because the low edge is what constrains ``Omega``. Anyone
-    revisiting the band search should treat this lag as the thing to improve,
-    and this test as the record of what the behaviour was before they did.
+    The bound below is half a bin (the grid is 0.495 Hz), which is the best
+    any bin-resolution method can do.
     """
     freq = np.linspace(1.0, 50.0, 100)
     snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
+    spacing = float(np.diff(freq)[0])
 
     band = find_bandwidth(freq, snr, threshold=3.0)
     assert band is not None
     low, high = band
-    assert low == pytest.approx(9.414141, rel=1e-6), low
-    assert high == pytest.approx(28.717171, rel=1e-6), high
-    # Whatever the lag, the band must lie inside the region that passes.
+    assert abs(low - 5.0) <= spacing, f"low edge {low} is more than a bin from 5.0"
+    assert abs(high - 30.0) <= spacing, f"high edge {high} is more than a bin from 30"
+    # And strictly inside, so it never claims bandwidth that does not pass.
     assert 5.0 < low < high < 30.0
 
 
@@ -291,19 +289,22 @@ def _as_core(legacy: Any) -> Any:
 # ------------------------------------------------------------ failure paths
 
 
-def test_find_bandwidth_gives_up_when_the_low_edge_cannot_be_moved() -> None:
-    """The retry loop is bounded, and exhausting it is a failure, not a band.
+def test_find_bandwidth_rejects_a_run_shorter_than_min_width() -> None:
+    """A band is a run of bins, and two bins is not enough to fit anything.
 
-    Signal-to-noise that only passes at the very start pins the low edge at
-    index 0, which the loop tries three times to move before conceding. The
-    legacy returned a band here anyway; returning None is the point of the
-    new contract.
+    The legacy returned a band here regardless, flagging it separately;
+    returning None is the point of the new contract. A run exactly at
+    ``min_width`` is accepted, so the boundary is checked from both sides.
     """
     freq = np.linspace(1.0, 50.0, 100)
-    snr = np.full_like(freq, 0.5)
-    snr[:3] = 10.0
 
-    assert find_bandwidth(freq, snr, threshold=3.0) is None
+    too_short = np.full_like(freq, 0.5)
+    too_short[:2] = 10.0
+    assert find_bandwidth(freq, too_short, threshold=3.0) is None
+
+    just_enough = np.full_like(freq, 0.5)
+    just_enough[:3] = 10.0
+    assert find_bandwidth(freq, just_enough, threshold=3.0) is not None
 
 
 def test_find_bandwidth_rejects_a_band_narrower_than_min_width() -> None:

@@ -100,25 +100,27 @@ def _lift(
 
     so the first exponent at which *any* bin in ``where`` touches is the
     minimum of that expression over the bins the lift actually raises — those
-    with ``sample < 1``, since dividing by a larger ``sample`` lowers them. The
-    loop then overshoots to the next multiple of ``inc``, which is
-    ``inc * ceil(n / inc)``.
+    with ``sample < 1``, since dividing by a larger ``sample`` lowers them.
 
-    Verified equal to the loop it replaces to 1.1e-16 over 300 randomised
-    cases, and it removes up to a thousand iterations per lift.
+    **The exponent is used exactly, not rounded up to a multiple of ``inc``.**
+    That is the change that makes this reproducible. The old loop stepped and
+    stopped at the first multiple past the touching point, so the result was a
+    step function of its input: two machines differing in the last bit could
+    land on either side of a step and move the noise by ``1.41x``. Solving for
+    the touching point directly makes the exponent a continuous function of the
+    input, so a last-bit difference in gives a last-bit difference out.
 
-    .. note::
+    It also removes a bias. Rounding was always *upward*, so the old code
+    consistently overshot and overstated the lifted noise — a median ``1.18x``
+    and up to ``1.41x`` across 39 lifts on the 28 PNR windows. That made the
+    signal-to-noise pessimistic at exactly the band edges the ratio is read
+    from. The exact touching point is what the algorithm was always trying to
+    compute; the stepping was a crude search for it.
 
-       **The ``ceil`` is the reproducibility defect, and it is kept here on
-       purpose.** Rounding up is what makes the result a step function of the
-       input, so a last-bit difference between two machines can move the
-       exponent by a whole ``inc`` and the noise by 1.41x. Dropping it would
-       both fix that and remove a systematic overstatement of the noise —
-       measured at a median 1.18x and up to 1.41x on the 28 PNR windows — but
-       it changes results, so it is a deliberate decision rather than a
-       cleanup. See ``docs/REFACTOR_PLAN.md`` §4.5.2.
+    ``inc`` is therefore no longer used, and is accepted only so that callers
+    and stored configurations do not have to change.
     """
-    del max_iter  # no longer searched; kept so the signature does not churn
+    del max_iter, inc  # the search they parameterised is gone
 
     noise, signal, scale = noise_amp[where], signal_amp[where], sample[where]
     if noise.size == 0 or np.any(noise >= signal):
@@ -133,5 +135,5 @@ def _lift(
         return noise_amp
 
     needed = np.log(signal[rises] / noise[rises]) / -log_scale[rises]
-    exponent = inc * np.ceil(float(np.min(needed)) / inc)
+    exponent = float(np.min(needed))
     return np.asarray(noise_amp / sample**exponent)

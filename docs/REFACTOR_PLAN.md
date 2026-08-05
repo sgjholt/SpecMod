@@ -531,50 +531,47 @@ like a measurement. `None` is the better contract, but adopting it changes
 what the legacy path returns for a failing station — a behaviour change that
 needs the golden reference regenerated deliberately rather than a quiet swap.
 
-#### 4.5.2 Three discontinuities make the noise and band machine-dependent
+#### 4.5.2 Three discontinuities made the noise and band machine-dependent — fixed
 
-Found by running the golden reference on CI. The signal spectra reproduce
-across builds; **the noise level, the signal-to-noise and the selected band do
-not**, and the cause is not floating-point drift but three places where the
-pipeline turns a continuous input into a discrete decision:
+Found by running the golden reference on CI, where identical code on a runner
+matching the reference machine exactly — same system, arch, Python, numpy
+2.4.6, scipy 1.17.1 — produced noise levels **41% and 82% apart**. Not
+floating-point sensitivity: perturbing the input by 1e-13 moved nothing at all.
+The pipeline was *piecewise constant*, and runners landed on different pieces.
 
-| Where | Mechanism | Size of the jump |
+| Where | Was | Now |
 |---|---|---|
-| `boost_noise` | Raises the exponent by `inc = 0.05` per iteration, stops when any point reaches the signal. A last-bit difference in that comparison lands one iteration either side. | `0.001 ** -0.05` = **1.41x** at the low-frequency end. Observed on CI: 41% and 82% — one and two steps. |
-| `log_bin` | Keeps a bin if any sample lies within its edges. A sample sitting on an edge falls either side depending on the last bit of `np.logspace`. | Surviving bin count changes by one, so `bsnr` changes length. |
-| `find_optimal_signal_bandwidth` | `sign(bsnr - tolerance)`, percentiles of the integral, and a retry loop when the edges cross — all discontinuous. | Low edge moved ~13 log bins on `LV.L001..HHN`. |
+| `boost_noise` | Stepped the exponent by `inc = 0.05` and stopped at the first step past the touching point. One iteration either side = **1.41x** on the noise. | Closed form: `n = min ln(signal/noise) / -ln(sample)`, used exactly. Continuous in its input. |
+| `log_bin` | Tested `f >= left and f <= right` per edge. Both ends closed, so a sample on an edge joined **two** bins, and which one depended on the last bit of `np.logspace`. | Index computed from position: one sample, one bin, no edge comparison. |
+| `find_optimal_signal_bandwidth` | `sign(bsnr - tol)`, integrate, read 1st/99th percentiles, retry when edges cross. Moved an edge **13 bins**. | Widest contiguous run above threshold, bridging single-bin dips. |
 
-This is inherited behaviour, not something the refactor introduced. It is
-worth taking seriously because the band constrains `Omega`: **a last-bit
-difference can move the noise level by 41%**, and the same machinery decides
-which stations pass the signal-to-noise gate at all.
+**Measured after the fix**, end to end over all 28 windows: perturbing the
+input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
+response is linear. The golden reference's exact noise comparison, which had
+to be made opt-in because it could not survive a change of machine, now runs
+unconditionally again.
 
-Checked, so it is not confused with ordinary floating-point sensitivity:
-perturbing the input by 1e-13 moves nothing at all. The pipeline is not
-chaotic — it is piecewise constant, and different machines land on different
-pieces.
+Two of the three also removed a bias rather than merely a wobble:
 
-**It is not a library-version effect.** That was the first hypothesis, and
-gating the checks on the recorded numpy/scipy versions disproved it: a runner
-matching the reference exactly — same system, machine, Python, numpy 2.4.6,
-scipy 1.17.1 — still diverged by 41%. The divergence arises below the version
-level, in whichever CPU and BLAS kernel paths the arrays take, so no
-recordable property of the environment predicts it.
+- The rotation always rounded **up**, so it consistently overstated the lifted
+  noise — a median **1.18x** and up to **1.41x** across 39 lifts. That made
+  signal-to-noise pessimistic at exactly the band edges the ratio is read from.
+- The band search's low edge lagged the true onset by **4.4 Hz** on a clean
+  5-30 Hz test case, because the 1st percentile of a cumulative integral
+  arrives late. It now lands within one bin. The low edge is what constrains
+  `Omega`.
 
-The practical consequence is sharper than it first appears: **the observed
-machine-to-machine variation in the noise median, 1.82x, is nearly as large as
-a factor-of-two mistake.** No committed reference can separate those, so the
-golden reference checks the noise structurally and leaves the exact comparison
-behind `SPECMOD_STRICT_GOLDEN=1` for same-machine use. The noise path is
-pinned instead by direct comparison against the legacy implementations, which
-does not require two machines to agree.
+**What moved on the real data.** No station lost its band under any estimator.
+Bands widened on 2 (fft), 1 (welch), 8 (multitaper), 8 (quadratic) and 14
+(cwt) of 28 windows; median edge movement was 0.000 Hz except the cwt high
+edge at +1.195 Hz. `bsnr` arrays shortened where the old binning had been
+double-counting — for CWT the old rule reported *more bins than there were
+samples*, which is only possible by counting a sample twice.
 
-Fixing it means making each decision continuous, or at least stable:
-interpolate the rotation exponent rather than stepping it, use half-open bin
-intervals so an edge sample belongs to exactly one bin, and replace the
-percentile-on-sign-integral band search with something that does not amplify.
-All three change results, so all three need the reference regenerated
-deliberately.
+Anyone reproducing a pre-refactor result needs the reference regenerated and
+should expect slightly wider bands and slightly lower noise. That is the
+correction, not a regression: the old numbers were biased in a known
+direction.
 
 Two things to fix in the same change, since they are both about that function:
 

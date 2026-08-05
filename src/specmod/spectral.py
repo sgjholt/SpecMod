@@ -11,7 +11,7 @@ from . import config as cfg
 from . import utils as ut
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
-from .core.collection import log_bin
+from .core.collection import find_bandwidth, log_bin
 from .core.rotation import boost_noise
 from .transforms import ESTIMATORS
 
@@ -533,11 +533,16 @@ class SNP:
             self.signal.set_pass_snr(False)
         else:
             if BW_METHOD == 1:
-                self.set_ubfreqs(
-                    self.find_optimal_signal_bandwidth(
-                        self.signal.bfreq, self.bsnr, SNR_TOLERENCE
-                    )
-                )
+                # `find_bandwidth` returns None when nothing usable survives,
+                # where the old search returned a band anyway and flagged it.
+                # The flag is still set here so the legacy attribute keeps its
+                # meaning, but a failing station no longer carries a band that
+                # reads like a measurement.
+                band = find_bandwidth(self.signal.bfreq, self.bsnr, SNR_TOLERENCE)
+                if band is None:
+                    self.signal.set_pass_snr(False)
+                    return
+                self.set_ubfreqs(np.array(band))
             if BW_METHOD == 2:
                 self.set_ubfreqs(self.find_optimal_signal_bandwidth_2())
             self.__apply_resolution_floor()
