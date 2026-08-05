@@ -1,5 +1,5 @@
-import os
 from copy import deepcopy
+from pathlib import Path
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -364,7 +364,17 @@ class FitSpectra:
 
     @staticmethod
     def write_flatfile(path, fits):
-        os.makedirs(os.path.join(*path.split("/")[:-1]), exist_ok=True)
+        """Write the group fit table as CSV, creating the directory if needed.
+
+        The previous implementation was ``os.makedirs(os.path.join(
+        *path.split("/")[:-1]))``, which raised ``TypeError: join() missing 1
+        required positional argument`` for any path without a directory
+        component — ``write_flatfile("out.csv", fits)`` could not work. It also
+        split on ``/`` literally, so it did nothing useful on Windows.
+        """
+        parent = Path(path).parent
+        if parent != Path():
+            parent.mkdir(parents=True, exist_ok=True)
         fits.table.to_csv(path, index=False)
 
     @staticmethod
@@ -388,9 +398,24 @@ class FitSpectra:
         self.table = df1
 
     def __set_fit_models_to_spectrum(self):
+        """Hand each fit back to the spectrum it came from, where that is possible.
+
+        The legacy `Signal` carries its own fit so that plotting and
+        serialisation can reach it from the spectrum. `core.SpectrumPair` is
+        frozen and cannot, by design — a result writing itself back into its
+        own input is how a container stops being trustworthy.
+
+        Nothing is lost by skipping it: `self.models` is the source of truth
+        either way, and the write-back was only ever a convenience. So this
+        writes where the container accepts it and moves on where it does not,
+        rather than requiring every container to be mutable.
+        """
         for id, mod in self.models.items():
-            tmp = self.spectra.get_spectra(id)
-            tmp.signal.set_model(mod)
+            spectrum = self.spectra[id]
+            signal = getattr(spectrum, "signal", spectrum)
+            setter = getattr(signal, "set_model", None)
+            if setter is not None:
+                setter(mod)
 
     def __check_spectra(self, spectra):
         if not isinstance(spectra, sp.Spectra):

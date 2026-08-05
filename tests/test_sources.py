@@ -13,9 +13,10 @@ import contextlib
 import io
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from specmod.fitting import FitSpectrum
+from specmod.fitting import FitSpectra, FitSpectrum
 from specmod.sources import (
     ATTENUATION_MODELS,
     SOURCE_MODELS,
@@ -325,3 +326,33 @@ def test_changing_the_configured_source_changes_the_fit(real_signal) -> None:
         results[name] = fit.result.params["fc"].value
 
     assert results["brune"] != results["boatwright"]
+
+
+# --------------------------------------------------------------- flatfile
+
+
+def test_the_flatfile_writes_to_a_bare_filename(tmp_path, monkeypatch) -> None:
+    """A path with no directory component used to raise.
+
+    ``os.makedirs(os.path.join(*path.split("/")[:-1]))`` unpacks an empty list
+    for ``"out.csv"``, so ``os.path.join()`` got no arguments and raised
+    ``TypeError``. It also split on ``/`` literally, which does nothing useful
+    on Windows.
+    """
+
+    class Fits:
+        table = pd.DataFrame([{"id": "XX.TEST", "fc": 4.0}])
+
+    monkeypatch.chdir(tmp_path)
+    FitSpectra.write_flatfile("out.csv", Fits())
+    assert (tmp_path / "out.csv").is_file()
+    assert FitSpectra.read_flatfile("out.csv")["fc"].iloc[0] == pytest.approx(4.0)
+
+
+def test_the_flatfile_creates_missing_directories(tmp_path) -> None:
+    class Fits:
+        table = pd.DataFrame([{"id": "XX.TEST", "fc": 4.0}])
+
+    target = tmp_path / "nested" / "deeper" / "out.csv"
+    FitSpectra.write_flatfile(str(target), Fits())
+    assert target.is_file()
