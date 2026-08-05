@@ -23,11 +23,13 @@ import glob
 import io
 import json
 import os
+import platform
 import warnings
 from pathlib import Path
 
 import numpy as np
 import obspy
+import scipy
 
 import specmod.preprocess as pre
 from specmod.spectral import Spectra
@@ -114,14 +116,35 @@ def capture(estimator: str) -> dict:
     return out
 
 
+def _environment() -> dict:
+    """What produced these numbers.
+
+    Recorded because parts of the pipeline are not reproducible across builds
+    — see ``tests/test_golden_reference.py``. The strict noise and SNR checks
+    only run where this matches.
+    """
+    return {
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "python": ".".join(platform.python_version_tuple()[:2]),
+        "numpy": np.__version__,
+        "scipy": scipy.__version__,
+    }
+
+
 def main() -> None:
     reference = {
-        est: capture(est) for est in ("fft", "welch", "multitaper", "quadratic", "cwt")
+        "_environment": _environment(),
+        **{
+            est: capture(est)
+            for est in ("fft", "welch", "multitaper", "quadratic", "cwt")
+        },
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(reference, indent=1, sort_keys=True) + "\n")
-    n = sum(len(v) for v in reference.values())
-    print(f"wrote {OUT.relative_to(ROOT)}: {len(reference)} estimators, {n} windows")
+    n = sum(len(v) for k, v in reference.items() if k != "_environment")
+    est = len(reference) - 1
+    print(f"wrote {OUT.relative_to(ROOT)}: {est} estimators, {n} windows")
 
 
 if __name__ == "__main__":

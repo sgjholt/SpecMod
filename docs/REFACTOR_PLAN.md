@@ -531,6 +531,40 @@ like a measurement. `None` is the better contract, but adopting it changes
 what the legacy path returns for a failing station — a behaviour change that
 needs the golden reference regenerated deliberately rather than a quiet swap.
 
+#### 4.5.2 Three discontinuities make the noise and band machine-dependent
+
+Found by running the golden reference on CI. The signal spectra reproduce
+across builds; **the noise level, the signal-to-noise and the selected band do
+not**, and the cause is not floating-point drift but three places where the
+pipeline turns a continuous input into a discrete decision:
+
+| Where | Mechanism | Size of the jump |
+|---|---|---|
+| `boost_noise` | Raises the exponent by `inc = 0.05` per iteration, stops when any point reaches the signal. A last-bit difference in that comparison lands one iteration either side. | `0.001 ** -0.05` = **1.41x** at the low-frequency end. Observed on CI: 41% and 82% — one and two steps. |
+| `log_bin` | Keeps a bin if any sample lies within its edges. A sample sitting on an edge falls either side depending on the last bit of `np.logspace`. | Surviving bin count changes by one, so `bsnr` changes length. |
+| `find_optimal_signal_bandwidth` | `sign(bsnr - tolerance)`, percentiles of the integral, and a retry loop when the edges cross — all discontinuous. | Low edge moved ~13 log bins on `LV.L001..HHN`. |
+
+This is inherited behaviour, not something the refactor introduced. It is
+worth taking seriously because the band constrains `Omega`: **a last-bit
+difference can move the noise level by 41%**, and the same machinery decides
+which stations pass the signal-to-noise gate at all.
+
+Checked, so it is not confused with ordinary floating-point sensitivity:
+perturbing the input by 1e-13 moves nothing at all. The pipeline is not
+chaotic — it is piecewise constant, and CI runners land on different pieces.
+
+Until this is fixed the golden reference runs its strict noise and SNR checks
+only where the recorded environment matches, and compares bands by containment
+rather than equality. The signal amplitudes carry no such discontinuity and
+are checked everywhere.
+
+Fixing it means making each decision continuous, or at least stable:
+interpolate the rotation exponent rather than stepping it, use half-open bin
+intervals so an edge sample belongs to exactly one bin, and replace the
+percentile-on-sign-integral band search with something that does not amplify.
+All three change results, so all three need the reference regenerated
+deliberately.
+
 Two things to fix in the same change, since they are both about that function:
 
 1. **The low edge lags.** On a clean 5–30 Hz passing region the selected band

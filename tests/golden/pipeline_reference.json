@@ -1,4 +1,11 @@
 {
+ "_environment": {
+  "machine": "x86_64",
+  "numpy": "2.4.6",
+  "python": "3.11",
+  "scipy": "1.17.1",
+  "system": "Linux"
+ },
  "cwt": {
   "LV.L001..HHE": {
    "amp": {
