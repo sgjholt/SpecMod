@@ -262,7 +262,7 @@ def test_the_band_respects_the_noise_window_too(spectra: Any) -> None:
     continuation rather than a measurement, and the signal-to-noise computed
     there has an invented denominator.
 
-    On these 28 pairs the noise windows run 1.2-1.6 s against 1.8-3.5 s
+    On these 28 pairs the noise windows run 1.1-1.7 s against 1.8-3.7 s
     signals, and 6 selected a band opening below the noise window's ``1/T``
     before this floor existed.
     """
@@ -289,7 +289,7 @@ def test_the_floor_is_the_stricter_of_the_two_windows(spectra: Any) -> None:
 def test_the_cwt_floor_is_stricter_than_the_multitaper_one() -> None:
     """A wavelet needs several cycles inside the window, not one.
 
-    The cone of influence is about 2.8x stricter than ``1/T``, and taking each
+    The cone of influence is about 1.4x stricter than ``1/T`` here, and taking each
     spectrum's floor from its own frequency axis means that rule applies
     without the pipeline knowing which estimator produced it.
     """

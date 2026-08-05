@@ -25,16 +25,14 @@ traces, so the only way to test the band search was to run the whole pipeline.
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.integrate import cumulative_trapezoid
 
-from .rotation import boost_noise
+from .noise import boost_noise
 from .spectrum import Spectrum
 
 __all__ = [
@@ -94,18 +92,41 @@ def log_bin(
     scale the bins themselves are spaced on. Empty bins are expected rather
     than exceptional — log bins over a linear grid are inevitably sparse at the
     low end — so they are dropped silently rather than warned about per bin.
+
+    **Membership is computed, not tested.** The bin index comes from the
+    position of ``log10(f)`` along the range, which puts every sample in
+    exactly one bin. The previous version tested ``f >= left and f <= right``
+    against each edge in turn: both ends closed, so a sample landing on an
+    interior edge belonged to *two* bins, and which of the two comparisons
+    succeeded depended on the last bit of ``np.logspace``. That is one of the
+    three places where a last-bit difference changed a result — it moved the
+    surviving bin count by one, and with it the length of ``bsnr``. Computing
+    the index removes the double membership and the edge comparison together.
     """
     lo = max(f_min, float(freq.min()))
     hi = min(f_max, float(freq.max()))
-    edges = np.logspace(np.log10(lo), np.log10(hi), n_bins)
+    n_intervals = n_bins - 1
 
-    amps = np.full(edges.size - 1, np.nan, dtype=np.float64)
-    centres = np.zeros(edges.size - 1, dtype=np.float64)
-    for i, (left, right) in enumerate(itertools.pairwise(edges)):
-        inside = amp[(freq >= left) & (freq <= right)]
-        if inside.size:
-            amps[i] = 10 ** np.log10(inside).mean()
-        centres[i] = 10 ** np.mean([np.log10(left), np.log10(right)])
+    log_lo, log_hi = np.log10(lo), np.log10(hi)
+    width = (log_hi - log_lo) / n_intervals
+
+    # Index by position rather than by comparison against edges. The clip puts
+    # the sample sitting exactly at `hi` into the last bin rather than one past
+    # it, which is the only place the half-open rule needs an exception.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        index = np.floor((np.log10(freq) - log_lo) / width).astype(int)
+    inside = (freq >= lo) & (freq <= hi)
+    index = np.clip(index, 0, n_intervals - 1)
+
+    amps = np.full(n_intervals, np.nan, dtype=np.float64)
+    log_amp = np.log10(amp)
+    for i in range(n_intervals):
+        selected = log_amp[inside & (index == i)]
+        if selected.size:
+            amps[i] = 10 ** selected.mean()
+
+    edges = np.logspace(log_lo, log_hi, n_bins)
+    centres = 10 ** (0.5 * (np.log10(edges[:-1]) + np.log10(edges[1:])))
 
     keep = ~np.isnan(amps)
     return BinnedSpectrum(freq=centres[keep], amp=amps[keep])
@@ -146,54 +167,65 @@ def find_bandwidth(
     snr: NDArray[np.float64],
     threshold: float,
     *,
-    percentile: float = 0.99,
+    max_gap: int = 1,
     min_width: int = 3,
 ) -> tuple[float, float] | None:
-    """Widest band whose signal-to-noise stays above ``threshold``.
+    """Widest run of bins whose signal-to-noise stays above ``threshold``.
 
-    The ratio is mapped to ``{-1, +1}`` by ``sign(snr - threshold)`` and
-    integrated, so the integral rises through stretches that pass and falls
-    through stretches that fail. The band is read off where that integral
-    crosses the requested percentiles, which finds the largest passing run
-    rather than the first — a spectrum can dip below threshold at a single
-    noisy bin without that ending the usable band.
+    Returns ``None`` when no run of at least ``min_width`` bins survives —
+    unlike the legacy ``find_optimal_signal_bandwidth``, which returned a band
+    anyway and set a ``pass_snr`` flag beside it, so a caller reading the band
+    without checking the flag got numbers that looked like a measurement.
 
-    Returns ``None`` when no band of at least ``min_width`` bins survives.
+    Single noisy bins do not end a band. A gap of up to ``max_gap`` failing
+    bins is bridged, which is what the old integral-of-the-sign was reaching
+    for: a spectrum can dip below threshold at one bin without that being the
+    end of the usable range.
 
-    .. note::
+    Why this replaced the percentile search
+    ---------------------------------------
+    The old method took ``sign(snr - threshold)``, integrated it, normalised
+    by the maximum, read the edges off the 1st and 99th percentiles of that
+    integral, and ran a retry loop when the edges crossed. Every one of those
+    steps is discontinuous, and they compound: on ``LV.L001..HHN`` the low edge
+    moved about 13 bins between two machines running identical library
+    versions.
 
-       **This differs from the legacy ``find_optimal_signal_bandwidth``, and
-       deliberately.** That one returns a band even when the search fails,
-       setting a ``pass_snr`` flag alongside it — so a caller that reads the
-       band without checking the flag gets numbers that look like a
-       measurement and are not. Returning ``None`` makes the failure
-       unignorable.
-
-       It is why ``spectral.SNP`` still calls its own copy rather than this:
-       swapping it would change what the legacy path returns for a failing
-       station, which is a behaviour change and belongs in its own commit with
-       the golden reference regenerated deliberately. The rest of the chain —
-       binning, rotation — is now shared.
+    Taking the run directly is discontinuous only at the threshold itself, and
+    only for bins genuinely sitting on it — so a bin flipping moves an edge by
+    one bin, not thirteen. It also removes the percentile bias: reading the low
+    edge off the 1st percentile of a cumulative integral lags the true onset,
+    measured at about 4 Hz on a clean 5-30 Hz test case, and the low edge is
+    what constrains ``Omega``.
     """
-    integral = cumulative_trapezoid(np.sign(snr - threshold))
-    if integral.size == 0 or integral.max() <= 0:
-        return None
-    integral = integral / integral.max()
-    integral[integral <= 0] = -1
-
-    high = int(np.abs(integral - percentile).argmin()) - 1
-    low = int(np.abs(integral - (1 - percentile)).argmin())
-
-    for _ in range(3):
-        if low < high and low != 0:
-            break
-        integral[low] = 1
-        low = int(np.abs(integral + 1 - percentile).argmin())
-    else:
+    if freq.size == 0 or snr.size != freq.size:
         return None
 
-    if high - low < min_width:
+    passing = snr >= threshold
+    if not passing.any():
         return None
+
+    # Bridge short gaps, so one noisy bin does not split a band in two.
+    bridged = passing.copy()
+    (failing,) = np.where(~passing)
+    for i in failing:
+        left, right = i - 1, i + max_gap
+        if left >= 0 and right < passing.size and passing[left] and passing[right]:
+            bridged[i : i + max_gap] = True
+
+    # Longest contiguous True run.
+    edges = np.diff(np.concatenate(([0], bridged.view(np.int8), [0])))
+    starts = np.flatnonzero(edges == 1)
+    ends = np.flatnonzero(edges == -1)
+    if starts.size == 0:
+        return None
+
+    widths = ends - starts
+    best = int(np.argmax(widths))
+    if widths[best] < min_width:
+        return None
+
+    low, high = int(starts[best]), int(ends[best]) - 1
     return float(freq[low]), float(freq[high])
 
 

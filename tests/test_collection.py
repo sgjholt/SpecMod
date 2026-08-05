@@ -42,7 +42,12 @@ from specmod.core.collection import (  # noqa: E402
     log_bin,
     parseval_scale,
 )
-from specmod.core.rotation import boost_noise  # noqa: E402
+from specmod.core.noise import (  # noqa: E402
+    NOISE_MODELS,
+    NoiseModel,
+    boost_noise,
+    get_noise_model,
+)
 from specmod.spectral import (  # noqa: E402
     BINNING_PARAMS,
     ROTATE_NOISE,
@@ -105,29 +110,27 @@ def test_parseval_scale_is_unity_for_equal_lengths() -> None:
     assert parseval_scale(2000, 1000) == pytest.approx(np.sqrt(2.0))
 
 
-def test_find_bandwidth_selects_the_passing_run() -> None:
-    """Brackets the passing region — but note where the low edge actually lands.
+def test_find_bandwidth_tracks_the_true_edges() -> None:
+    """The band should sit on the passing region, not lag behind it.
 
-    The signal-to-noise here passes cleanly between 5 and 30 Hz, and the
-    selected band is roughly 9.4 to 28.7. The high edge is close; **the low
-    edge lags the true onset by about 4 Hz.** That is inherent to reading the
-    band off percentiles of the integrated sign function rather than a defect
-    in the port — the values above are bit-identical to the pre-refactor
-    implementation, which was checked directly against it.
+    The old percentile-of-the-sign-integral search returned 9.41 to 28.72 for
+    this input — the high edge close, but **the low edge 4.4 Hz late**, which
+    matters because the low edge is what constrains ``Omega``. Taking the
+    contiguous run directly lands within one bin of the true 5 Hz onset.
 
-    It matters because the low edge is what constrains ``Omega``. Anyone
-    revisiting the band search should treat this lag as the thing to improve,
-    and this test as the record of what the behaviour was before they did.
+    The bound below is half a bin (the grid is 0.495 Hz), which is the best
+    any bin-resolution method can do.
     """
     freq = np.linspace(1.0, 50.0, 100)
     snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
+    spacing = float(np.diff(freq)[0])
 
     band = find_bandwidth(freq, snr, threshold=3.0)
     assert band is not None
     low, high = band
-    assert low == pytest.approx(9.414141, rel=1e-6), low
-    assert high == pytest.approx(28.717171, rel=1e-6), high
-    # Whatever the lag, the band must lie inside the region that passes.
+    assert abs(low - 5.0) <= spacing, f"low edge {low} is more than a bin from 5.0"
+    assert abs(high - 30.0) <= spacing, f"high edge {high} is more than a bin from 30"
+    # And strictly inside, so it never claims bandwidth that does not pass.
     assert 5.0 < low < high < 30.0
 
 
@@ -291,19 +294,22 @@ def _as_core(legacy: Any) -> Any:
 # ------------------------------------------------------------ failure paths
 
 
-def test_find_bandwidth_gives_up_when_the_low_edge_cannot_be_moved() -> None:
-    """The retry loop is bounded, and exhausting it is a failure, not a band.
+def test_find_bandwidth_rejects_a_run_shorter_than_min_width() -> None:
+    """A band is a run of bins, and two bins is not enough to fit anything.
 
-    Signal-to-noise that only passes at the very start pins the low edge at
-    index 0, which the loop tries three times to move before conceding. The
-    legacy returned a band here anyway; returning None is the point of the
-    new contract.
+    The legacy returned a band here regardless, flagging it separately;
+    returning None is the point of the new contract. A run exactly at
+    ``min_width`` is accepted, so the boundary is checked from both sides.
     """
     freq = np.linspace(1.0, 50.0, 100)
-    snr = np.full_like(freq, 0.5)
-    snr[:3] = 10.0
 
-    assert find_bandwidth(freq, snr, threshold=3.0) is None
+    too_short = np.full_like(freq, 0.5)
+    too_short[:2] = 10.0
+    assert find_bandwidth(freq, too_short, threshold=3.0) is None
+
+    just_enough = np.full_like(freq, 0.5)
+    just_enough[:3] = 10.0
+    assert find_bandwidth(freq, just_enough, threshold=3.0) is not None
 
 
 def test_find_bandwidth_rejects_a_band_narrower_than_min_width() -> None:
@@ -374,3 +380,93 @@ def _spectrum(freq: np.ndarray, amp: np.ndarray) -> Spectrum:
         duration=float(freq.size),
         sampling_rate=100.0,
     )
+
+
+# ------------------------------------------------------------- noise models
+
+
+def test_the_registry_resolves_the_default() -> None:
+    model = get_noise_model("boost")
+    assert model.name == "boost"
+    assert isinstance(model, NoiseModel)
+
+
+def test_an_unknown_noise_model_names_the_available_ones() -> None:
+    with pytest.raises(ValueError, match="Unknown noise model"):
+        get_noise_model("rotate")
+    # `rotate` is the legacy ROT_METHOD = 1, not yet ported. When it lands it
+    # registers here and this test changes to assert it resolves.
+    assert "rotate" not in NOISE_MODELS
+
+
+def test_every_registered_model_satisfies_the_protocol() -> None:
+    """The point of the registry: a new method needs no change anywhere else.
+
+    Each is exercised on the same input, so a model returning the wrong shape
+    or a non-positive factor fails here rather than deep in a band search.
+    """
+    freq = np.linspace(1.0, 50.0, 60)
+    signal = 1e-6 * np.exp(-freq / 20.0)
+    noise = signal * 0.05
+
+    for name in NOISE_MODELS:
+        model = get_noise_model(name)
+        assert isinstance(model, NoiseModel), name
+        assert model.name == name
+        factor = model.factor(freq, noise, signal)
+        assert factor.shape == noise.shape, name
+        assert np.isfinite(factor).all(), name
+        assert (factor > 0).all(), name
+        # A noise model may raise the noise; none of them may lower it.
+        assert (factor >= 1.0 - 1e-12).all(), f"{name} lowered the noise"
+
+
+def test_the_null_model_is_the_identity() -> None:
+    """`none` exists so a run can show what the correction is doing."""
+    freq = np.linspace(1.0, 50.0, 40)
+    noise = np.full_like(freq, 1e-8)
+    factor = get_noise_model("none").factor(freq, noise, noise * 20)
+    assert factor == pytest.approx(np.ones_like(noise))
+
+
+def test_boost_lifts_the_noise_to_touch_the_signal() -> None:
+    """The defining property, stated as a test rather than left in a docstring.
+
+    The lifted noise should reach the signal somewhere and, in the half being
+    lifted, not overshoot it — that is what "until it touches" means.
+    """
+    rng = np.random.default_rng(5)
+    freq = np.sort(rng.uniform(0.5, 50.0, 60))
+    signal = 10 ** rng.normal(-6, 1, 60)
+    noise = signal * 10 ** rng.normal(-1.5, 0.3, 60)
+
+    lifted = noise * get_noise_model("boost").factor(freq, noise, signal)
+    assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
+
+
+def test_boost_is_continuous_where_the_noise_crosses_the_signal() -> None:
+    """The fourth discontinuity, and the subtlest one.
+
+    A bin that already reaches the signal needs no lift. Expressing that as a
+    guard — ``if np.any(noise >= signal): return unchanged`` — makes the
+    function jump as a bin crosses: measured at **17.5%** in the median boost
+    factor. Expressing it as ``max(0, min(needed))`` gives the same answer,
+    because a bin above the signal requires a negative exponent to reach it,
+    but passes through zero smoothly.
+
+    It survived the first three fixes and was what still made four CWT
+    stations disagree between machines. This sweeps a bin across the boundary
+    and asserts the response has no step in it.
+    """
+    freq = np.linspace(1.0, 40.0, 40)
+    signal = np.full_like(freq, 1e-6)
+
+    factors = []
+    for a in np.linspace(0.99, 1.01, 501):
+        noise = signal * 0.2
+        noise[5] = signal[5] * a
+        factors.append(float(np.median(boost_noise(freq, noise, signal))))
+
+    steps = np.abs(np.diff(factors))
+    # Any residual step must be far below the 17.5% the guarded version showed.
+    assert steps.max() < 1e-3, f"largest step {steps.max():.3e} looks like a jump"

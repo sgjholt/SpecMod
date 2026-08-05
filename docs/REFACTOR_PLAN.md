@@ -249,7 +249,7 @@ regenerated with the 1.0 code, or the discrepancy understood.
 ```
 src/specmod/
   __init__.py              # public API + __version__
-  config/                  # one module per semantic group (§4.4.4)
+  config/                  # one module per semantic group (§4.7)
     layers.py              # defaults -> specmod.toml -> *.local.toml -> env -> kwargs
     provenance.py          # resolved config + hash + version, stamped into outputs
   core/
@@ -490,6 +490,78 @@ plus the `ScalogramQC` record (a few dozen scalars); the full surface is written
 only on `save(..., include_scalogram=True)`, into HDF5 with chunking and
 compression. This is a large part of why §4.6 moves off pickle.
 
+#### 4.4.4 Evaluate PyWavelets against the hand-written transform
+
+**The one unexplained reproducibility residual is `cwt`, and `cwt` is the one
+estimator implemented from scratch here.** That coincidence is worth acting
+on, even though it is not yet evidence.
+
+The transform was written rather than delegated because the normalisation is
+the whole difficulty: CWT coefficients carry `[signal] * sqrt(time)` under L2
+and `[signal]` under L1, neither of which is the `[signal] * s` of a Fourier
+amplitude spectrum. Get it wrong and the corner frequency is right while
+`Omega` — and so `M0` — is wrong, with nothing to catch it. `pywt.cwt`'s
+conventions are not documented to that precision, so using it meant
+reverse-engineering them.
+
+That reasoning still holds for *trusting* pywt blindly. It does not hold
+against *comparing* to it, and it does not hold against reverse-engineering the
+convention either — we have five estimators held to a Parseval contract, so the
+constant is **measurable** rather than needing documentation.
+
+**Measured, so the next person does not have to.** Calibrating
+`pywt.cwt` with `cmor1.5-1.0` against known-energy records:
+
+| Signal | recovered / true energy |
+|---|---|
+| white noise (calibration set) | 1.0000 |
+| white noise (held out) | **0.9964** |
+| sinusoid, 8 Hz | 1.3732 |
+| sinusoid, 20 Hz | 1.2285 |
+| decaying burst | 1.3398 |
+| red noise | **0.0795** |
+
+Two conclusions, and the second is the load-bearing one.
+
+The convention *is* recoverable: the fitted reconstruction factor comes out at
+`C_delta = 0.170` against the 0.776 Torrence & Compo give for the Morlet, a
+factor of 4.6 — precisely the undocumented difference, now a number rather
+than an unknown. And with the correct functional form
+`E = (dj·dt/C_delta)·ΣΣ|W|²/s` — note the division by scale — it transfers
+across held-out white noise at 0.9964.
+
+But **a constant calibrated on one signal type does not transfer to another**:
+23-37% out on sinusoids and bursts, and a factor of 12 out on red noise. The
+first attempt here was worse still — calibrating a single scalar on a
+sinusoid's peak, omitting the `1/s` weighting, gave a perfect-looking fit on
+the sinusoid and was **50x** out on white noise. A wrong CWT normalisation
+looks entirely reasonable, which is the whole hazard.
+
+So the work is not "fit a constant". It is to derive the reconstruction factor
+against the actual scale grid, the way `CWTEstimator._c_delta` already does,
+and validate across signal character rather than on one record. That is what
+makes our own implementation robust to `dj`, and pywt would need the same
+treatment before it could be trusted with `Omega`.
+
+**Be careful about the expected outcome, though.** Two things argue against
+"switch to pywt and the residual goes away":
+
+1. `cwt`'s *signal* amplitudes and frequency axis are already exact on every
+   runner. Only the post-rotation *noise* moves. Whatever is happening is
+   downstream of the transform, or at least not visible in it.
+2. PyWavelets is numpy-based too, so it inherits the same floating-point
+   behaviour. There is no reason a different implementation of the same maths
+   would be immune.
+
+So the honest framing is: evaluate pywt because independent cross-validation of
+the CWT normalisation is valuable regardless, and *check whether* it also
+moves the residual — rather than adopting it expecting a fix.
+
+Note also that `wavelet = ["PyWavelets>=1.5"]` is already declared as an
+optional extra and **nothing imports it**. Either this work wires it up or the
+extra should be removed; a declared dependency that does nothing is a false
+signal about what the package needs.
+
 ### 4.5 SNR, bandwidth and noise rotation
 
 `find_optimal_signal_bandwidth` and `find_optimal_signal_bandwidth_2` become
@@ -531,50 +603,53 @@ like a measurement. `None` is the better contract, but adopting it changes
 what the legacy path returns for a failing station — a behaviour change that
 needs the golden reference regenerated deliberately rather than a quiet swap.
 
-#### 4.5.2 Three discontinuities make the noise and band machine-dependent
+#### 4.5.2 Three discontinuities made the noise and band machine-dependent — fixed
 
-Found by running the golden reference on CI. The signal spectra reproduce
-across builds; **the noise level, the signal-to-noise and the selected band do
-not**, and the cause is not floating-point drift but three places where the
-pipeline turns a continuous input into a discrete decision:
+Found by running the golden reference on CI, where identical code on a runner
+matching the reference machine exactly — same system, arch, Python, numpy
+2.4.6, scipy 1.17.1 — produced noise levels **41% and 82% apart**. Not
+floating-point sensitivity: perturbing the input by 1e-13 moved nothing at all.
+The pipeline was *piecewise constant*, and runners landed on different pieces.
 
-| Where | Mechanism | Size of the jump |
+| Where | Was | Now |
 |---|---|---|
-| `boost_noise` | Raises the exponent by `inc = 0.05` per iteration, stops when any point reaches the signal. A last-bit difference in that comparison lands one iteration either side. | `0.001 ** -0.05` = **1.41x** at the low-frequency end. Observed on CI: 41% and 82% — one and two steps. |
-| `log_bin` | Keeps a bin if any sample lies within its edges. A sample sitting on an edge falls either side depending on the last bit of `np.logspace`. | Surviving bin count changes by one, so `bsnr` changes length. |
-| `find_optimal_signal_bandwidth` | `sign(bsnr - tolerance)`, percentiles of the integral, and a retry loop when the edges cross — all discontinuous. | Low edge moved ~13 log bins on `LV.L001..HHN`. |
+| `boost_noise` | Stepped the exponent by `inc = 0.05` and stopped at the first step past the touching point. One iteration either side = **1.41x** on the noise. | Closed form: `n = min ln(signal/noise) / -ln(sample)`, used exactly. Continuous in its input. |
+| `log_bin` | Tested `f >= left and f <= right` per edge. Both ends closed, so a sample on an edge joined **two** bins, and which one depended on the last bit of `np.logspace`. | Index computed from position: one sample, one bin, no edge comparison. |
+| `find_optimal_signal_bandwidth` | `sign(bsnr - tol)`, integrate, read 1st/99th percentiles, retry when edges cross. Moved an edge **13 bins**. | Widest contiguous run above threshold, bridging single-bin dips. |
+| `boost_noise` again | `if np.any(noise >= signal): return unchanged` — a guard, and a guard is a step. Jumped the median boost factor by **17.5%** as a bin crossed. | `max(0, min(needed))`. A bin above the signal needs a negative exponent, so clamping gives the same answer continuously. |
 
-This is inherited behaviour, not something the refactor introduced. It is
-worth taking seriously because the band constrains `Omega`: **a last-bit
-difference can move the noise level by 41%**, and the same machinery decides
-which stations pass the signal-to-noise gate at all.
+The fourth was found only after the first three landed: CI went from five
+failing checks to one, and the survivor was `cwt` alone, disagreeing by 1-2%
+on four stations. Small enough to look like tolerance, but it was another
+branch — the "already touching" guard inside the lift.
 
-Checked, so it is not confused with ordinary floating-point sensitivity:
-perturbing the input by 1e-13 moves nothing at all. The pipeline is not
-chaotic — it is piecewise constant, and different machines land on different
-pieces.
+**Measured after the fix**, end to end over all 28 windows: perturbing the
+input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
+response is linear. The golden reference's exact noise comparison, which had
+to be made opt-in because it could not survive a change of machine, now runs
+unconditionally again.
 
-**It is not a library-version effect.** That was the first hypothesis, and
-gating the checks on the recorded numpy/scipy versions disproved it: a runner
-matching the reference exactly — same system, machine, Python, numpy 2.4.6,
-scipy 1.17.1 — still diverged by 41%. The divergence arises below the version
-level, in whichever CPU and BLAS kernel paths the arrays take, so no
-recordable property of the environment predicts it.
+Two of the three also removed a bias rather than merely a wobble:
 
-The practical consequence is sharper than it first appears: **the observed
-machine-to-machine variation in the noise median, 1.82x, is nearly as large as
-a factor-of-two mistake.** No committed reference can separate those, so the
-golden reference checks the noise structurally and leaves the exact comparison
-behind `SPECMOD_STRICT_GOLDEN=1` for same-machine use. The noise path is
-pinned instead by direct comparison against the legacy implementations, which
-does not require two machines to agree.
+- The rotation always rounded **up**, so it consistently overstated the lifted
+  noise — a median **1.18x** and up to **1.41x** across 39 lifts. That made
+  signal-to-noise pessimistic at exactly the band edges the ratio is read from.
+- The band search's low edge lagged the true onset by **4.4 Hz** on a clean
+  5-30 Hz test case, because the 1st percentile of a cumulative integral
+  arrives late. It now lands within one bin. The low edge is what constrains
+  `Omega`.
 
-Fixing it means making each decision continuous, or at least stable:
-interpolate the rotation exponent rather than stepping it, use half-open bin
-intervals so an edge sample belongs to exactly one bin, and replace the
-percentile-on-sign-integral band search with something that does not amplify.
-All three change results, so all three need the reference regenerated
-deliberately.
+**What moved on the real data.** No station lost its band under any estimator.
+Bands widened on 2 (fft), 1 (welch), 8 (multitaper), 8 (quadratic) and 14
+(cwt) of 28 windows; median edge movement was 0.000 Hz except the cwt high
+edge at +1.195 Hz. `bsnr` arrays shortened where the old binning had been
+double-counting — for CWT the old rule reported *more bins than there were
+samples*, which is only possible by counting a sample twice.
+
+Anyone reproducing a pre-refactor result needs the reference regenerated and
+should expect slightly wider bands and slightly lower noise. That is the
+correction, not a regression: the old numbers were biased in a known
+direction.
 
 Two things to fix in the same change, since they are both about that function:
 
