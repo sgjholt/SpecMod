@@ -505,10 +505,43 @@ conventions are not documented to that precision, so using it meant
 reverse-engineering them.
 
 That reasoning still holds for *trusting* pywt blindly. It does not hold
-against *comparing* to it, and the comparison is worth doing on its own merits:
-an independent implementation agreeing on a sinusoid of known amplitude and on
-record energy would be real cross-validation of a normalisation currently
-supported only by our own tests.
+against *comparing* to it, and it does not hold against reverse-engineering the
+convention either — we have five estimators held to a Parseval contract, so the
+constant is **measurable** rather than needing documentation.
+
+**Measured, so the next person does not have to.** Calibrating
+`pywt.cwt` with `cmor1.5-1.0` against known-energy records:
+
+| Signal | recovered / true energy |
+|---|---|
+| white noise (calibration set) | 1.0000 |
+| white noise (held out) | **0.9964** |
+| sinusoid, 8 Hz | 1.3732 |
+| sinusoid, 20 Hz | 1.2285 |
+| decaying burst | 1.3398 |
+| red noise | **0.0795** |
+
+Two conclusions, and the second is the load-bearing one.
+
+The convention *is* recoverable: the fitted reconstruction factor comes out at
+`C_delta = 0.170` against the 0.776 Torrence & Compo give for the Morlet, a
+factor of 4.6 — precisely the undocumented difference, now a number rather
+than an unknown. And with the correct functional form
+`E = (dj·dt/C_delta)·ΣΣ|W|²/s` — note the division by scale — it transfers
+across held-out white noise at 0.9964.
+
+But **a constant calibrated on one signal type does not transfer to another**:
+23-37% out on sinusoids and bursts, and a factor of 12 out on red noise. The
+first attempt here was worse still — calibrating a single scalar on a
+sinusoid's peak, omitting the `1/s` weighting, gave a perfect-looking fit on
+the sinusoid and was **50x** out on white noise. A wrong CWT normalisation
+looks entirely reasonable, which is the whole hazard.
+
+So the work is not "fit a constant". It is to derive the reconstruction factor
+against the actual scale grid, the way `CWTEstimator._c_delta` already does,
+and validate across signal character rather than on one record. That is what
+makes our own implementation robust to `dj`, and pywt would need the same
+treatment before it could be trusted with `Omega`.
 
 **Be careful about the expected outcome, though.** Two things argue against
 "switch to pywt and the residual goes away":
