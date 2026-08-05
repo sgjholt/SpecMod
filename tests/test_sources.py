@@ -9,10 +9,14 @@ and that the pieces compose without a global.
 
 from __future__ import annotations
 
+import contextlib
+import io
+
 import numpy as np
 import pytest
 
 import specmod.models as legacy
+from specmod.fitting import FitSpectrum
 from specmod.sources import (
     ATTENUATION_MODELS,
     SOURCE_MODELS,
@@ -24,6 +28,7 @@ from specmod.sources import (
     get_source_model,
     motion_scaling,
 )
+from specmod.spectral import Spectra
 
 FREQ = np.logspace(-1.0, 2.0, 60)
 OMEGA, FC, TSTAR = -7.0, 4.0, 0.02
@@ -227,3 +232,76 @@ def test_the_model_can_actually_be_fitted() -> None:
     assert result.params["llpsp"].value == pytest.approx(OMEGA, abs=0.05)
     assert result.params["fc"].value == pytest.approx(FC, rel=0.1)
     assert result.params["ts"].value == pytest.approx(TSTAR, abs=0.005)
+
+
+# ------------------------------------------------------------- the fitter
+
+
+@pytest.fixture(scope="module")
+def real_signal(pnr_windows):
+    """One passing station from the committed PNR waveforms."""
+    signal, noise = pnr_windows()
+    with contextlib.redirect_stdout(io.StringIO()):
+        spectra = Spectra.from_streams(signal, noise)
+    for snp in spectra.group.values():
+        if snp.signal.pass_snr:
+            return snp.signal
+    pytest.skip("no station passed the signal-to-noise gate")
+    return None
+
+
+def test_the_fitter_takes_its_model_from_configuration(real_signal) -> None:
+    """The end of the chain the `sources` package exists to complete.
+
+    ``FitSpectrum`` used to *require* the model function as an argument. Now
+    omitting it resolves through configuration, so `[model] source = ...` in a
+    study file decides what is fitted.
+    """
+    fit = FitSpectrum(real_signal, llpsp=-7.0, fc=4.0, ts=0.02)
+    assert fit.describe_model() == "brune+constant_q in velocity"
+    assert fit.mod.param_names == ["llpsp", "fc", "ts"]
+
+
+def test_the_fitter_reports_what_it_fitted(real_signal) -> None:
+    """Provenance the legacy could not carry: it only ever had a raw callable."""
+    boatwright = build_model(source="boatwright")
+    fit = FitSpectrum(real_signal, boatwright, llpsp=-7.0, fc=4.0, ts=0.02)
+    assert fit.spectral_model is boatwright
+    assert fit.describe_model() == "boatwright+constant_q in velocity"
+
+
+def test_a_bare_callable_still_works_but_carries_no_provenance(real_signal) -> None:
+    """Fitting an ad-hoc shape stays possible — it just cannot describe itself."""
+    fit = FitSpectrum(real_signal, legacy.simple_model, llpsp=-7.0, fc=4.0, ts=0.02)
+    assert fit.spectral_model is None
+    assert fit.describe_model() is None
+    assert fit.mod.param_names == ["llpsp", "fc", "ts"]
+
+
+def test_the_configured_model_fits_a_real_spectrum(real_signal) -> None:
+    """End to end on real data, with the band the pipeline selected."""
+    fit = FitSpectrum(real_signal, llpsp=-7.0, fc=4.0, ts=0.02)
+    fit.fit_mod(method="powell")
+
+    assert fit.result.success
+    # Omega and the corner should land somewhere physical rather than at a bound.
+    assert np.isfinite(fit.result.params["llpsp"].value)
+    assert 0.0 < fit.result.params["fc"].value < real_signal.freq.max()
+    assert fit.result.params["ts"].value > 0.0
+
+
+def test_changing_the_configured_source_changes_the_fit(real_signal) -> None:
+    """The join, demonstrated rather than asserted structurally.
+
+    Two models, same data, different results — which is only possible because
+    the choice is a value now instead of an import-time global.
+    """
+    results = {}
+    for name in ("brune", "boatwright"):
+        fit = FitSpectrum(
+            real_signal, build_model(source=name), llpsp=-7.0, fc=4.0, ts=0.02
+        )
+        fit.fit_mod(method="powell")
+        results[name] = fit.result.params["fc"].value
+
+    assert results["brune"] != results["boatwright"]
