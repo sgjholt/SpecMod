@@ -212,7 +212,9 @@ def test_selected_bandwidth_lies_inside_what_the_record_resolves(
 # ------------------------------------------------------- every estimator
 
 
-@pytest.mark.parametrize("estimator", ["fft", "welch", "multitaper", "quadratic"])
+@pytest.mark.parametrize(
+    "estimator", ["fft", "welch", "multitaper", "quadratic", "cwt"]
+)
 def test_the_whole_pipeline_runs_on_each_estimator(estimator: str) -> None:
     """The point of the rewiring, checked against real data rather than noise.
 
@@ -220,10 +222,15 @@ def test_the_whole_pipeline_runs_on_each_estimator(estimator: str) -> None:
     conversions, the noise rescale and the SNR search all live. A backend that
     returns a differently-shaped or differently-scaled spectrum breaks here.
 
-    ``cwt`` is excluded: its cone-of-influence masking drops the unresolvable
-    low frequencies, so its axis is shorter than the others' and ``SNP``'s
-    element-wise signal-to-noise needs pinned bin edges to compare them. That
-    is a real gap, not a flaw in this test.
+    ``cwt`` is included, having been excluded when this module was written on
+    the belief that ``SNP``'s element-wise signal-to-noise needed pinned bin
+    edges to compare a cone-of-influence-masked axis against a full one. It
+    does not, for two reasons that only became true together:
+    ``__interp_noise_to_signal`` re-bins the noise *after* moving it onto the
+    signal's axis, so the two ``bamp`` arrays align by construction whatever
+    the estimator; and the resolution floor now clamps the band, which is what
+    keeps the shortened axis from being compared against the flat edge value
+    ``np.interp`` leaves below the noise window's own minimum.
     """
     signal, noise = _cut_windows()
     with contextlib.redirect_stdout(io.StringIO()):
@@ -234,6 +241,13 @@ def test_the_whole_pipeline_runs_on_each_estimator(estimator: str) -> None:
         assert snp.signal.estimator == estimator, name
         assert np.isfinite(snp.signal.amp).all(), name
         assert (snp.signal.amp > 0).all(), name
+        # The alignment that made the exclusion unnecessary. It is an implicit
+        # consequence of re-binning after interpolation, so it is asserted
+        # rather than assumed: without it the division below is silently
+        # comparing different frequencies.
+        assert snp.signal.bamp.shape == snp.noise.bamp.shape, name
+        assert snp.signal.bfreq == pytest.approx(snp.noise.bfreq), name
+        assert np.isfinite(snp.bsnr).all(), name
 
 
 # ------------------------------------------------ the noise resolution floor

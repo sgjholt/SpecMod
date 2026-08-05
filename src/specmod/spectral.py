@@ -1,5 +1,4 @@
 import dataclasses
-import itertools
 import pickle
 
 import matplotlib.pyplot as plt
@@ -12,6 +11,8 @@ from . import config as cfg
 from . import utils as ut
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
+from .core.collection import log_bin
+from .core.rotation import boost_noise
 from .transforms import ESTIMATORS
 
 
@@ -287,29 +288,11 @@ class Spectrum:
         version of this and derives its edges the same way; this stays here
         because the legacy pipeline reads ``bamp``/``bfreq`` directly.
         """
-        smin = max(smin, float(self.freq.min()))
-        smax = min(smax, float(self.freq.max()))
-        # define the range of bins to use to average amplitudes and smooth spectrum
-        space = np.logspace(np.log10(smin), np.log10(smax), bins)
-        # initialise numpy arrays
-        bamps = np.zeros(int(len(space) - 1))
-        bfreqs = np.zeros(int(len(space) - 1))
-        # iterate through bins to find mean log-amplitude and bin center (log space)
-        for i, bbb in enumerate(itertools.pairwise(space)):
-            bb, bf = bbb
-            inside = self.amp[(self.freq >= bb) & (self.freq <= bf)]
-            # Log bins over a linear frequency grid are inevitably sparse at the
-            # low end, so empty bins are expected rather than exceptional. They
-            # are marked NaN and dropped below; taking the mean of an empty
-            # slice would reach the same answer via a RuntimeWarning per bin.
-            bamps[i] = 10 ** np.log10(inside).mean() if inside.size else np.nan
-            bfreqs[i] = 10 ** (np.mean([np.log10(bb), np.log10(bf)]))
-
-        # remove nan values
-        self.bfreq = bfreqs[np.logical_not(np.isnan(bamps))]
-        self.bamp = bamps[np.logical_not(np.isnan(bamps))]
-        self.BAMP = bamps
-        self.BFREQ = bfreqs
+        binned = log_bin(self.freq, self.amp, f_min=smin, f_max=smax, n_bins=bins)
+        # Copies, not the returned arrays: `SNP` mutates `bamp` in place during
+        # the noise rescale and rotation, and `BinnedSpectrum` is shared.
+        self.bfreq = np.array(binned.freq, dtype=float)
+        self.bamp = np.array(binned.amp, dtype=float)
 
 
 class Signal(Spectrum):
@@ -446,8 +429,12 @@ class SNP:
             )
 
         if ROT_METHOD == 2:
-            rot = ut.non_lin_boost_noise_func(
-                self.noise.bfreq, self.noise.bamp, self.signal.bamp, **ROT_PARS
+            rot = boost_noise(
+                self.noise.bfreq,
+                self.noise.bamp,
+                self.signal.bamp,
+                inc=ROT_PARS["inc"],
+                space=tuple(ROT_PARS["space"]),
             )
 
             self.noise.bamp *= rot

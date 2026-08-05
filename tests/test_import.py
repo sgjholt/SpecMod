@@ -21,7 +21,6 @@ MODULES = [
     "specmod.model_guess",
     "specmod.models",
     "specmod.preprocess",
-    "specmod.ratios",
     "specmod.spectral",
     "specmod.utils",
 ]

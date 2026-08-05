@@ -147,3 +147,27 @@ def test_cut_s_has_no_dead_parameter() -> None:
         if name == "st":
             continue
         assert name in src.split("\n", 1)[1], f"{name} is never used in cut_s"
+
+
+def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
+    """The shipped `.spec` cannot be loaded, and the tutorial reads it.
+
+    A pickle stores the import path of every class it holds. This file names
+    ``specmod.Spectral``, the pre-rename module, so ``pickle.load`` raises
+    before any of our code runs. ``Tutorial/SpecModTutorial.ipynb`` calls
+    ``read_spectra`` on it in two cells, so the notebook stops there.
+
+    Pinned rather than fixed. The plan (§4.6) converts these in the legacy
+    Docker image and explicitly rejects a ``find_class`` remapping shim, which
+    would bake the old class layout into the new package permanently. So this
+    asserts the breakage on purpose: when the migration lands, this test fails
+    and is the reminder to delete it and assert the load instead.
+    """
+    spec = Path(__file__).resolve().parent.parent / (
+        "Tutorial/Spectra/2019-08-26T07:30:47.0.spec"
+    )
+    if not spec.is_file():  # pragma: no cover - the file may be removed outright
+        pytest.skip("the legacy .spec artifact has been removed")
+
+    with pytest.raises(ModuleNotFoundError, match=r"specmod\.Spectral"):
+        sp.Spectra.read_spectra(str(spec), method="pickle", skip_warning=True)

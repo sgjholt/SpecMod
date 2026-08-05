@@ -275,7 +275,7 @@ src/specmod/
     bandwidth.py           # BandwidthSelector strategies (methods 1 and 2)
     rotation.py            # the two noise-rotation schemes, as pure functions
   models/
-    source.py              # BruneSource, BoatwrightSource as objects
+    source.py              # BruneSource, BoatwrightSource as objects (+ see below)
     attenuation.py         # ConstantQ / FrequencyDependentQ
     composite.py           # SourceModel composition + motion scaling
   fitting/
@@ -505,6 +505,92 @@ unchanged in behaviour but as pure functions with the iteration limits and
 present `find_rotation_angle_v2` prints `"Didn't ever meet."` and returns `0`,
 silently disabling the correction.
 
+#### 4.5.1 Status: stage 1 partially landed
+
+`core/collection.py` and `core/rotation.py` now exist and the legacy path uses
+them for binning and rotation. What is done, and what is deliberately not:
+
+| Piece | State |
+|---|---|
+| `log_bin` | Shared. `spectral.Spectrum.__bin_spectrum` calls it. |
+| `boost_noise` (`ROT_METHOD = 2`) | Shared. Verified bit-identical against `non_lin_boost_noise_func` over 200 randomised cases. |
+| `parseval_scale`, `interpolate_onto` | In `collection.py`; the legacy still has its own copies. |
+| `find_bandwidth` | **Not shared, on purpose** — see below. |
+| `rotate_noise_full` (`ROT_METHOD = 1`) | Not ported. Still in `utils.py`, still prints. |
+| `SpectrumPair` / `SpectrumSet` | Built and tested; `SNP` / `Spectra` not yet switched onto them. |
+
+The safety net for all of this is `tests/golden/pipeline_reference.json` —
+digests of amplitudes, noise, SNR and selected band over 28 real windows and
+5 estimators, regenerated with `tools/make_golden.py`. It was checked to
+actually bite: a 1-part-in-1e12 perturbation fails all 28.
+
+**Why `find_bandwidth` is not wired in.** It returns `None` when the search
+fails. The legacy returns a band anyway and sets `pass_snr` beside it, so a
+caller that reads the band without checking the flag gets numbers that look
+like a measurement. `None` is the better contract, but adopting it changes
+what the legacy path returns for a failing station — a behaviour change that
+needs the golden reference regenerated deliberately rather than a quiet swap.
+
+#### 4.5.2 Three discontinuities make the noise and band machine-dependent
+
+Found by running the golden reference on CI. The signal spectra reproduce
+across builds; **the noise level, the signal-to-noise and the selected band do
+not**, and the cause is not floating-point drift but three places where the
+pipeline turns a continuous input into a discrete decision:
+
+| Where | Mechanism | Size of the jump |
+|---|---|---|
+| `boost_noise` | Raises the exponent by `inc = 0.05` per iteration, stops when any point reaches the signal. A last-bit difference in that comparison lands one iteration either side. | `0.001 ** -0.05` = **1.41x** at the low-frequency end. Observed on CI: 41% and 82% — one and two steps. |
+| `log_bin` | Keeps a bin if any sample lies within its edges. A sample sitting on an edge falls either side depending on the last bit of `np.logspace`. | Surviving bin count changes by one, so `bsnr` changes length. |
+| `find_optimal_signal_bandwidth` | `sign(bsnr - tolerance)`, percentiles of the integral, and a retry loop when the edges cross — all discontinuous. | Low edge moved ~13 log bins on `LV.L001..HHN`. |
+
+This is inherited behaviour, not something the refactor introduced. It is
+worth taking seriously because the band constrains `Omega`: **a last-bit
+difference can move the noise level by 41%**, and the same machinery decides
+which stations pass the signal-to-noise gate at all.
+
+Checked, so it is not confused with ordinary floating-point sensitivity:
+perturbing the input by 1e-13 moves nothing at all. The pipeline is not
+chaotic — it is piecewise constant, and different machines land on different
+pieces.
+
+**It is not a library-version effect.** That was the first hypothesis, and
+gating the checks on the recorded numpy/scipy versions disproved it: a runner
+matching the reference exactly — same system, machine, Python, numpy 2.4.6,
+scipy 1.17.1 — still diverged by 41%. The divergence arises below the version
+level, in whichever CPU and BLAS kernel paths the arrays take, so no
+recordable property of the environment predicts it.
+
+The practical consequence is sharper than it first appears: **the observed
+machine-to-machine variation in the noise median, 1.82x, is nearly as large as
+a factor-of-two mistake.** No committed reference can separate those, so the
+golden reference checks the noise structurally and leaves the exact comparison
+behind `SPECMOD_STRICT_GOLDEN=1` for same-machine use. The noise path is
+pinned instead by direct comparison against the legacy implementations, which
+does not require two machines to agree.
+
+Fixing it means making each decision continuous, or at least stable:
+interpolate the rotation exponent rather than stepping it, use half-open bin
+intervals so an edge sample belongs to exactly one bin, and replace the
+percentile-on-sign-integral band search with something that does not amplify.
+All three change results, so all three need the reference regenerated
+deliberately.
+
+Two things to fix in the same change, since they are both about that function:
+
+1. **The low edge lags.** On a clean 5–30 Hz passing region the selected band
+   is 9.4–28.7 Hz. Reading percentiles off the integrated sign function costs
+   roughly 4 Hz at the low end, and the low edge is what constrains `Omega`.
+   `tests/test_collection.py` pins the current values so the improvement is
+   measurable against them.
+2. **The failure contract**, as above.
+
+**Also worth knowing.** The legacy applies rotation to `bamp` directly but to
+`amp` by interpolating the factor onto the finer axis. Those two are therefore
+*not* related by the binning operation — re-binning the rotated `amp` does not
+reproduce `bamp`, differing by about 6% on real data. Whichever becomes
+canonical, it should be one of them and not both.
+
 ### 4.6 I/O — replacing pickle
 
 Pickle is the only persistence format today, and `read_spectra` prompts on stdin
@@ -604,6 +690,24 @@ enough to break them; the dataclass conversion in §4.2 would finish the job. On
 such file is already committed at `Tutorial/Spectra/2019-08-26T07:30:47.0.spec`,
 and there are presumably more in your working directories.
 
+> **This has already happened — it is no longer a future consequence.** The
+> `Spectral.py` → `spectral.py` rename alone was enough. The committed
+> tutorial file is dead today:
+>
+> ```
+> >>> Spectra.read_spectra("Tutorial/Spectra/2019-08-26T07:30:47.0.spec",
+> ...                      method="pickle", skip_warning=True)
+> ModuleNotFoundError: No module named 'specmod.Spectral'
+> ```
+>
+> `Tutorial/SpecModTutorial.ipynb` calls exactly that in two cells, so the
+> notebook cannot be run past them. The recommendation below is unchanged and
+> still the right one; what has changed is that the conversion is now
+> repairing something broken rather than pre-empting a break. Anyone reaching
+> for the legacy Docker image for the §5.2.6 Magna comparison should convert
+> this file in the same session — both need the same environment, and it is
+> the only one still standing.
+
 Two ways out, and the first is much better:
 
 1. **Convert in the old environment.** Phase 0 is already building a Docker image
@@ -617,6 +721,45 @@ Two ways out, and the first is much better:
 
 Recommendation: option 1, and run it over any `.spec` files you care about
 *during* Phase 0, while the image is fresh.
+
+#### 4.6.5 Source models: widen the set when `models/` is built
+
+Two source models exist today, `BRUNE_MODEL = (1, 2)` and
+`BOATWRIGHT_MODEL = (2, 2)`, and neither is reachable from configuration —
+see the note in §4.2 on `config.model.source` being wired to nothing. When
+`models/source.py` is written, build it to hold more than the two, because at
+least one more is wanted:
+
+**Madariaga.** Requested explicitly. Madariaga (1976), *Dynamics of an
+expanding circular fault*, BSSA 66(3), with the later review at
+<https://www.geologie.ens.fr/~madariag/Papers/Madariaga_Ruiz2016.pdf>.
+
+There is a trap in adding it, and it is the reason this note exists rather
+than a one-line TODO. **Madariaga's difference from Brune is not primarily the
+spectral shape.** Both are omega-squared; in the generalised Boatwright form
+
+```
+A(f) = Omega / (1 + (f/fc)^(gamma*n))^(1/gamma)
+```
+
+Madariaga sits at the same `(gamma, n) = (1, 2)` as Brune. What differs is the
+constant relating corner frequency to source radius — Madariaga's dynamic
+circular-crack solution gives a substantially smaller `k` than Brune's
+kinematic one, and since stress drop goes as `r^-3`, choosing between them
+moves inferred stress drop by roughly an order of magnitude on identical data.
+
+So the design consequence is: `SourceModel` must carry the `fc`-to-radius
+scaling as a named property of the model, not as a constant buried in whatever
+computes stress drop. If it is only a spectral shape, adding Madariaga will
+appear to do nothing — the fit will be identical to Brune — and the actual
+difference will be silently lost. A model that changes no fitted parameter but
+changes every derived one is exactly the kind of thing this refactor is
+supposed to make impossible to get wrong by accident.
+
+Worth checking against the source paper when implementing rather than taking
+the above on trust: the `k` values differ between P and S and between authors,
+and the plan should not be the citation of record for a number that ends up in
+published stress drops.
 
 ### 4.7 Configuration: semantic groups, layered overrides, recorded provenance
 
@@ -750,7 +893,7 @@ file count rather than file size.** Measured:
 | `Tutorial/MetaData/pnr_inventory.xml` | 10.5 MB | Keep, but subset — see below |
 | `Tests/Tutorial/Meta/UUSSeq.catalog` | 9.9 MB | **Remove from the working tree** — unreferenced, and cannot support the Magna work |
 | `Tutorial/SpecModTutorial.ipynb` | 4.6 MB | Strip outputs — 4.4 MB of it is embedded PNGs |
-| `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable |
+| `Tutorial/Spectra/*.spec` | 333 KB | Convert (§4.6) or delete — it is regenerable, and **already unloadable** |
 
 Total pack size today is 14.7 MiB. That is a **small** repository, and the
 waveforms are not why. Three fixes, none of which needs external hosting:
