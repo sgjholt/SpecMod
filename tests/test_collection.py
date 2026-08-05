@@ -33,6 +33,12 @@ obspy = pytest.importorskip("obspy")
 
 import specmod.preprocess as pre  # noqa: E402
 from specmod.core import Spectrum  # noqa: E402
+from specmod.core.bandwidth import (  # noqa: E402
+    BANDWIDTH_SELECTORS,
+    BandwidthSelector,
+    WidestBandwidth,
+    get_bandwidth_selector,
+)
 from specmod.core.collection import (  # noqa: E402
     BinnedSpectrum,
     SpectrumPair,
@@ -125,7 +131,7 @@ def test_find_bandwidth_tracks_the_true_edges() -> None:
     snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
     spacing = float(np.diff(freq)[0])
 
-    band = find_bandwidth(freq, snr, threshold=3.0)
+    band = find_bandwidth(freq, snr, threshold=3.0, method="widest")
     assert band is not None
     low, high = band
     assert abs(low - 5.0) <= spacing, f"low edge {low} is more than a bin from 5.0"
@@ -145,7 +151,7 @@ def test_find_bandwidth_survives_a_single_noisy_bin() -> None:
     snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
     snr[40] = 0.1
 
-    band = find_bandwidth(freq, snr, threshold=3.0)
+    band = find_bandwidth(freq, snr, threshold=3.0, method="widest")
     assert band is not None
     assert band[1] > 25.0, band
 
@@ -303,20 +309,22 @@ def test_find_bandwidth_rejects_a_run_shorter_than_min_width() -> None:
     """
     freq = np.linspace(1.0, 50.0, 100)
 
+    widest = WidestBandwidth()
+
     too_short = np.full_like(freq, 0.5)
     too_short[:2] = 10.0
-    assert find_bandwidth(freq, too_short, threshold=3.0) is None
+    assert widest.select(freq, too_short, 3.0) is None
 
     just_enough = np.full_like(freq, 0.5)
     just_enough[:3] = 10.0
-    assert find_bandwidth(freq, just_enough, threshold=3.0) is not None
+    assert widest.select(freq, just_enough, 3.0) is not None
 
 
 def test_find_bandwidth_rejects_a_band_narrower_than_min_width() -> None:
     freq = np.linspace(1.0, 50.0, 100)
     snr = np.where((freq > 20.0) & (freq < 21.0), 10.0, 0.5)
 
-    assert find_bandwidth(freq, snr, threshold=3.0, min_width=20) is None
+    assert WidestBandwidth(min_width=20).select(freq, snr, 3.0) is None
 
 
 def test_boost_noise_rejects_mismatched_shapes() -> None:
@@ -470,3 +478,58 @@ def test_boost_is_continuous_where_the_noise_crosses_the_signal() -> None:
     steps = np.abs(np.diff(factors))
     # Any residual step must be far below the 17.5% the guarded version showed.
     assert steps.max() < 1e-3, f"largest step {steps.max():.3e} looks like a jump"
+
+
+# --------------------------------------------------------- bandwidth selectors
+
+
+def test_every_registered_selector_satisfies_the_protocol() -> None:
+    freq = np.linspace(1.0, 50.0, 100)
+    snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
+
+    for name in BANDWIDTH_SELECTORS:
+        selector = get_bandwidth_selector(name)
+        assert isinstance(selector, BandwidthSelector), name
+        assert selector.name == name
+        band = selector.select(freq, snr, 3.0)
+        assert band is not None, name
+        low, high = band
+        assert 5.0 < low < high < 30.0, f"{name} strayed outside the passing run"
+
+
+def test_an_unknown_selector_names_the_available_ones() -> None:
+    with pytest.raises(ValueError, match="Unknown bandwidth selector"):
+        get_bandwidth_selector("percentile")
+
+
+def test_every_selector_declines_rather_than_guessing() -> None:
+    freq = np.linspace(1.0, 50.0, 100)
+    nothing_passes = np.full_like(freq, 0.1)
+    for name in BANDWIDTH_SELECTORS:
+        assert get_bandwidth_selector(name).select(freq, nothing_passes, 3.0) is None, (
+            name
+        )
+
+
+def test_peak_does_not_run_past_a_failure_immediately_above_it() -> None:
+    """Regression for a wrap in the legacy ``BW_METHOD = 2``.
+
+    That version found the bin before the first failure above the peak with
+    ``np.where(...)[0] - 1``. When the failure is the bin *immediately* above
+    the peak that index is 0, so ``0 - 1`` wrapped to -1 and selected the
+    highest frequency in the record — claiming bandwidth all the way to
+    Nyquist when the ratio had in fact failed at once.
+
+    Demonstrated: on the input below the legacy returned a high edge of 50 Hz
+    against a true 21.6. It does not trigger on the 28 PNR windows, where the
+    ported selector agrees with the legacy on all 140 window-estimator pairs,
+    but it would badly inflate bandwidth on a spectrum with an isolated peak.
+    """
+    freq = np.linspace(1.0, 50.0, 20)
+    snr = np.full(20, 0.5)
+    snr[7], snr[8] = 5.0, 10.0
+
+    band = get_bandwidth_selector("peak").select(freq, snr, 3.0)
+    assert band is not None
+    assert band[1] < 25.0, f"high edge {band[1]} ran past the failure above the peak"
+    assert band[1] == pytest.approx(freq[8])
