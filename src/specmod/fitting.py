@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib.ticker import NullFormatter, StrMethodFormatter
 
 from . import config as cfg
+from . import sources
 from . import spectral as sp
 
 # global variables
@@ -29,8 +30,11 @@ class FitSpectrum:
     pass_fitting = True
     fit_bins = False
     meta = {}
+    #: The :class:`specmod.sources.SpectralModel` behind the fit, when there is
+    #: one. ``None`` if a bare callable was supplied.
+    spectral_model = None
 
-    def __init__(self, signal, model, fit_bins=False, **params):
+    def __init__(self, signal, model=None, fit_bins=False, **params):
         self.fit_bins = fit_bins
         self.set_signal(signal)
         self.set_model(model, **params)
@@ -47,10 +51,36 @@ class FitSpectrum:
         # if setting a new signal - assess and adjust the freq bounds
         self.__set_mod_amp_freq()
 
-    def set_model(self, model, **params):
+    def set_model(self, model=None, **params):
+        """Set the model to fit.
+
+        Accepts a :class:`specmod.sources.SpectralModel`, a bare callable, or
+        ``None`` — in which case the model is whatever ``[model]`` in the
+        configuration asks for. That default is the point: before it existed,
+        ``config.model.source`` was read by nothing and the caller had to pass
+        the right function by hand, so a study file saying
+        ``source = "boatwright"`` silently got Brune.
+
+        A bare callable still works, because fitting an ad-hoc shape is a
+        legitimate thing to want. It simply carries no provenance:
+        :attr:`spectral_model` is ``None`` and nothing can report what was fitted.
+        """
+        if model is None:
+            model = sources.from_config()
+
+        if isinstance(model, sources.SpectralModel):
+            self.spectral_model = model
+            model = model.as_callable()
+        else:
+            self.spectral_model = None
+
         self.mod = lm.Model(model)
         # whenever a model is set the inital params must be set also
         self.__init_params(**params)
+
+    def describe_model(self):
+        """What is being fitted, or ``None`` for a bare callable."""
+        return None if self.spectral_model is None else self.spectral_model.describe()
 
     def set_const(self, pname, value):
         self.params[pname].value = value
@@ -179,7 +209,7 @@ class FitSpectra:
     guess = {}
     table = pd.DataFrame([])
 
-    def __init__(self, spectra, model, guess=None, fit_bins=False):
+    def __init__(self, spectra, model=None, guess=None, fit_bins=False):
         self.set_spectra(spectra)
         if guess is not None:
             self.init_fitting(model, guess, fit_bins)
@@ -217,6 +247,12 @@ class FitSpectra:
         self.__generate_group_fit_table()
 
     def init_fitting(self, model, guess, fit_bins):
+        """Build a fit per passing station.
+
+        ``model=None`` resolves through the configuration once per station,
+        which is cheap and keeps every fit in a run agreeing on what it is
+        fitting.
+        """
         tmp = {}
         for id, spec in self.spectra.group.items():
             if spec.signal.pass_snr:

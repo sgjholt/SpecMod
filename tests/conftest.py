@@ -20,10 +20,14 @@ Anything genuinely optional should ``pytest.importorskip`` or carry a
 
 from __future__ import annotations
 
+import glob
 import importlib.abc
 import importlib.machinery
+import os
 import sys
+import warnings
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -84,3 +88,71 @@ def pytest_configure(config: pytest.Config) -> None:
     for name in list(sys.modules):
         if name.split(".")[0] in OPTIONAL_DISTRIBUTIONS:
             del sys.modules[name]
+
+
+# --------------------------------------------------------- real waveforms
+
+#: The Preston New Road event the tutorial is built around.
+_ROOT = Path(__file__).resolve().parent.parent
+_DATA = _ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
+_INVENTORY = _ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml"
+_ORIGIN = "2019-08-26T07:49:24.2"
+_LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
+
+
+@pytest.fixture(scope="session")
+def pnr_windows():
+    """Signal and noise streams cut with the published Magna workflow.
+
+    Session-scoped and copied on handout: response removal and window
+    refinement are the slow part of the suite, every module that wants real
+    data wants the same 28 windows, and ``Spectra.from_streams`` mutates what
+    it is given.
+
+    Lives here rather than in a test module because a fixture imported *across*
+    test modules depends on pytest's path insertion having already happened,
+    which is not guaranteed and fails quietly into a skip.
+    """
+    obspy = pytest.importorskip("obspy")
+    if not _DATA.is_dir() or not _INVENTORY.is_file():
+        pytest.skip("tutorial waveforms not present")
+
+    # Deferred: this module must import without specmod present, so the
+    # optional-extras blocker above can be installed before anything loads.
+    import specmod.preprocess as pre  # noqa: PLC0415
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        inventory = obspy.read_inventory(str(_INVENTORY))
+        stream = obspy.read(os.path.join(str(_DATA), "*HH[EN]*"))
+        pre.set_stream_distance(
+            stream,
+            _LATITUDE,
+            _LONGITUDE,
+            _DEPTH_KM,
+            obspy.UTCDateTime(_ORIGIN),
+            inventory=inventory,
+            dtype="mseed",
+        )
+        pre.set_picks_from_pyrocko(
+            stream, glob.glob(os.path.join(str(_DATA), "*.picks"))[0]
+        )
+        stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
+        stream.detrend("linear")
+        stream.detrend("demean")
+        stream.taper(0.05)
+        stream.remove_response(inventory, output="VEL")
+        signal = pre.get_signal(
+            stream,
+            pre.cut_s,
+            rafp=0.8,
+            tafs=20,
+            time_after="absolute_time",
+            refine_window=True,
+        )
+        noise = pre.get_noise_p(stream, signal)
+
+    def cut():
+        return signal.copy(), noise.copy()
+
+    return cut
