@@ -505,6 +505,47 @@ unchanged in behaviour but as pure functions with the iteration limits and
 present `find_rotation_angle_v2` prints `"Didn't ever meet."` and returns `0`,
 silently disabling the correction.
 
+#### 4.5.1 Status: stage 1 partially landed
+
+`core/collection.py` and `core/rotation.py` now exist and the legacy path uses
+them for binning and rotation. What is done, and what is deliberately not:
+
+| Piece | State |
+|---|---|
+| `log_bin` | Shared. `spectral.Spectrum.__bin_spectrum` calls it. |
+| `boost_noise` (`ROT_METHOD = 2`) | Shared. Verified bit-identical against `non_lin_boost_noise_func` over 200 randomised cases. |
+| `parseval_scale`, `interpolate_onto` | In `collection.py`; the legacy still has its own copies. |
+| `find_bandwidth` | **Not shared, on purpose** — see below. |
+| `rotate_noise_full` (`ROT_METHOD = 1`) | Not ported. Still in `utils.py`, still prints. |
+| `SpectrumPair` / `SpectrumSet` | Built and tested; `SNP` / `Spectra` not yet switched onto them. |
+
+The safety net for all of this is `tests/golden/pipeline_reference.json` —
+digests of amplitudes, noise, SNR and selected band over 28 real windows and
+5 estimators, regenerated with `tools/make_golden.py`. It was checked to
+actually bite: a 1-part-in-1e12 perturbation fails all 28.
+
+**Why `find_bandwidth` is not wired in.** It returns `None` when the search
+fails. The legacy returns a band anyway and sets `pass_snr` beside it, so a
+caller that reads the band without checking the flag gets numbers that look
+like a measurement. `None` is the better contract, but adopting it changes
+what the legacy path returns for a failing station — a behaviour change that
+needs the golden reference regenerated deliberately rather than a quiet swap.
+
+Two things to fix in the same change, since they are both about that function:
+
+1. **The low edge lags.** On a clean 5–30 Hz passing region the selected band
+   is 9.4–28.7 Hz. Reading percentiles off the integrated sign function costs
+   roughly 4 Hz at the low end, and the low edge is what constrains `Omega`.
+   `tests/test_collection.py` pins the current values so the improvement is
+   measurable against them.
+2. **The failure contract**, as above.
+
+**Also worth knowing.** The legacy applies rotation to `bamp` directly but to
+`amp` by interpolating the factor onto the finer axis. Those two are therefore
+*not* related by the binning operation — re-binning the rotated `amp` does not
+reproduce `bamp`, differing by about 6% on real data. Whichever becomes
+canonical, it should be one of them and not both.
+
 ### 4.6 I/O — replacing pickle
 
 Pickle is the only persistence format today, and `read_spectra` prompts on stdin

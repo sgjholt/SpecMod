@@ -17,6 +17,7 @@ observed through 28 stations' worth of end-to-end run.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import glob
 import io
@@ -36,10 +37,12 @@ from specmod.core.collection import (  # noqa: E402
     BinnedSpectrum,
     SpectrumPair,
     SpectrumSet,
+    _clamp_to_floor,
     find_bandwidth,
     log_bin,
     parseval_scale,
 )
+from specmod.core.rotation import boost_noise  # noqa: E402
 from specmod.spectral import (  # noqa: E402
     BINNING_PARAMS,
     ROTATE_NOISE,
@@ -282,4 +285,92 @@ def _as_core(legacy: Any) -> Any:
         kind="magnitude",
         duration=legacy.meta["npts"] * legacy.meta["delta"],
         sampling_rate=float(legacy.meta["sampling_rate"]),
+    )
+
+
+# ------------------------------------------------------------ failure paths
+
+
+def test_find_bandwidth_gives_up_when_the_low_edge_cannot_be_moved() -> None:
+    """The retry loop is bounded, and exhausting it is a failure, not a band.
+
+    Signal-to-noise that only passes at the very start pins the low edge at
+    index 0, which the loop tries three times to move before conceding. The
+    legacy returned a band here anyway; returning None is the point of the
+    new contract.
+    """
+    freq = np.linspace(1.0, 50.0, 100)
+    snr = np.full_like(freq, 0.5)
+    snr[:3] = 10.0
+
+    assert find_bandwidth(freq, snr, threshold=3.0) is None
+
+
+def test_find_bandwidth_rejects_a_band_narrower_than_min_width() -> None:
+    freq = np.linspace(1.0, 50.0, 100)
+    snr = np.where((freq > 20.0) & (freq < 21.0), 10.0, 0.5)
+
+    assert find_bandwidth(freq, snr, threshold=3.0, min_width=20) is None
+
+
+def test_boost_noise_rejects_mismatched_shapes() -> None:
+    """Three arrays have to agree, and a silent broadcast would be worse."""
+    with pytest.raises(ValueError, match="must all match"):
+        boost_noise(np.arange(5.0), np.arange(5.0), np.arange(4.0))
+
+
+def test_a_pair_without_a_band_does_not_pass() -> None:
+    """Pure noise resolves no band, so the pair reports failure rather than
+    a band that happens to be the whole axis."""
+    rng = np.random.default_rng(0)
+    freq = np.linspace(1.0, 50.0, 400)
+    flat = np.abs(rng.normal(1e-6, 1e-7, freq.size))
+
+    pair = SpectrumPair.compare(
+        _spectrum(freq, flat),
+        _spectrum(freq, flat),
+        threshold=3.0,
+        rotate_noise=False,
+    )
+    assert pair.band is None
+    assert not pair.passes
+
+
+def test_the_floor_can_reject_a_band_entirely() -> None:
+    """A floor above the band's high edge leaves nothing measurable.
+
+    Narrowing to ``(floor, high)`` would be wrong when ``floor >= high`` —
+    there is no interval left, and returning one would be inventing a result.
+    """
+    assert _clamp_to_floor((1.0, 5.0), floor=0.5) == (1.0, 5.0)
+    assert _clamp_to_floor((1.0, 5.0), floor=2.0) == (2.0, 5.0)
+    assert _clamp_to_floor((1.0, 5.0), floor=9.0) is None
+
+
+def test_passing_filters_out_the_failures() -> None:
+    good = SpectrumPair(
+        signal=_spectrum(np.array([1.0, 2.0]), np.array([1.0, 1.0])),
+        noise=_spectrum(np.array([1.0, 2.0]), np.array([1.0, 1.0])),
+        binned_signal=BinnedSpectrum(np.array([1.5]), np.array([1.0])),
+        binned_noise=BinnedSpectrum(np.array([1.5]), np.array([1.0])),
+        snr=np.array([1.0]),
+        resolution_floor=1.0,
+        band=(1.0, 2.0),
+    )
+    bad = dataclasses.replace(good, band=None)
+
+    every = SpectrumSet(pairs={"good": good, "bad": bad}, event="e")
+    assert len(every) == 2
+    assert every.passing().ids() == ["good"]
+    assert every.passing().event == "e"
+
+
+def _spectrum(freq: np.ndarray, amp: np.ndarray) -> Spectrum:
+    return Spectrum(
+        freq=freq,
+        amp=amp,
+        motion="velocity",
+        kind="magnitude",
+        duration=float(freq.size),
+        sampling_rate=100.0,
     )
