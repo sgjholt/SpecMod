@@ -34,6 +34,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.integrate import cumulative_trapezoid
 
+from .rotation import boost_noise
 from .spectrum import Spectrum
 
 __all__ = [
@@ -158,6 +159,21 @@ def find_bandwidth(
     noisy bin without that ending the usable band.
 
     Returns ``None`` when no band of at least ``min_width`` bins survives.
+
+    .. note::
+
+       **This differs from the legacy ``find_optimal_signal_bandwidth``, and
+       deliberately.** That one returns a band even when the search fails,
+       setting a ``pass_snr`` flag alongside it — so a caller that reads the
+       band without checking the flag gets numbers that look like a
+       measurement and are not. Returning ``None`` makes the failure
+       unignorable.
+
+       It is why ``spectral.SNP`` still calls its own copy rather than this:
+       swapping it would change what the legacy path returns for a failing
+       station, which is a behaviour change and belongs in its own commit with
+       the golden reference regenerated deliberately. The rest of the chain —
+       binning, rotation — is now shared.
     """
     integral = cumulative_trapezoid(np.sign(snr - threshold))
     if integral.size == 0 or integral.max() <= 0:
@@ -215,6 +231,9 @@ class SpectrumPair:
         n_bins: int = 101,
         scale_parseval: bool = True,
         resolution_floor: bool = True,
+        rotate_noise: bool = True,
+        rotation_inc: float = 0.05,
+        rotation_space: tuple[float, float] = (0.001, 1.001),
         meta: Mapping[str, Any] | None = None,
     ) -> SpectrumPair:
         """Pair the two and select the band.
@@ -249,6 +268,25 @@ class SpectrumPair:
         binned_noise = log_bin(
             signal.freq, noise_amp, f_min=f_min, f_max=f_max, n_bins=n_bins
         )
+
+        if rotate_noise:
+            # Derived on the binned axis and applied to both, rather than
+            # computed twice: the unbinned factor is the binned one
+            # interpolated up, which is what the legacy code does and what
+            # keeps the two representations of "the noise" consistent.
+            factor = boost_noise(
+                binned_noise.freq,
+                binned_noise.amp,
+                binned_signal.amp,
+                inc=rotation_inc,
+                space=rotation_space,
+            )
+            binned_noise = BinnedSpectrum(
+                freq=binned_noise.freq, amp=binned_noise.amp * factor
+            )
+            noise_amp = noise_amp * interpolate_onto(
+                signal.freq, binned_noise.freq, factor
+            )
 
         snr = binned_signal.amp / binned_noise.amp
         band = find_bandwidth(binned_signal.freq, snr, threshold)

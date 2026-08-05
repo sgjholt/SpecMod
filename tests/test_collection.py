@@ -44,6 +44,8 @@ from specmod.spectral import (  # noqa: E402
     BINNING_PARAMS,
     ROTATE_NOISE,
     SNR_TOLERENCE,
+    Noise,
+    Signal,
     Spectra,
 )
 
@@ -230,30 +232,44 @@ def test_the_binning_reproduces_the_legacy_bins_on_real_data() -> None:
 def test_the_pair_reproduces_the_legacy_snr_and_band() -> None:
     """The whole comparison, end to end, against ``SNP`` on real windows.
 
-    Noise rotation is off for this check. It is the one step that is not yet
-    ported — it mutates the noise in place and has two schemes — so comparing
-    with it enabled would be comparing against something this does not claim
-    to do yet.
+    This is the test stage 1 exists to pass. It runs the rescale, the
+    rotation, the interpolation, the binning and the band search through the
+    new path and holds the result against what ``SNP`` produced on the same 28
+    windows.
+
+    The legacy pair has already been rescaled and rotated by the time it is
+    readable, so those steps are disabled here to avoid applying them twice —
+    what is compared is the binning, the ratio and the floor, which is
+    everything downstream of the point the two paths can be aligned at.
     """
-    if ROTATE_NOISE:
-        pytest.skip("noise rotation is not ported yet; see stage 1 follow-up")
+    assert ROTATE_NOISE, (
+        "the legacy default changed; this comparison assumes rotation is on"
+    )
+
+    signal_stream, noise_stream = _windows()
+    legacy = _legacy().group
 
     checked = 0
-    for name, snp in _legacy().group.items():
-        pair = SpectrumPair.compare(
-            _as_core(snp.signal),
-            _as_core(snp.noise),
-            threshold=SNR_TOLERENCE,
-            f_min=BINNING_PARAMS["smin"],
-            f_max=BINNING_PARAMS["smax"],
-            n_bins=BINNING_PARAMS["bins"],
-            # The legacy pair has already been rescaled and interpolated by the
-            # time it is readable, so doing it again would double-apply.
-            scale_parseval=False,
-        )
-        assert pair.snr == pytest.approx(snp.bsnr, rel=1e-12), name
-        assert pair.resolution_floor == pytest.approx(snp.resolution_floor), name
-        checked += 1
+    with contextlib.redirect_stdout(io.StringIO()):
+        for s_tr, n_tr in zip(signal_stream, noise_stream, strict=True):
+            # Fresh, unmutated spectra from the same traces. Reading them off
+            # the finished SNP will not do: by then the noise has been
+            # rescaled, rotated and interpolated in place, and re-binning that
+            # is not the same as the legacy's own `bamp` — it rotates the
+            # binned array directly but the unbinned one by interpolation, so
+            # the two are not related by the binning operation.
+            pair = SpectrumPair.compare(
+                _as_core(Signal(s_tr.copy())),
+                _as_core(Noise(n_tr.copy())),
+                threshold=SNR_TOLERENCE,
+                f_min=BINNING_PARAMS["smin"],
+                f_max=BINNING_PARAMS["smax"],
+                n_bins=BINNING_PARAMS["bins"],
+            )
+            snp = legacy[s_tr.id]
+            assert pair.snr == pytest.approx(snp.bsnr, rel=1e-9), s_tr.id
+            assert pair.resolution_floor == pytest.approx(snp.resolution_floor), s_tr.id
+            checked += 1
     assert checked == 28
 
 
