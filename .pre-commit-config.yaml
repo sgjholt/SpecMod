@@ -1,9 +1,10 @@
 repos:
-  # Keep this rev in step with the version CI pins in .github/workflows/test.yml.
-  # They drifted once — the hook sat on 0.9.6 while CI ran latest — so a rule
-  # added in between failed CI while passing locally.
+  # CI runs `uvx ruff` unpinned, so it always gets the newest release. Keep
+  # this rev at that newest release or CI will fail on rules this does not have.
+  # It has bitten twice: 0.9.6 against latest, then 0.15.8 against 0.16.1, where
+  # PLR0917 graduated out of preview and started firing only in CI.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.16.1
     hooks:
       - id: ruff-check
         args: [--fix]

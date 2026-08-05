@@ -70,8 +70,10 @@ def boost_noise(
 
     sample = np.interp(freq, [freq.min(), freq.max()], space)
 
-    lifted_low = _lift(noise_amp, signal_amp, sample, low, inc, max_iter)
-    lifted_high = _lift(noise_amp, signal_amp, sample[::-1], high, inc, max_iter)
+    lifted_low = _lift(noise_amp, signal_amp, sample, low, inc=inc, max_iter=max_iter)
+    lifted_high = _lift(
+        noise_amp, signal_amp, sample[::-1], high, inc=inc, max_iter=max_iter
+    )
 
     return np.asarray(np.maximum(lifted_low, lifted_high) / noise_amp)
 
@@ -81,6 +83,7 @@ def _lift(
     signal_amp: NDArray[np.float64],
     sample: NDArray[np.float64],
     where: NDArray[np.bool_],
+    *,
     inc: float,
     max_iter: int,
 ) -> NDArray[np.float64]:

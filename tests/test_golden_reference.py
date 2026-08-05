@@ -16,8 +16,29 @@ mean to change this". If the change is intended, regenerate with
 message. Regenerating without that explanation destroys the only check
 standing between the rewrite and a silently different Omega.
 
-Digests are over the raw float64 bytes, so a one-ULP drift still trips them.
-The readable anchors alongside are what makes a failure interpretable.
+Why tolerances rather than exact digests
+----------------------------------------
+The first version hashed raw float64 bytes and was verified to catch a
+1-part-in-1e12 perturbation. It also failed on every CI runner: a different
+numpy/scipy build returns last-bit differences on identical input, and those
+propagate. A reference that only holds on the machine that wrote it is not a
+reference, so the comparison is now a relative tolerance over a distributional
+summary — still far tighter than any real change in level or shape.
+
+The band is the exception, and for a reason worth knowing
+---------------------------------------------------------
+``find_optimal_signal_bandwidth`` thresholds with ``sign(bsnr - tolerance)``
+and reads the band off percentiles of the integral, with a retry loop when the
+edges cross. All three steps are discontinuous, so an input difference far
+below anything visible can move an edge by *many* bins — on ``LV.L001..HHN``
+the low edge moved by about 13 bins between two library versions, and the
+narrower band sat entirely inside the wider one.
+
+**The selected band is therefore not reproducible across platforms**, and the
+band is what constrains ``Omega``. That is a property of the search, not of
+this test and not of the refactor. It is checked here by containment rather
+than equality, and it is the strongest argument for the band-search rework
+tracked in ``docs/REFACTOR_PLAN.md`` §4.5.1.
 """
 
 from __future__ import annotations
@@ -25,7 +46,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import glob
-import hashlib
 import io
 import json
 import os
@@ -55,10 +75,52 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _digest(a: np.ndarray) -> str:
-    return hashlib.sha256(
-        np.ascontiguousarray(a, dtype=np.float64).tobytes()
-    ).hexdigest()[:16]
+#: Loose enough to survive a different numpy/scipy build, tight enough that no
+#: change to what the code computes can hide under it.
+#:
+#: Calibrated rather than guessed: scaling the FFT amplitudes by ``1 + 1e-5``
+#: fails, ``1 + 1e-7`` passes. Every change this suite exists to catch — a
+#: factor of two from a fold, a normalisation keyed off the wrong length, a
+#: different taper — is orders of magnitude larger than that.
+#:
+#: On the cross-platform side the evidence is weaker and worth stating as
+#: such: in the CI run that failed the byte-exact version, the reported median
+#: and max agreed with the reference to all 7 printed significant figures, so
+#: the true spread is somewhere below 5e-7 and most likely at the last bit.
+#: If a runner ever fails on tolerance alone, that bound is what to revisit.
+RTOL = 1e-6
+
+QUANTILES = np.linspace(0.0, 1.0, 33)
+
+
+def _summary(a: np.ndarray) -> dict[str, Any]:
+    a = np.asarray(a, dtype=np.float64)
+    return {
+        "n": int(a.size),
+        "median": float(np.median(a)),
+        "max": float(a.max()),
+        "sum": float(a.sum()),
+        "quantiles": [float(q) for q in np.quantile(a, QUANTILES)],
+    }
+
+
+def _compare(got: dict[str, Any], want: dict[str, Any], where: str) -> list[str]:
+    """Every way two summaries can disagree, reported with the size of it."""
+    problems = []
+    if got["n"] != want["n"]:
+        problems.append(f"{where}: length {want['n']} -> {got['n']}")
+        return problems
+    for key in ("median", "max", "sum"):
+        if got[key] != pytest.approx(want[key], rel=RTOL):
+            rel = abs(got[key] - want[key]) / max(abs(want[key]), 1e-300)
+            problems.append(
+                f"{where}: {key} {want[key]:.6e} -> {got[key]:.6e} (rel {rel:.2e})"
+            )
+    a, b = np.array(got["quantiles"]), np.array(want["quantiles"])
+    if a != pytest.approx(b, rel=RTOL):
+        rel = float(np.max(np.abs(a - b) / np.maximum(np.abs(b), 1e-300)))
+        problems.append(f"{where}: quantile profile moved (max rel {rel:.2e})")
+    return problems
 
 
 @functools.cache
@@ -116,67 +178,77 @@ def test_the_same_windows_are_still_produced(estimator: str) -> None:
 
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_amplitudes_are_bit_for_bit_unchanged(estimator: str) -> None:
-    """The strict check. A refactor that preserves behaviour passes this.
-
-    Reported with the readable anchors rather than the digest alone, because
-    "a hash changed" is not a diagnosis — the median and max say whether
-    something shifted by a factor of two or by a rounding error.
-    """
+def test_amplitudes_are_unchanged(estimator: str) -> None:
+    """The strict check. A behaviour-preserving refactor passes untouched."""
     expected = _reference()[estimator]
-    moved = []
+    problems: list[str] = []
     for name, snp in sorted(_run(estimator).group.items()):
         want = expected[name]
-        got_amp = _digest(snp.signal.amp)
-        if got_amp != want["amp_digest"]:
-            moved.append(
-                f"{name}: amp median {np.median(snp.signal.amp):.6e} vs "
-                f"{want['amp_median']:.6e}, max {snp.signal.amp.max():.6e} vs "
-                f"{want['amp_max']:.6e}"
-            )
-        elif _digest(snp.signal.freq) != want["freq_digest"]:
-            moved.append(f"{name}: frequency axis changed, amplitudes did not")
-    assert not moved, "\n".join(
-        [f"{len(moved)} window(s) moved under {estimator!r}:", *moved]
+        problems += _compare(_summary(snp.signal.amp), want["amp"], f"{name} amp")
+        problems += _compare(_summary(snp.signal.freq), want["freq"], f"{name} freq")
+    assert not problems, "\n".join(
+        [f"{len(problems)} difference(s) under {estimator!r}:", *problems]
     )
 
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
 def test_the_noise_and_snr_are_unchanged(estimator: str) -> None:
-    """Separate from the amplitude check because they fail for different reasons.
+    """Separate from the amplitudes because it fails for different reasons.
 
-    The noise passes through the Parseval rescale, the rotation and the
-    interpolation onto the signal's axis — three in-place steps the legacy
-    classes own. A rewrite of those can move ``bsnr`` while leaving the signal
-    amplitudes untouched, and that is worth seeing as its own failure.
+    The noise passes through the Parseval rescale, the boost rotation and the
+    interpolation onto the signal's axis. A rewrite of any of those can move
+    ``bsnr`` while leaving the signal amplitudes untouched.
     """
     expected = _reference()[estimator]
-    moved = []
+    problems: list[str] = []
     for name, snp in sorted(_run(estimator).group.items()):
         want = expected[name]
-        if _digest(snp.noise.amp) != want["noise_amp_digest"]:
-            moved.append(f"{name}: noise amplitude")
-        if _digest(snp.bsnr) != want["bsnr_digest"]:
-            moved.append(f"{name}: binned signal-to-noise")
-    assert not moved, f"under {estimator!r}: " + ", ".join(moved)
+        problems += _compare(
+            _summary(snp.noise.amp), want["noise_amp"], f"{name} noise"
+        )
+        problems += _compare(_summary(snp.bsnr), want["bsnr"], f"{name} bsnr")
+    assert not problems, "\n".join(
+        [f"{len(problems)} difference(s) under {estimator!r}:", *problems]
+    )
 
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_the_selected_bandwidth_is_unchanged(estimator: str) -> None:
-    """The band is what constrains Omega, so it is the number that reaches Mw."""
+def test_the_selected_bandwidth_still_covers_the_same_measurement(
+    estimator: str,
+) -> None:
+    """Containment, not equality — see the module docstring for why.
+
+    The band search is discontinuous in three places, so an edge can jump many
+    bins on a difference far too small to see in the spectrum. What must hold
+    is that the band still describes the same measurement: the narrower of the
+    two lies inside the wider, rather than the search having wandered somewhere
+    else entirely.
+
+    A band appearing or disappearing outright is always a failure — that is a
+    station changing from measurable to not, which no tolerance should absorb.
+    """
     expected = _reference()[estimator]
-    moved = []
+    problems = []
     for name, snp in sorted(_run(estimator).group.items()):
         want, band = expected[name], getattr(snp, "ubfreqs", None)
         has_band = band is not None and len(band) == 2
         got = [float(band[0]), float(band[1])] if has_band else None
-        if got is None or want["band"] is None:
-            if got is not want["band"]:
-                moved.append(f"{name}: {want['band']} -> {got}")
-        elif got != pytest.approx(want["band"], rel=1e-12):
-            moved.append(f"{name}: {want['band']} -> {got}")
+
+        if (got is None) != (want["band"] is None):
+            problems.append(f"{name}: {want['band']} -> {got}")
+            continue
+        if got is None:
+            continue
+
+        lo, hi = max(got[0], want["band"][0]), min(got[1], want["band"][1])
+        narrower = min(got[1] - got[0], want["band"][1] - want["band"][0])
+        if hi <= lo or (hi - lo) < 0.98 * narrower:
+            problems.append(
+                f"{name}: {want['band']} -> {got} — the narrower band is not "
+                f"contained in the wider one"
+            )
         if float(snp.resolution_floor) != pytest.approx(
-            want["resolution_floor"], rel=1e-12
+            want["resolution_floor"], rel=RTOL
         ):
-            moved.append(f"{name}: resolution floor moved")
-    assert not moved, f"under {estimator!r}: " + "; ".join(moved)
+            problems.append(f"{name}: resolution floor moved")
+    assert not problems, f"under {estimator!r}: " + "; ".join(problems)
