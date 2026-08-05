@@ -551,12 +551,23 @@ which stations pass the signal-to-noise gate at all.
 
 Checked, so it is not confused with ordinary floating-point sensitivity:
 perturbing the input by 1e-13 moves nothing at all. The pipeline is not
-chaotic — it is piecewise constant, and CI runners land on different pieces.
+chaotic — it is piecewise constant, and different machines land on different
+pieces.
 
-Until this is fixed the golden reference runs its strict noise and SNR checks
-only where the recorded environment matches, and compares bands by containment
-rather than equality. The signal amplitudes carry no such discontinuity and
-are checked everywhere.
+**It is not a library-version effect.** That was the first hypothesis, and
+gating the checks on the recorded numpy/scipy versions disproved it: a runner
+matching the reference exactly — same system, machine, Python, numpy 2.4.6,
+scipy 1.17.1 — still diverged by 41%. The divergence arises below the version
+level, in whichever CPU and BLAS kernel paths the arrays take, so no
+recordable property of the environment predicts it.
+
+The practical consequence is sharper than it first appears: **the observed
+machine-to-machine variation in the noise median, 1.82x, is nearly as large as
+a factor-of-two mistake.** No committed reference can separate those, so the
+golden reference checks the noise structurally and leaves the exact comparison
+behind `SPECMOD_STRICT_GOLDEN=1` for same-machine use. The noise path is
+pinned instead by direct comparison against the legacy implementations, which
+does not require two machines to agree.
 
 Fixing it means making each decision continuous, or at least stable:
 interpolate the rotation exponent rather than stepping it, use half-open bin
