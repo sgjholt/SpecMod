@@ -274,10 +274,11 @@ src/specmod/
   snr/
     bandwidth.py           # BandwidthSelector strategies (methods 1 and 2)
     rotation.py            # the two noise-rotation schemes, as pure functions
-  models/
-    source.py              # BruneSource, BoatwrightSource as objects (+ see below)
+  sources/                 # BUILT — named `sources` so it does not collide
+    source.py              #   with the legacy `models.py` during migration
     attenuation.py         # ConstantQ / FrequencyDependentQ
-    composite.py           # SourceModel composition + motion scaling
+    motion.py              # displacement -> velocity/acceleration scaling
+    composite.py           # SpectralModel + build_model + from_config
   fitting/
     fitter.py              # lmfit wrapper
     guess.py               # was ModelGuess.py

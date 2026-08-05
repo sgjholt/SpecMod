@@ -138,10 +138,11 @@ scales a window of this length cannot resolve.
 > implemented here from scratch, which makes it the natural suspect, and
 > evaluating PyWavelets as an independent implementation is tracked in
 > `REFACTOR_PLAN.md` §4.4.4. Note that the evidence does not yet point at the
-> transform itself: what moves is downstream of it. The COI limit is about
-$1.4\times$ stricter than $1/T$ in practice — measured as the ratio of median
-resolution floors over the 28 PNR windows — which is why the CWT's usable band opens
-higher than multitaper's on the same record.
+> transform itself: what moves is downstream of it.
+
+The COI limit is about $1.4\times$ stricter than $1/T$ in practice — measured
+as the ratio of median resolution floors over the 28 PNR windows — which is why
+the CWT's usable band opens higher than multitaper's on the same record.
 
 ## 4. Amplitude convention
 
