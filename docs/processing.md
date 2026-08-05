@@ -129,7 +129,16 @@ went from 0.203 to 0.956 once corrected.
 
 An L2-normalised Morlet at scale $s$, with the Torrence & Compo
 reconstruction factor $C_\delta$, and a cone of influence that discards the
-scales a window of this length cannot resolve. The COI limit is about
+scales a window of this length cannot resolve.
+
+> **Open issue, `cwt` only.** Every other estimator reproduces exactly across
+> machines. `cwt`'s signal amplitudes and frequency axis do too — but its
+> *post-rotation noise* differs by 1-2% on 4 of 28 stations between Linux and
+> macOS runners carrying identical library versions. It is the one transform
+> implemented here from scratch, which makes it the natural suspect, and
+> evaluating PyWavelets as an independent implementation is tracked in
+> `REFACTOR_PLAN.md` §4.4.4. Note that the evidence does not yet point at the
+> transform itself: what moves is downstream of it. The COI limit is about
 $1.4\times$ stricter than $1/T$ in practice — measured as the ratio of median
 resolution floors over the 28 PNR windows — which is why the CWT's usable band opens
 higher than multitaper's on the same record.

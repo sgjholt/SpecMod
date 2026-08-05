@@ -249,7 +249,7 @@ regenerated with the 1.0 code, or the discrepancy understood.
 ```
 src/specmod/
   __init__.py              # public API + __version__
-  config/                  # one module per semantic group (§4.4.4)
+  config/                  # one module per semantic group (§4.7)
     layers.py              # defaults -> specmod.toml -> *.local.toml -> env -> kwargs
     provenance.py          # resolved config + hash + version, stamped into outputs
   core/
@@ -489,6 +489,45 @@ window at 100 Hz with 60 scales, so ~20 MB for a typical event. Therefore:
 plus the `ScalogramQC` record (a few dozen scalars); the full surface is written
 only on `save(..., include_scalogram=True)`, into HDF5 with chunking and
 compression. This is a large part of why §4.6 moves off pickle.
+
+#### 4.4.4 Evaluate PyWavelets against the hand-written transform
+
+**The one unexplained reproducibility residual is `cwt`, and `cwt` is the one
+estimator implemented from scratch here.** That coincidence is worth acting
+on, even though it is not yet evidence.
+
+The transform was written rather than delegated because the normalisation is
+the whole difficulty: CWT coefficients carry `[signal] * sqrt(time)` under L2
+and `[signal]` under L1, neither of which is the `[signal] * s` of a Fourier
+amplitude spectrum. Get it wrong and the corner frequency is right while
+`Omega` — and so `M0` — is wrong, with nothing to catch it. `pywt.cwt`'s
+conventions are not documented to that precision, so using it meant
+reverse-engineering them.
+
+That reasoning still holds for *trusting* pywt blindly. It does not hold
+against *comparing* to it, and the comparison is worth doing on its own merits:
+an independent implementation agreeing on a sinusoid of known amplitude and on
+record energy would be real cross-validation of a normalisation currently
+supported only by our own tests.
+
+**Be careful about the expected outcome, though.** Two things argue against
+"switch to pywt and the residual goes away":
+
+1. `cwt`'s *signal* amplitudes and frequency axis are already exact on every
+   runner. Only the post-rotation *noise* moves. Whatever is happening is
+   downstream of the transform, or at least not visible in it.
+2. PyWavelets is numpy-based too, so it inherits the same floating-point
+   behaviour. There is no reason a different implementation of the same maths
+   would be immune.
+
+So the honest framing is: evaluate pywt because independent cross-validation of
+the CWT normalisation is valuable regardless, and *check whether* it also
+moves the residual — rather than adopting it expecting a fix.
+
+Note also that `wavelet = ["PyWavelets>=1.5"]` is already declared as an
+optional extra and **nothing imports it**. Either this work wires it up or the
+extra should be removed; a declared dependency that does nothing is a false
+signal about what the package needs.
 
 ### 4.5 SNR, bandwidth and noise rotation
 
