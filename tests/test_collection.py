@@ -533,3 +533,31 @@ def test_peak_does_not_run_past_a_failure_immediately_above_it() -> None:
     assert band is not None
     assert band[1] < 25.0, f"high edge {band[1]} ran past the failure above the peak"
     assert band[1] == pytest.approx(freq[8])
+
+
+# ------------------------------------- the legacy container's new interface
+
+
+def test_spectra_presents_the_same_interface_as_spectrum_set() -> None:
+    """`Spectra` and `SpectrumSet` should be usable the same way.
+
+    They cannot be the same type yet — `SpectrumSet` is typed over
+    `SpectrumPair` and `Spectra.group` still holds `SNP`, which is the next
+    stage. Matching the interface is what lets callers migrate before the
+    container underneath them is swapped, instead of both changing at once.
+    So this asserts the shapes agree rather than the types.
+    """
+    for name in ("__getitem__", "__iter__", "__len__", "ids", "passing"):
+        assert hasattr(Spectra, name), f"Spectra is missing {name}"
+        assert hasattr(SpectrumSet, name), f"SpectrumSet is missing {name}"
+
+
+@pytestmark_data
+def test_the_legacy_container_behaves_like_a_mapping() -> None:
+    spectra = _legacy()
+    assert len(spectra) == 28
+    assert sorted(spectra) == spectra.ids()
+    first = spectra.ids()[0]
+    assert first in spectra
+    assert spectra[first] is spectra.group[first]
+    assert len(spectra.passing()) <= len(spectra)

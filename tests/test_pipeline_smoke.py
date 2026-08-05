@@ -149,6 +149,12 @@ def test_amplitude_arrays_are_writable(spectra: Any) -> None:
         for spectrum in (snp.signal, snp.noise):
             assert spectrum.amp.flags.writeable
             assert spectrum.bamp.flags.writeable
+            # `freq` too: it was frozen for a while as a side effect of the
+            # amplitude conversion handing its array straight to
+            # `core.Spectrum`, which was harmless only because nothing happened
+            # to write to it.
+            assert spectrum.freq.flags.writeable
+            assert spectrum.bfreq.flags.writeable
 
 
 def test_the_legacy_in_place_operations_still_work(spectra: Any) -> None:

@@ -78,12 +78,18 @@ def test_read_cat_uses_current_pandas(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("func", "bad_name"),
     [
-        (sp.SNP.find_optimal_signal_bandwidth_2, "name"),
         (sp.Spectra.__init__, None),
     ],
 )
 def test_no_undefined_names_in_plot_branches(func, bad_name) -> None:
-    """`plot=True` branches referenced names that did not exist (F821)."""
+    """`plot=True` branches referenced names that did not exist (F821).
+
+    ``SNP.find_optimal_signal_bandwidth_2`` used to be checked here too. It has
+    since been deleted — band selection moved to
+    :mod:`specmod.core.bandwidth`, where the strategies are pure functions of
+    arrays with no plotting branch to go stale. The bug class is gone for it by
+    construction rather than by assertion.
+    """
     tree = ast.parse(inspect.getsource(func).lstrip())
     loaded = {
         n.id
