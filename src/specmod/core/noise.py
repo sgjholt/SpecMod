@@ -173,19 +173,27 @@ def _lift(
     del max_iter, inc  # the search they parameterised is gone
 
     noise, signal, scale = noise_amp[where], signal_amp[where], sample[where]
-    if noise.size == 0 or np.any(noise >= signal):
-        # Already touching, so the loop would break on its first trial at
-        # exponent zero and return the record untouched.
+    if noise.size == 0:
         return noise_amp
 
     log_scale = np.log(scale)
     rises = log_scale < 0.0
     if not np.any(rises):
-        # Nothing in this half can be raised; the loop would exhaust max_iter.
+        # Nothing in this half can be raised: dividing by a `sample` above one
+        # lowers it. The loop would have exhausted `max_iter` and returned the
+        # record unchanged.
         return noise_amp
 
+    # A bin that *already* touches needs a negative exponent to get there, so
+    # clamping the minimum at zero is what "no lift needed" means. Written this
+    # way rather than as an `if np.any(noise >= signal)` guard on purpose: the
+    # guard is a branch, and a branch is a step. As a bin crosses from below
+    # the signal to above it, `needed` passes smoothly through zero and the
+    # clamp keeps the result continuous. The guard instead jumped, which is why
+    # four CWT stations still disagreed across machines after the other three
+    # discontinuities were fixed.
     needed = np.log(signal[rises] / noise[rises]) / -log_scale[rises]
-    exponent = float(np.min(needed))
+    exponent = max(0.0, float(np.min(needed)))
     return np.asarray(noise_amp / sample**exponent)
 
 

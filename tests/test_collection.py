@@ -442,3 +442,31 @@ def test_boost_lifts_the_noise_to_touch_the_signal() -> None:
 
     lifted = noise * get_noise_model("boost").factor(freq, noise, signal)
     assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
+
+
+def test_boost_is_continuous_where_the_noise_crosses_the_signal() -> None:
+    """The fourth discontinuity, and the subtlest one.
+
+    A bin that already reaches the signal needs no lift. Expressing that as a
+    guard — ``if np.any(noise >= signal): return unchanged`` — makes the
+    function jump as a bin crosses: measured at **17.5%** in the median boost
+    factor. Expressing it as ``max(0, min(needed))`` gives the same answer,
+    because a bin above the signal requires a negative exponent to reach it,
+    but passes through zero smoothly.
+
+    It survived the first three fixes and was what still made four CWT
+    stations disagree between machines. This sweeps a bin across the boundary
+    and asserts the response has no step in it.
+    """
+    freq = np.linspace(1.0, 40.0, 40)
+    signal = np.full_like(freq, 1e-6)
+
+    factors = []
+    for a in np.linspace(0.99, 1.01, 501):
+        noise = signal * 0.2
+        noise[5] = signal[5] * a
+        factors.append(float(np.median(boost_noise(freq, noise, signal))))
+
+    steps = np.abs(np.diff(factors))
+    # Any residual step must be far below the 17.5% the guarded version showed.
+    assert steps.max() < 1e-3, f"largest step {steps.max():.3e} looks like a jump"

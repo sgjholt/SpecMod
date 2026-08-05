@@ -544,6 +544,12 @@ The pipeline was *piecewise constant*, and runners landed on different pieces.
 | `boost_noise` | Stepped the exponent by `inc = 0.05` and stopped at the first step past the touching point. One iteration either side = **1.41x** on the noise. | Closed form: `n = min ln(signal/noise) / -ln(sample)`, used exactly. Continuous in its input. |
 | `log_bin` | Tested `f >= left and f <= right` per edge. Both ends closed, so a sample on an edge joined **two** bins, and which one depended on the last bit of `np.logspace`. | Index computed from position: one sample, one bin, no edge comparison. |
 | `find_optimal_signal_bandwidth` | `sign(bsnr - tol)`, integrate, read 1st/99th percentiles, retry when edges cross. Moved an edge **13 bins**. | Widest contiguous run above threshold, bridging single-bin dips. |
+| `boost_noise` again | `if np.any(noise >= signal): return unchanged` — a guard, and a guard is a step. Jumped the median boost factor by **17.5%** as a bin crossed. | `max(0, min(needed))`. A bin above the signal needs a negative exponent, so clamping gives the same answer continuously. |
+
+The fourth was found only after the first three landed: CI went from five
+failing checks to one, and the survivor was `cwt` alone, disagreeing by 1-2%
+on four stations. Small enough to look like tolerance, but it was another
+branch — the "already touching" guard inside the lift.
 
 **Measured after the fix**, end to end over all 28 windows: perturbing the
 input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
