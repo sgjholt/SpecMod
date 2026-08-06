@@ -1428,26 +1428,35 @@ percentile from 1 to 2 fails the refined-window, refinement-offset and noise
 tests while leaving the *unrefined* window green; shifting the noise window by
 50 ms fails only the noise test. Both report the moved edges by name.
 
-**Defects the characterisation exposed.** All are pinned by tests that name
-them as defects, so each fix lands as a diff in observable behaviour rather
-than as a silent change:
+**Six defects the characterisation exposed, and their fixes.** Each was pinned
+first as current behaviour, then fixed in a follow-up commit, so the diff of
+the fix *is* the record of what observable behaviour changed:
 
-| Where | What | Consequence |
+| Where | What was wrong | Now |
 |---|---|---|
-| `set_stream_distance` | `STREAM_DISTANCE_METHODS` lists `"list"`; the explicit-coordinate branch tests for `"none"` | The explicit-coordinate path is **unreachable by any argument**. `dtype="none"` fails the guard and does nothing at all; `dtype="list"` passes it, sets the origin fields, then prints `invalid method choice` and computes no distance. |
-| `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`; `UTCDateTime` has no `__radd__` | `TypeError` on **every** input. The function has never run. |
-| `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, and the two functions spell the relative mode differently (`"relative_time"` vs `"relative_ps"`) | A typo — or the sibling function's spelling — leaves the window end unbound, surfacing as `UnboundLocalError` from mid-function instead of a message naming the bad argument. |
-| `get_noise_p` | Copies the whole input stream, then pairs with `zip(..., strict=False)` | Traces the signal stream lost are returned **whole and unlinked**: full-length records presented as noise windows, no error, no warning. |
-| `set_picks_from_pyrocko` | Emergency S pick is `p + (p − otime)·ratio`, unchecked | Only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks, so a station missing an S pick there would get S before P and a nonsense window. Every tutorial station has an S pick, which is why this has never been seen. |
-| `link_window_to_trace` | Records the *requested* window, never reconciled with what `trim` delivered | On a truncated noise trace `wend - wstart` overstates its extent. This is all 28 tutorial windows, so the misreporting is the normal case, not the edge case. |
+| `set_stream_distance` | `STREAM_DISTANCE_METHODS` listed `"list"`; the explicit-coordinate branch tested for `"none"`. The path was **unreachable by any argument** — `"none"` failed the guard and did nothing, `"list"` passed it, set the origin fields, then printed `invalid method choice` and computed no distance. | The three coordinate sources are one branch over `stlat/stlon/stelv`; `"list"` works, `"none"` is a deprecated alias. Unknown `dtype`, a missing inventory and missing coordinates each raise naming the argument. The mseed path keeps its original `gps2dist_azimuth` argument order — the call is not symmetric in floating point, so swapping it would move published numbers. |
+| `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`, and `UTCDateTime` has no `__radd__`: `TypeError` on **every** input. The function had never run. | Operands reversed. It runs, and is tested. |
+| `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, with the two functions spelling the relative mode differently (`"relative_time"` vs `"relative_ps"`). A typo — or the sibling's spelling — left the window end unbound, surfacing as `UnboundLocalError` from mid-function. | Validated up front against `TIME_AFTER_METHODS`; both functions accept both spellings; an unrecognised value raises naming itself. |
+| `get_noise_p` | Copied the whole input stream, then paired with `zip(..., strict=False)`, so traces the signal stream had lost came back **whole and unlinked** — full-length records presented as noise windows, no error, no warning. | `strict=True`. Positional pairing against a different-length stream is a wrong answer, not a short one. |
+| `set_picks_from_pyrocko` | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks; a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
+| `link_window_to_trace` | Recorded the *requested* window and never reconciled it with what `trim` delivered, so `wend - wstart` overstated every truncated noise trace. | Records both: `wstart`/`wend` are what the trace holds, `wstart_requested`/`wend_requested` what was asked for. All call sites link *after* the trim. |
 
-The last row is worth separating from the others because it is not only a
-reporting bug. **Every one of the 28 noise windows is truncated** — 1.1–1.7 s
-against 1.8–3.7 s signals — because the records begin roughly two seconds
-before the P arrival. `get_noise_p` asks for the signal's length and never
-gets it. This is the reason noise and signal spectra do not share a frequency
-resolution, and hence why `SpectrumPair` carries a `resolution_floor`; see
+The last row is worth separating because it is not only a reporting bug.
+**Every one of the 28 noise windows is truncated** — 1.1–1.7 s against 1.8–3.7 s
+signals — because the records begin roughly two seconds before the P arrival.
+`get_noise_p` asks for the signal's length and never gets it. This is the
+reason noise and signal spectra do not share a frequency resolution, and hence
+why `SpectrumPair` carries a `resolution_floor`; see
 [`docs/processing.md` §2](processing.md#2-window-selection).
+
+**None of this moved the science.** `pipeline_reference.json` is byte-identical
+across the fix commit; only `window_reference.json` changed, and only in the
+two ways predicted — recorded edges snapped to sample boundaries, and noise
+starts moved from the requested time to the record start. The one place the
+change could propagate is `get_noise_p`, which derives its window length from
+the signal's recorded `wend - wstart`: now the delivered length rather than the
+requested one, differing by at most `delta/2`. On this data it cannot propagate
+at all, because every noise window is truncated by the record start regardless.
 
 `utils.py` is the remaining uncharacterised module upstream of the reference.
 

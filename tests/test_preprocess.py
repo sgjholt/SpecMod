@@ -190,14 +190,21 @@ class TestCutS:
             0.5
         )
 
-    def test_an_unrecognised_time_after_raises_rather_than_defaulting(self) -> None:
-        # DEFECT, pinned: `cut_s` accepts `time_after` as free text and tests
-        # it with two un-chained `if`s, so a typo — or `cut_p`'s spelling,
-        # `"relative_time"` — leaves `s_end` unbound. The failure is an
-        # `UnboundLocalError` from the middle of the function rather than a
-        # message naming the bad argument.
-        with pytest.raises(UnboundLocalError):
-            pre.cut_s(_stream(), time_after="relative_time", refine_window=False)
+    def test_an_unrecognised_time_after_is_named_in_the_error(self) -> None:
+        # Was an `UnboundLocalError` from the middle of the loop: `time_after`
+        # was free text tested by two un-chained `if`s, so a typo left `s_end`
+        # unbound and the message never mentioned the argument at fault.
+        with pytest.raises(ValueError, match="time_after='relatve_ps'"):
+            pre.cut_s(_stream(), time_after="relatve_ps", refine_window=False)
+
+    def test_it_accepts_cut_p_s_spelling_of_the_relative_mode(self) -> None:
+        # The two functions used to disagree — `cut_p` said `"relative_time"`,
+        # `cut_s` said `"relative_ps"` — and neither took the other's word for
+        # the same idea. Both now take both.
+        by_ps, by_time = _stream(), _stream()
+        pre.cut_s(by_ps, tafs=3, time_after="relative_ps", refine_window=False)
+        pre.cut_s(by_time, tafs=3, time_after="relative_time", refine_window=False)
+        assert by_ps[0].stats["wend"] == by_time[0].stats["wend"]
 
     def test_refinement_shrinks_the_window_onto_the_energy(self) -> None:
         data = np.zeros(2000)
@@ -228,13 +235,15 @@ class TestCutP:
         pre.cut_p(st, bf=0.5, refine_window=False)
         assert st[0].stats["wstart"] - st[0].stats["p_time"] == pytest.approx(-0.5)
 
-    def test_it_spells_the_relative_mode_differently_from_cut_s(self) -> None:
-        # DEFECT, pinned: `cut_p` calls the mode `"relative_time"` and `cut_s`
-        # calls the same idea `"relative_ps"`. Neither accepts the other's
-        # spelling, and neither says so — each falls out of its un-chained
-        # `if`s with the window end unbound.
-        with pytest.raises(UnboundLocalError):
-            pre.cut_p(_stream(), time_after="relative_ps", refine_window=False)
+    def test_it_accepts_cut_s_s_spelling_of_the_relative_mode(self) -> None:
+        by_time, by_ps = _stream(), _stream()
+        pre.cut_p(by_time, tafp=0.5, time_after="relative_time", refine_window=False)
+        pre.cut_p(by_ps, tafp=0.5, time_after="relative_ps", refine_window=False)
+        assert by_time[0].stats["wend"] == by_ps[0].stats["wend"]
+
+    def test_an_unrecognised_time_after_is_named_in_the_error(self) -> None:
+        with pytest.raises(ValueError, match="time_after='absolute'"):
+            pre.cut_p(_stream(), time_after="absolute", refine_window=False)
 
 
 class TestNoiseWindows:
@@ -242,8 +251,8 @@ class TestNoiseWindows:
         st = _stream(npts=3000)
         sig = pre.get_signal(st, pre.cut_s, tafs=4, refine_window=False)
         noise = pre.get_noise_p(st, sig)
-        requested = noise[0].stats["wend"] - noise[0].stats["wstart"]
-        assert requested == pytest.approx(4.0)
+        stats = noise[0].stats
+        assert stats["wend_requested"] - stats["wstart_requested"] == pytest.approx(4.0)
 
     def test_the_noise_window_ends_before_the_p_arrival(self) -> None:
         st = _stream(npts=3000)
@@ -251,19 +260,30 @@ class TestNoiseWindows:
         noise = pre.get_noise_p(st, sig, bshift=0.2)
         assert noise[0].stats["wend"] == noise[0].stats["p_time"] - 0.2
 
-    def test_a_requested_window_that_predates_the_record_is_truncated(self) -> None:
-        # The window `link_window_to_trace` records is what was *asked for*.
-        # `trim` then delivers whatever the record actually holds, and the two
-        # are not reconciled — so `wend - wstart` overstates the data on every
-        # noise trace that runs off the front of the record. That is all 28 of
-        # the tutorial windows; see `test_every_tutorial_noise_window_is_short`.
+    def test_a_window_predating_the_record_is_recorded_as_what_it_delivered(
+        self,
+    ) -> None:
+        # `link_window_to_trace` used to record only what was *asked for*, so
+        # `wend - wstart` overstated the data on every noise trace running off
+        # the front of the record — all 28 of the tutorial windows. It now
+        # records both, with `wstart`/`wend` describing the trace you have.
         st = _stream(npts=3000)  # P arrives 2 s in, so 1.8 s of noise exists
         sig = pre.get_signal(st, pre.cut_s, tafs=10, refine_window=False)
-        noise = pre.get_noise_p(st, sig)
-        requested = noise[0].stats["wend"] - noise[0].stats["wstart"]
-        delivered = noise[0].stats.endtime - noise[0].stats.starttime
-        assert requested == pytest.approx(10.0)
+        stats = pre.get_noise_p(st, sig)[0].stats
+        delivered = stats.endtime - stats.starttime
+        assert stats["wend_requested"] - stats["wstart_requested"] == pytest.approx(
+            10.0
+        )
+        assert stats["wend"] - stats["wstart"] == pytest.approx(delivered)
         assert delivered == pytest.approx(1.79, abs=0.02)
+        assert stats["wstart"] > stats["wstart_requested"]
+
+    def test_an_untruncated_window_records_the_same_pair_twice(self) -> None:
+        st = _stream(npts=3000)
+        sig = pre.get_signal(st, pre.cut_s, tafs=1, refine_window=False)
+        stats = pre.get_noise_p(st, sig)[0].stats
+        assert stats["wstart"] == stats["wstart_requested"]
+        assert stats["wend"] == stats["wend_requested"]
 
     def test_get_noise_s_without_a_signal_uses_a_fixed_length(self) -> None:
         st = _stream(npts=3000)
@@ -276,24 +296,20 @@ class TestNoiseWindows:
         noise = pre.get_noise_s(st, sig=sig)
         assert noise[0].stats["wend"] - noise[0].stats["wstart"] == pytest.approx(1.2)
 
-    def test_a_shorter_signal_stream_leaves_untrimmed_traces_in_the_noise(
+    def test_a_shorter_signal_stream_raises_instead_of_passing_records_through(
         self,
     ) -> None:
-        # DEFECT, pinned: `get_noise_p` copies the whole input stream and then
-        # pairs it with the signal using `zip(..., strict=False)`. A signal
-        # stream that lost traces — which is what a failed or filtered cut
-        # looks like — leaves the unpaired traces in the returned stream
-        # *whole and unlinked*: full-length records presented as noise windows,
-        # with no error and no warning.
+        # The two streams are paired by position, so a signal stream of a
+        # different length is not a shorter answer but a wrong one. With
+        # `zip(..., strict=False)` the unpaired traces stayed in the result
+        # whole and unlinked — full-length records presented as noise windows,
+        # no error, no warning.
         st = obspy.Stream(
             [_trace(npts=3000, station="A"), _trace(npts=3000, station="B")]
         )
         sig = pre.get_signal(st, pre.cut_s, tafs=1, refine_window=False)
-        noise = pre.get_noise_p(st, obspy.Stream(sig[:1]))
-        assert len(noise) == 2
-        assert noise[0].stats.npts < 3000  # trimmed to a noise window
-        assert noise[1].stats.npts == 3000  # the whole record, untouched
-        assert "wstart" not in noise[1].stats
+        with pytest.raises(ValueError, match="argument 2 is shorter"):
+            pre.get_noise_p(st, obspy.Stream(sig[:1]))
 
 
 _PICK_HEADER = "# Snuffler Markers File Version 0.2\n"
@@ -349,56 +365,83 @@ class TestPicks:
         assert "p_time" not in st[0].stats
         assert "s_time" not in st[0].stats
 
-    def test_an_origin_after_the_p_pick_puts_the_fallback_s_before_p(
+    def test_an_origin_after_the_p_pick_leaves_s_unset_and_warns(
         self, tmp_path: Path
     ) -> None:
-        # DEFECT, pinned: the emergency S pick is `p + (p - otime) * ratio`,
-        # which only lands after P when the origin precedes the pick. Nothing
-        # checks that it does. The tutorial is configured with an origin 18
-        # minutes *after* its picks, so a station missing an S pick there would
-        # get an S arrival before its P — silently, and every window cut from
-        # it would be nonsense. Every tutorial station has an S pick, which is
-        # why this has never been seen.
+        # The emergency S pick is `p + (p - otime) * ratio`, which only lands
+        # after P when the origin precedes the pick. Nothing used to check
+        # that. The tutorial is configured with an origin 18 minutes *after*
+        # its picks, so a station missing an S pick there would have got S
+        # before P — silently, and every window cut from it would be nonsense.
+        # The pipeline's own idiom for "unusable" is a trace without `s_time`,
+        # and callers already filter on it, so that is what is left behind.
         st = _picked_stream(otime_offset=100.0)
-        pre.set_picks_from_pyrocko(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
-        assert st[0].stats["s_time"] < st[0].stats["p_time"]
+        with pytest.warns(UserWarning, match="cannot be extrapolated"):
+            pre.set_picks_from_pyrocko(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
+        assert "s_time" not in st[0].stats
+        assert "p_time" in st[0].stats  # the P pick that was read is kept
 
 
 class TestStreamDistance:
-    def test_mseed_needs_an_inventory(self) -> None:
+    def _by_list(self, dtype: str = "list") -> Any:
         st = _stream()
-        with pytest.raises((AttributeError, TypeError)):
+        pre.set_stream_distance(
+            st,
+            53.0,
+            -3.0,
+            2.0,
+            st[0].stats.starttime,
+            stlats=[53.1],
+            stlons=[-3.1],
+            stelvs=[100.0],
+            dtype=dtype,
+        )
+        return st
+
+    def test_mseed_needs_an_inventory(self) -> None:
+        # Was an `AttributeError` from inside `get_channel_metadata`, several
+        # frames down from the argument actually at fault.
+        st = _stream()
+        with pytest.raises(ValueError, match="requires an inventory"):
             pre.set_stream_distance(
                 st, 0.0, 0.0, 1.0, st[0].stats.starttime, dtype="mseed"
             )
 
-    def test_the_explicit_coordinate_path_is_unreachable(self) -> None:
-        # DEFECT, pinned: `STREAM_DISTANCE_METHODS` is
-        # `["mseed", "sac", "list"]` but the branch that reads `stlats`,
-        # `stlons` and `stelvs` tests for `"none"`. So `dtype="none"` fails the
-        # membership guard and does nothing at all, while `dtype="list"` passes
-        # it, sets the origin fields, then falls through to a printed
-        # "invalid method choice" without ever computing a distance. There is
-        # no argument that reaches the explicit-coordinate code.
-        for dtype, enters_the_loop in (("none", False), ("list", True)):
-            st = _stream()
+    def test_the_list_path_computes_a_distance(self) -> None:
+        # Was unreachable: `STREAM_DISTANCE_METHODS` held `"list"` while the
+        # branch reading `stlats`/`stlons`/`stelvs` tested for `"none"`, so
+        # `"none"` failed the guard and did nothing while `"list"` passed it
+        # and fell through to a printed "invalid method choice".
+        st = self._by_list()
+        assert st[0].stats["slat"] == 53.1
+        assert st[0].stats["selv"] == 100.0
+        # 0.1 deg of latitude plus 0.1 deg of longitude at 53 N.
+        assert st[0].stats["repi"] == pytest.approx(13.0, abs=0.2)
+        expected = np.sqrt((2.0 + 0.1) ** 2 + st[0].stats["repi"] ** 2)
+        assert st[0].stats["rhyp"] == pytest.approx(expected)
+
+    def test_none_still_works_as_a_deprecated_alias(self) -> None:
+        with pytest.warns(DeprecationWarning, match="deprecated alias"):
+            st = self._by_list(dtype="none")
+        assert st[0].stats["repi"] == pytest.approx(self._by_list()[0].stats["repi"])
+
+    def test_the_list_path_needs_its_coordinates(self) -> None:
+        st = _stream()
+        with pytest.raises(ValueError, match="requires stlats"):
             pre.set_stream_distance(
-                st,
-                53.0,
-                -3.0,
-                2.0,
-                st[0].stats.starttime,
-                stlats=[53.1],
-                stlons=[-3.1],
-                stelvs=[100.0],
-                dtype=dtype,
+                st, 53.0, -3.0, 2.0, st[0].stats.starttime, dtype="list"
             )
-            assert "repi" not in st[0].stats
-            assert "slat" not in st[0].stats
-            # `dep` is set at the top of the loop body, before the branch, so
-            # it distinguishes "guard rejected the dtype" from "guard passed
-            # and the branch fell through to the error message".
-            assert ("dep" in st[0].stats) is enters_the_loop
+
+    def test_an_unrecognised_dtype_is_named_in_the_error(self) -> None:
+        # Was a printed "invalid method choice" per trace, leaving every trace
+        # with an origin but no distance and deferring the failure to whatever
+        # first asked for `repi`.
+        st = _stream()
+        with pytest.raises(ValueError, match="dtype='miniseed'"):
+            pre.set_stream_distance(
+                st, 53.0, -3.0, 2.0, st[0].stats.starttime, dtype="miniseed"
+            )
+        assert "dep" not in st[0].stats
 
 
 class TestPadTraces:
@@ -411,14 +454,18 @@ class TestPadTraces:
 
 
 class TestCutC:
-    def test_it_raises_on_every_input(self) -> None:
-        # DEFECT, pinned: `cut_c` computes `tafp * relps + s_start`, which is
-        # `float + UTCDateTime`. `UTCDateTime` defines `__add__` but not
-        # `__radd__`, so this is a `TypeError` for any stream whatsoever — the
-        # function has never run. Nothing in the package calls it; it survives
-        # only because no test ever touched it.
-        with pytest.raises(TypeError):
-            pre.cut_c(_stream(npts=3000))
+    def test_the_coda_starts_after_the_s_window_and_runs_to_the_record_end(
+        self,
+    ) -> None:
+        # Used to raise `TypeError` for any input whatsoever: the coda start
+        # was written `tafp * relps + s_start`, i.e. `float + UTCDateTime`,
+        # and `UTCDateTime` defines no `__radd__`. The function had never run.
+        st = _stream(npts=3000)
+        endtime = st[0].stats.endtime
+        pre.cut_c(st, raf=0.8, tafp=1.4)
+        # p at 2 s, p-s of 2 s: s starts at 3.6 s, coda at 3.6 + 1.4*2 = 6.4 s.
+        assert st[0].stats["wstart"] - st[0].stats["otime"] == pytest.approx(6.4)
+        assert st[0].stats["wend"] == endtime
 
 
 # ------------------------------------------------------- against real data
@@ -542,8 +589,13 @@ class TestTutorialWindows:
         signal, noise = pnr_windows()
         ratios = []
         for sig, noi in zip(signal, noise, strict=True):
-            requested = float(noi.stats["wend"] - noi.stats["wstart"])
-            delivered = float(noi.stats.endtime - noi.stats.starttime)
+            requested = float(
+                noi.stats["wend_requested"] - noi.stats["wstart_requested"]
+            )
+            delivered = float(noi.stats["wend"] - noi.stats["wstart"])
+            assert delivered == pytest.approx(
+                float(noi.stats.endtime - noi.stats.starttime)
+            )
             assert requested == pytest.approx(
                 float(sig.stats.endtime - sig.stats.starttime), abs=1e-6
             )
@@ -551,3 +603,27 @@ class TestTutorialWindows:
             ratios.append(delivered / requested)
         assert max(ratios) < 1.0
         assert min(ratios) > 0.4
+
+    def test_the_signal_window_is_delivered_as_requested(self, pnr_stream: Any) -> None:
+        """Signal windows, unlike noise windows, get what they ask for.
+
+        Up to half a sample of ``trim`` snapping, which matters because
+        ``get_noise_p`` derives the noise window's length from the signal's
+        recorded ``wend - wstart``. Now that those describe what was delivered
+        rather than what was asked for, that derivation shifts by at most
+        ``delta/2`` — and on this data not at all, because every noise window
+        is truncated by the record start regardless.
+        """
+        stream = pnr_stream()
+        cut = pre.get_signal(
+            stream,
+            pre.cut_s,
+            rafp=0.8,
+            tafs=20,
+            time_after="absolute_time",
+            refine_window=True,
+        )
+        for tr in cut:
+            half = 0.5 * tr.stats.delta
+            assert abs(tr.stats["wstart"] - tr.stats["wstart_requested"]) <= half
+            assert abs(tr.stats["wend"] - tr.stats["wend_requested"]) <= half

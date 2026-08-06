@@ -69,10 +69,11 @@ without further correction. In practice it rarely gets it: the window is
 truncated wherever the record does not start early enough, and on the PNR data
 that is **all 28 windows**, which run 1.1–1.7 s against 1.8–3.7 s signals.
 
-Note that `tr.stats.wstart` and `tr.stats.wend` record what was *requested*,
-not what was delivered — on a truncated noise trace they overstate its extent,
-and `tr.stats.starttime`/`endtime` are the truthful pair. The resulting
-resolution difference is what
+Each trace therefore carries two window records: `wstart`/`wend`, which are
+what the trace actually holds, and `wstart_requested`/`wend_requested`, which
+are what the cut asked for. They differ on every truncated noise trace, and by
+up to half a sample on signal traces, where `trim` snaps to sample boundaries.
+The resulting resolution difference is what
 [§6](#6-noise-rescaling-and-rotation) corrects, and it is why
 `SpectrumPair` carries a `resolution_floor` rather than assuming the two
 spectra share a frequency axis. `tests/test_preprocess.py` pins this so that a
