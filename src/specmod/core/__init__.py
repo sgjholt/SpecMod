@@ -8,7 +8,14 @@ from .bandwidth import (
     get_bandwidth_selector,
 )
 from .collection import BinnedSpectrum, SpectrumPair, SpectrumSet
-from .noise import NOISE_MODELS, BoostNoise, NoiseModel, get_noise_model
+from .noise import (
+    NOISE_MODELS,
+    BoostNoise,
+    NoiseModel,
+    NoNoiseModel,
+    RotateNoise,
+    get_noise_model,
+)
 from .scalogram import Scalogram, ScalogramQC
 from .spectrum import Spectrum
 from .units import AmplitudeKind, Motion
@@ -21,7 +28,9 @@ __all__ = [
     "BinnedSpectrum",
     "BoostNoise",
     "Motion",
+    "NoNoiseModel",
     "NoiseModel",
+    "RotateNoise",
     "Scalogram",
     "ScalogramQC",
     "Spectrum",

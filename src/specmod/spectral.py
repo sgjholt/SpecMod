@@ -387,12 +387,17 @@ class SNP:
                 "needs the noise on the signal's frequency axis to share bin "
                 "edges with it."
             )
-        if ROTATE_NOISE and ROT_METHOD != 2:
-            raise NotImplementedError(
-                f"ROT_METHOD={ROT_METHOD} (rotate_noise_full) has not been "
-                "ported to specmod.core.noise; only the boost method (2) is "
-                "available. See REFACTOR_PLAN.md §4.5."
-            )
+        # The legacy integer, mapped to the registry it was replaced by.
+        # `ROT_METHOD = 1` was commented out on `master` and never ran; it is
+        # now `noise.RotateNoise` and does.
+        try:
+            noise_model = {1: "rotate", 2: "boost"}[ROT_METHOD]
+        except KeyError:
+            raise ValueError(
+                f"ROT_METHOD={ROT_METHOD} is not a known method; "
+                f"use 1 (rotate) or 2 (boost), or name a model from "
+                f"specmod.core.noise.NOISE_MODELS."
+            ) from None
 
         pair = _CorePair.compare(
             self.__as_core(self.signal),
@@ -403,6 +408,7 @@ class SNP:
             n_bins=BINNING_PARAMS["bins"],
             scale_parseval=SCALE_PARSEVAL,
             rotate_noise=ROTATE_NOISE,
+            noise_model=noise_model,
             resolution_floor=load_config().config.snr.resolution_floor,
             bandwidth="peak" if BW_METHOD == 2 else "widest",
         )

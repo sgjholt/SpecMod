@@ -33,7 +33,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .bandwidth import get_bandwidth_selector
-from .noise import boost_noise
+from .noise import BoostNoise, NoiseModel, get_noise_model
 from .spectrum import Spectrum
 
 __all__ = [
@@ -220,6 +220,7 @@ class SpectrumPair:
         scale_parseval: bool = True,
         resolution_floor: bool = True,
         rotate_noise: bool = True,
+        noise_model: str | NoiseModel = "boost",
         bandwidth: str = "peak",
         rotation_inc: float = 0.05,
         rotation_space: tuple[float, float] = (0.001, 1.001),
@@ -263,12 +264,9 @@ class SpectrumPair:
             # computed twice: the unbinned factor is the binned one
             # interpolated up, which is what the legacy code does and what
             # keeps the two representations of "the noise" consistent.
-            factor = boost_noise(
-                binned_noise.freq,
-                binned_noise.amp,
-                binned_signal.amp,
-                inc=rotation_inc,
-                space=rotation_space,
+            model = _resolve_noise_model(noise_model, rotation_space)
+            factor = model.factor(
+                binned_noise.freq, binned_noise.amp, binned_signal.amp
             )
             binned_noise = BinnedSpectrum(
                 freq=binned_noise.freq, amp=binned_noise.amp * factor
@@ -301,6 +299,25 @@ class SpectrumPair:
             band=band,
             meta=dict(meta or {}),
         )
+
+
+def _resolve_noise_model(
+    noise_model: str | NoiseModel, space: tuple[float, float]
+) -> NoiseModel:
+    """Turn a name or an instance into a model, honouring the legacy ``space``.
+
+    ``space`` is a parameter of the boost method alone, and it arrives here as
+    a loose keyword rather than on the model because that is how the legacy
+    configuration stored it. Passing an already-constructed model instead is
+    the way to say what you mean; then the keyword is ignored, because the
+    instance already carries its own.
+    """
+    if not isinstance(noise_model, str):
+        return noise_model
+    model = get_noise_model(noise_model)
+    if isinstance(model, BoostNoise) and space != model.space:
+        return BoostNoise(space=space)
+    return model
 
 
 def _clamp_to_floor(
