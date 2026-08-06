@@ -12,7 +12,9 @@ from . import sources
 from . import spectral as sp
 
 # global variables
-PLOT_COLUMNS = cfg.FITTING["PLOT_COLUMNS"]
+# One home for this: it used to be defined in *both* the SPECTRAL and FITTING
+# dicts, and the two copies could disagree.
+PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 
 #: What :class:`FitSpectrum` reads off whatever it is given. Kept as data so
 #: the requirement is stated once and can be asserted against.

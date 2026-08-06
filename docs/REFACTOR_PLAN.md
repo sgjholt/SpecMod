@@ -1004,11 +1004,43 @@ from what the output records, not from what the repository contains**:
 rather than a question, and later studies that moved the defaults get their own
 files alongside it. No archaeology, and every study reproducible from a named
 file.
+
+#### 4.7.1 `_config_legacy.py` deleted — the flat dicts are gone
+
+`spectral.py` and `fitting.py` bound their settings at import from a
+hand-maintained module of literals (`cfg.SPECTRAL["ROT_METHOD"]` and eleven
+more), which duplicated the typed defaults and could drift from them silently.
+Those reads now come from `Config`, and `_config_legacy.py` is deleted.
+
+Every value was compared across the swap and is identical — the typed defaults
+were written to reproduce the dict — so this changes provenance, not behaviour,
+and the golden reference did not move. What it buys: a study's TOML layer now
+reaches these settings instead of stopping at the module boundary, every one is
+validated and recorded in provenance, and `PLOT_COLUMNS` has one home rather
+than a copy in each of two dicts.
+
+The globals stay module-level, because that is the escape hatch the legacy path
+and its tests use, and `spectral` is a shell over `core` that should disappear
+rather than grow a plumbing layer. `BW_METHOD` and `ROT_METHOD` survive as
+integers derived from the config's *names* — the round trip is deliberate, so
+that a caller setting `sp.ROT_METHOD = 1` still works while the name is what
+the registry resolves. `tests/test_config.py` asserts the derivation in both
+directions, because nothing else would notice if `BINNING_PARAMS` quietly
+stopped tracking `smoothing.n_bins`.
+
+One stale value found on the way: `SnrConfig.bandwidth_method` was typed
+`Literal["integral", "peak"]` while the registry it names had `widest` and
+`peak`. `"integral"` was left over from when the selector was a percentile of
+a sign integral (§4.5.2) — a configuration value naming nothing the code would
+accept. Corrected to match `BANDWIDTH_SELECTORS`, and `bandwidth_percentile`,
+which only that method used, is removed.
 ---
 
 ## 5. Testing strategy
 
-Currently zero tests. Proposed, in dependency order:
+Proposed, in dependency order. Tiers 1, 3 and 4 are largely in place — 416
+tests, 80% overall — and the module-by-module characterisation described in
+§5.3 is what tier 4 turned into. Tier 2 is the outstanding one:
 
 **Tier 1 — property tests (`pytest` + `hypothesis`).** These encode the physics
 and are backend-independent:

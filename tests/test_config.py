@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import specmod
+from specmod import config
 from specmod.config import Config, SnrConfig, config_hash, load_config
 from specmod.config.provenance import Provenance
 from specmod.config.serialize import to_toml
@@ -208,3 +209,70 @@ def test_magna_study_config_differs_from_defaults() -> None:
     assert config_hash(study) != config_hash(Config())
     assert study.windows.s_velocity != Config().windows.s_velocity
     assert study.snr.assert_bandwidths != Config().snr.assert_bandwidths
+
+
+# ------------------------------------- the legacy modules read the real config
+
+
+def test_the_legacy_globals_come_from_the_typed_config() -> None:
+    """``spectral`` and ``fitting`` no longer read a flat dict of magic numbers.
+
+    They used to bind ``cfg.SPECTRAL[...]`` at import, a hand-maintained
+    module of literals that duplicated the typed defaults and could drift from
+    them. ``_config_legacy.py`` is deleted; these globals are derived from
+    :class:`Config`, so a study's TOML layer reaches them. Every value was
+    verified identical across the swap, which is why the golden reference did
+    not move.
+
+    Asserted rather than trusted because the derivation is one-way: nothing
+    else would notice if ``BINNING_PARAMS`` stopped tracking
+    ``smoothing.n_bins``.
+    """
+    import specmod.fitting as ft  # noqa: PLC0415
+    import specmod.spectral as sp  # noqa: PLC0415
+
+    resolved = load_config().config
+
+    assert {
+        "smin": resolved.smoothing.f_min,
+        "smax": resolved.smoothing.f_max,
+        "bins": resolved.smoothing.n_bins,
+    } == sp.BINNING_PARAMS
+    assert sp.SCALE_PARSEVAL is resolved.snr.scale_parseval
+    assert sp.ROTATE_NOISE is resolved.snr.rotate_noise
+    assert resolved.snr.tolerance == sp.SNR_TOLERENCE
+    assert resolved.snr.min_points == sp.MIN_POINTS
+    assert sp.ASSERT_BANDWIDTHS is resolved.snr.assert_bandwidths
+    assert list(resolved.snr.bands) == sp.SBANDS
+    assert {
+        "inc": resolved.snr.rotation_increment,
+        "space": list(resolved.snr.rotation_space),
+    } == sp.ROT_PARS
+    assert resolved.viz.plot_columns == sp.PLOT_COLUMNS
+    assert resolved.viz.plot_columns == ft.PLOT_COLUMNS
+
+
+def test_the_two_method_integers_map_onto_the_registries() -> None:
+    """``BW_METHOD`` and ``ROT_METHOD`` survive only as an escape hatch.
+
+    Both were integers naming a branch. They are now derived from the config's
+    names, and each name resolves in the registry that owns it — which is the
+    thing the integers could not do, and why ``ROT_METHOD = 1`` sat commented
+    out and unrunnable for years.
+    """
+    import specmod.spectral as sp  # noqa: PLC0415
+    from specmod.core.bandwidth import BANDWIDTH_SELECTORS  # noqa: PLC0415
+    from specmod.core.noise import NOISE_MODELS  # noqa: PLC0415
+
+    resolved = load_config().config
+    assert resolved.snr.bandwidth_method in BANDWIDTH_SELECTORS
+    assert resolved.snr.rotation_method in NOISE_MODELS
+
+    assert (2 if resolved.snr.bandwidth_method == "peak" else 1) == sp.BW_METHOD
+    assert (1 if resolved.snr.rotation_method == "rotate" else 2) == sp.ROT_METHOD
+
+
+def test_the_legacy_config_module_is_gone() -> None:
+    assert not (Path(specmod.__file__).parent / "_config_legacy.py").exists()
+    assert not hasattr(config, "SPECTRAL")
+    assert not hasattr(config, "FITTING")

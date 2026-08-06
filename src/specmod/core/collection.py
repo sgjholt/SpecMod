@@ -6,7 +6,7 @@ paths to the same 140 window-estimator results — but three structural
 properties change, and they are the reason the rewrite is worth doing.
 
 **Configuration is an argument, not an import-time global.** ``spectral.py``
-binds every setting at module import (``BW_METHOD = cfg.SPECTRAL[...]``, and
+binds every setting at module import (``BW_METHOD``, ``ROT_METHOD`` and
 eight more). That is why a Brune and a Boatwright model cannot be fitted in one
 session, why tests cannot vary configuration without reimporting, and why they
 cannot run in parallel. Everything here takes its settings as parameters.

@@ -75,28 +75,49 @@ def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
 
 
 # VARIABLES READ FROM CONFIG
+#
+# Sourced from the typed `Config` rather than the flat `SPECTRAL` dict these
+# used to come from. Every value is identical — the typed defaults were written
+# to reproduce them — so this is a change of provenance, not of behaviour: a
+# study can now override any of them through the layered config instead of
+# editing a module, and every one is validated and recorded.
+#
+# They remain module-level rather than being read per call because that is the
+# escape hatch the legacy path and its tests use. `spectral` is a shell over
+# `core` now, so the right end state is for these to disappear with it rather
+# than to grow a plumbing layer of their own.
+
+_SNR = cfg.load_config().config.snr
+_SMOOTHING = cfg.load_config().config.smoothing
 
 SUPPORTED_SAVE_METHODS = ["pickle"]
 
-BW_METHOD = cfg.SPECTRAL["BW_METHOD"]
+#: Kept as the legacy integer because callers set it. 1 was `rotate`, 2 was
+#: `boost`; both now resolve through `core.noise.NOISE_MODELS`, and the name
+#: in `snr.rotation_method` is what a new caller should set.
+BW_METHOD = 2 if _SNR.bandwidth_method == "peak" else 1
 
-PLOT_COLUMNS = cfg.SPECTRAL["PLOT_COLUMNS"]
+PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 
-BINNING_PARAMS = cfg.SPECTRAL["BIN_PARS"]
+BINNING_PARAMS = {
+    "smin": _SMOOTHING.f_min,
+    "smax": _SMOOTHING.f_max,
+    "bins": _SMOOTHING.n_bins,
+}
 
 BIN = True
 
-SCALE_PARSEVAL = cfg.SPECTRAL["SCALE_PARSEVAL"]
+SCALE_PARSEVAL = _SNR.scale_parseval
 
-ROTATE_NOISE = cfg.SPECTRAL["ROTATE_NOISE"]
-ROT_METHOD = cfg.SPECTRAL["ROT_METHOD"]
-ROT_PARS = cfg.SPECTRAL["ROT_PARS"]
+ROTATE_NOISE = _SNR.rotate_noise
+ROT_METHOD = 1 if _SNR.rotation_method == "rotate" else 2
+ROT_PARS = {"inc": _SNR.rotation_increment, "space": list(_SNR.rotation_space)}
 
-SNR_TOLERENCE = cfg.SPECTRAL["SNR_TOLERENCE"]
-MIN_POINTS = cfg.SPECTRAL["MIN_POINTS"]
+SNR_TOLERENCE = _SNR.tolerance
+MIN_POINTS = _SNR.min_points
 
-ASSERT_BANDWIDTHS = cfg.SPECTRAL["ASSERT_BANDWIDTHS"]
-SBANDS = cfg.SPECTRAL["S_BANDS"]
+ASSERT_BANDWIDTHS = _SNR.assert_bandwidths
+SBANDS = list(_SNR.bands)
 
 
 # classes
