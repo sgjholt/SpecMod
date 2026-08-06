@@ -816,6 +816,49 @@ and binned forms separate — rightly, for the comparison.
 
 `FitSpectra(spectrum_set_from_streams(sig, noise))` now works end to end.
 
+#### 4.5.6 Two live breaks found while retiring the shells
+
+Both in the domain-change path — `Spectra.inte()` and `Spectra.diff()`, which
+move a whole event between displacement, velocity and acceleration. Neither
+was covered by anything, which is why neither had been noticed.
+
+**`SNP.integrate` and `differentiate` raised `AttributeError`.** They called
+`self.__get_snr()`, which stopped existing when `__compare` replaced it; the
+call sites were not updated. This fired for every *interpolated* pair, which
+is the default and every pair the pipeline builds — so the domain-change API
+was simply broken, not degraded.
+
+Fixing it meant restoring something the pre-refactor code had and the rewrite
+dropped: the `ROTATED` flag. The noise lift is applied **once**, and
+`self.noise.amp` already carries it on any re-comparison, so re-running
+`__compare` unconditionally would lift the noise again on every domain change
+— compounding, narrowing the band each time. `master`'s `__calc_bsnr` guarded
+on `self.ROTATED == False` for exactly this.
+
+**The domain label never moved.** `spectral.Spectrum.integrate` divided `amp`
+and `bamp` by `2*pi*f` and left `self.motion` saying `velocity`. Not cosmetic:
+`SNP.__as_core` reads it to build a `core.Spectrum` and `_convert` reads it
+for every amplitude-convention change, so a spectrum integrated to
+displacement reported the wrong unit and converted as though it were still a
+velocity. It now shifts with the amplitudes, and moving past either end raises
+rather than clamping — silently stopping would leave `amp` divided by
+`2*pi*f` with nothing to say so, which is the failure being fixed.
+
+**A claim corrected by measurement.** The first version of the fix said the
+band has to be recomputed because integration changes the signal-to-noise
+ratio. It does not: both spectra are divided by the same `2*pi*f`, so the
+*unbinned* ratio is exactly invariant. The *binned* one is not, and the reason
+is worth stating — a bin holds the geometric mean of `log10(amp)`, and
+averaging `log10(a/f)` over a bin is not `log10(a)` averaged minus
+`log10(f_centre)` unless the centre is the geometric mean of the frequencies
+in that bin. Measured over the 28 PNR windows the binned ratio moves by up to
+**16%**, and **3 of 28** bands with it. So the re-comparison is doing real
+work, just not the work first claimed for it.
+
+Also deleted: `SNP.find_optimal_signal_bandwidth`, the percentile-of-the-sign-
+integral search (`BW_METHOD = 1`). Superseded by `core.bandwidth.WidestBandwidth`
+and referenced by nothing but documentation.
+
 ### 4.6 I/O — replacing pickle
 
 Pickle is the only persistence format today, and `read_spectra` prompts on stdin

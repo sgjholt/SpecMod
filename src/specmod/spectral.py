@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import obspy
 from matplotlib.ticker import NullFormatter, StrMethodFormatter
-from scipy.integrate import cumulative_trapezoid
 
 from . import config as cfg
 from .config import load_config
+from .core import Motion as _Motion
 from .core import Spectrum as _CoreSpectrum
 from .core.collection import SpectrumPair as _CorePair
 from .core.collection import SpectrumSet as _CoreSet
@@ -198,12 +198,40 @@ class Spectrum:
         ax.set_ylabel("spectral amp")
 
     def integrate(self):
+        """Divide by ``2*pi*f``, moving one domain toward displacement."""
         self.amp /= 2 * np.pi * self.freq
         self.bamp /= 2 * np.pi * self.bfreq
+        self.__shift_motion(-1)
 
     def differentiate(self):
+        """Multiply by ``2*pi*f``, moving one domain toward acceleration."""
         self.amp *= 2 * np.pi * self.freq
         self.bamp *= 2 * np.pi * self.bfreq
+        self.__shift_motion(+1)
+
+    def __shift_motion(self, orders):
+        """Keep the domain label honest about what `amp` now holds.
+
+        It was not updated at all, so a spectrum integrated to displacement
+        went on calling itself velocity. That is not cosmetic: `SNP.__as_core`
+        reads this to build a `core.Spectrum`, and `_convert` reads it for
+        every amplitude-convention change — so a mislabelled spectrum reports
+        the wrong unit and converts as though it were still a velocity.
+
+        Going past either end raises rather than clamping. There is no
+        meaningful spectrum one integration below displacement, and silently
+        stopping there would leave `amp` divided by ``2*pi*f`` with nothing to
+        say so — exactly the failure being fixed.
+        """
+        order = _Motion(getattr(self, "motion", "velocity")).derivative_order + orders
+        try:
+            self.motion = str(next(m for m in _Motion if m.derivative_order == order))
+        except StopIteration:
+            raise ValueError(
+                f"cannot move {orders:+d} order(s) from "
+                f"{getattr(self, 'motion', 'velocity')}: the result is not one of "
+                f"{[str(m) for m in _Motion]}"
+            ) from None
 
     def __set_metadata_from_trace(self, tr, kind):
         self.__tr = tr.copy()  # make a copy so you dont delete original
@@ -391,7 +419,12 @@ class SNP:
             f_max=BINNING_PARAMS["smax"],
             n_bins=BINNING_PARAMS["bins"],
             scale_parseval=SCALE_PARSEVAL,
-            rotate_noise=ROTATE_NOISE,
+            # Not `ROTATE_NOISE` unconditionally: the lift is applied *once*,
+            # and `self.noise.amp` already carries it on any re-comparison.
+            # `ROTATED` is the flag the pre-refactor code used for exactly this
+            # and it is why `integrate` could re-derive a band without lifting
+            # the noise a second time.
+            rotate_noise=ROTATE_NOISE and not self.ROTATED,
             noise_model=noise_model,
             resolution_floor=load_config().config.snr.resolution_floor,
             bandwidth="peak" if BW_METHOD == 2 else "widest",
@@ -456,18 +489,37 @@ class SNP:
         )
 
     def integrate(self):
+        """Move both spectra one domain toward displacement, and re-band.
+
+        The comparison is re-run, and it is not a formality. The *unbinned*
+        signal-to-noise ratio is invariant — both spectra are divided by the
+        same ``2*pi*f`` — but the binned one is not, because a bin holds the
+        geometric mean of ``log10(amp)`` and averaging ``log10(a/f)`` over a
+        bin is not ``log10(a)`` averaged minus ``log10(f_centre)``. Measured on
+        the 28 PNR windows, the binned ratio moves by up to 16% and 3 of the 28
+        bands with it.
+
+        The noise is not lifted again — see ``ROTATED`` in `__compare`.
+
+        Called ``self.__get_snr()``, which stopped existing when `__compare`
+        replaced it. Both this and `differentiate` therefore raised
+        ``AttributeError`` for every interpolated pair, which is the default
+        and every pair the pipeline builds. Nothing covered them.
+        """
         for s in self.pair:
             s.integrate()
-        # must recalculate usable frequency-bandwidth
         if self.intrp:
-            self.__get_snr()
+            self.__compare()
 
     def differentiate(self):
+        """Move both spectra one domain toward acceleration, and re-band.
+
+        See :meth:`integrate`, including the break it shared.
+        """
         for s in self.pair:
             s.differentiate()
-        # must recalculate usable frequency-bandwidth
         if self.intrp:
-            self.__get_snr()
+            self.__compare()
 
     def psd_to_amp(self):
         for s in self.pair:
@@ -556,61 +608,6 @@ class SNP:
     def set_ubfreqs(self, ubfreqs):
         self.ubfreqs = ubfreqs
         self.signal.set_ubfreqs(ubfreqs)
-
-    def find_optimal_signal_bandwidth(
-        self, freq, bsnr, bsnr_thresh, pctl=0.99, plot=False
-    ):
-        """
-        Attempts to find the largest signal bandwidth above an arbitraty signal-to-Noise.
-        We first map the SNR
-        function to a space between -1, 1 by subtracting the SNR
-        threshold then taking the sign)  taking the integral
-        """
-        inte = cumulative_trapezoid(np.sign(bsnr - bsnr_thresh))
-        inte /= inte.max()
-        inte[inte <= 0] = -1
-        fh = np.abs(inte - pctl).argmin() - 1
-        fl = np.abs(inte - (1 - pctl)).argmin()
-
-        tryCount = 0
-        while (fl >= fh) or fl == 0:
-            inte[fl] = 1
-            fl = np.abs(inte + 1 - pctl).argmin()
-            tryCount += 1
-            if tryCount == 3:
-                print(f"WARNING: {self.id} is too noisy.")
-                self.signal.set_pass_snr(False)
-                break
-
-        # if fl > 1:
-        #     fl -= 2
-
-        if not plot:
-            if fh - fl < 3:
-                self.signal.set_pass_snr(False)
-            return np.array([freq[fl], freq[fh]])
-        else:
-            plt.plot(
-                freq,
-                np.sign(bsnr - bsnr_thresh),
-                color="grey",
-                label="sign(bsnr-bsnr limit)",
-            )
-            plt.plot(
-                freq[1:], inte, color="k", lw=2, label="int[sign(bsnr-bsnr limit)]"
-            )
-            plt.vlines(
-                freq[fl],
-                inte.min(),
-                inte.max(),
-                linestyles="dashed",
-                label=f"{100 - int(pctl * 100)}% & {int(pctl * 100)}%",
-            )
-            plt.vlines(freq[fh], inte.min(), inte.max(), linestyles="dashed", color="g")
-            plt.title(f"ID:{self.id!s}, low f:{freq[fl]:.2f}, high f:{freq[fh]:.2f}")
-            plt.legend()
-            plt.ylabel("arb. units")
-            plt.xlabel("freq [Hz]")
 
     def __check_ids(self, signal, noise):
         if signal.id.upper() != noise.id.upper():
