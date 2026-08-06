@@ -50,6 +50,86 @@ def fittable_signal(pair, id=""):
     return signal if passes else None
 
 
+def initial_guess(spectra, model=None):
+    """Starting parameters for every fittable spectrum in ``spectra``.
+
+    Replaces ``model_guess.create_simple_guess`` and its ``_fdep`` twin, which
+    were two near-identical functions differing only in whether they added an
+    ``a`` for frequency-dependent Q — so adding a third model meant writing a
+    third guess function, and picking the wrong one gave lmfit a parameter the
+    model did not take.
+
+    **Which parameters are needed is asked of the model, not assumed.** The
+    fitted callable declares them in its signature, so a model gets exactly the
+    guesses it takes and nothing else. Values that cannot be read off the
+    spectrum come from ``[fitting]`` in the configuration.
+
+    The two that *are* read off the spectrum:
+
+    ``llpsp``
+        ``log10`` of the largest amplitude inside the selected band — the
+        long-period plateau, which is what ``Omega`` is.
+    ``fc``
+        the frequency at which that maximum falls.
+
+    Both assume a **velocity** spectrum, where the peak sits near the corner.
+    On a displacement spectrum the peak is at the low-frequency end and ``fc``
+    would start at the bottom of the band; that is the pre-existing assumption,
+    made explicit here rather than left in a function name.
+
+    Stations with no band are omitted rather than given ``None`` guesses. The
+    old version emitted ``{"llpsp": None, "fc": None, "ts": None}`` on
+    ``IndexError``, which lmfit cannot use — the failure simply moved to the
+    fit call.
+    """
+    import inspect  # noqa: PLC0415
+
+    if model is None:
+        model = sources.from_config()
+    callable_ = (
+        model.as_callable() if isinstance(model, sources.SpectralModel) else model
+    )
+    wanted = set(inspect.signature(callable_).parameters) - {"f"}
+
+    fitting = cfg.load_config().config.fitting
+    #: Parameters no spectrum can suggest a value for.
+    defaults = {
+        "ts": fitting.initial_t_star,
+        "a": fitting.initial_alpha,
+    }
+
+    guesses = {}
+    for id in spectra:
+        signal = fittable_signal(spectra[id], id)
+        if signal is None:
+            continue
+        band = selected_band(signal)
+        if band is None:
+            continue
+        inside = (signal.freq >= band[0]) & (signal.freq <= band[1])
+        if not inside.any():
+            continue
+
+        amp, freq = signal.amp[inside], signal.freq[inside]
+        peak = int(amp.argmax())
+        available = {
+            "llpsp": float(np.log10(amp[peak])),
+            "fc": float(freq[peak]),
+            **defaults,
+        }
+        missing = wanted - set(available)
+        if missing:
+            raise ValueError(
+                f"no initial guess is defined for {sorted(missing)}, which "
+                f"{getattr(model, 'describe', lambda: callable_.__name__)()} "
+                f"takes. Add it to specmod.config.FittingConfig and to "
+                f"`initial_guess`, or pass explicit guesses."
+            )
+        guesses[id] = {k: v for k, v in available.items() if k in wanted}
+
+    return guesses
+
+
 def selected_band(spectrum):
     """The band to fit over, or ``None`` to fit everything available.
 
@@ -146,8 +226,22 @@ class FitSpectrum:
         self.meta = deepcopy(meta)
 
     def __init_params(self, **params):
+        """Seed the parameters, and floor ``t*`` where the configuration says.
+
+        ``fitting.t_star_min`` existed and was read by nothing. The tutorial
+        did ``fits.set_bounds("ts", min=0.0001)`` by hand and the config value
+        is 1e-4 — the same number — so the setting was a written-down record of
+        something every caller had to remember. Applied here, forgetting it is
+        no longer possible.
+
+        A negative ``t*`` is not a poor fit, it is an unphysical one: it says
+        the wave gained energy travelling. lmfit will happily return one if the
+        misfit surface leans that way.
+        """
         self.params = self.mod.make_params(**params)
-        # self.set_bounds('fc', min=0)
+        floor = cfg.load_config().config.fitting.t_star_min
+        if "ts" in self.params and floor is not None:
+            self.set_bounds("ts", min=floor)
 
     def reset(self):
         for par in self.params.values():
@@ -275,10 +369,21 @@ class FitSpectra:
     guess = {}
     table = pd.DataFrame([])
 
-    def __init__(self, spectra, model=None, guess=None, fit_bins=False):
+    def __init__(self, spectra, model=None, guess=None, fit_bins=None):
+        """``guess=None`` derives one, rather than fitting nothing.
+
+        It used to skip `init_fitting` entirely, so `FitSpectra(spectra)` built
+        an object with no models and `fit_spectra()` silently did nothing and
+        produced an empty table. There is a sensible guess available — see
+        :func:`initial_guess` — so that is now the default and an explicit
+        ``guess={}`` is how you say "none".
+        """
         self.set_spectra(spectra)
-        if guess is not None:
-            self.init_fitting(model, guess, fit_bins)
+        if fit_bins is None:
+            fit_bins = cfg.load_config().config.fitting.fit_bins
+        if guess is None:
+            guess = initial_guess(spectra, model)
+        self.init_fitting(model, guess, fit_bins)
 
     def __len__(self):
         return len(self.models)
@@ -296,7 +401,24 @@ class FitSpectra:
         else:
             print(f"WARNING: {id.upper()} not in group of available fits.")
 
-    def fit_spectra(self, weight_method="none", **kwargs):
+    def fit_spectra(self, weight_method=None, **kwargs):
+        """Fit every station, with the configured minimiser unless told otherwise.
+
+        ``method`` and ``weight_method`` both come from ``[fitting]`` when not
+        given. Neither used to: `fit_spectra()` fell through to lmfit's default
+        minimiser, so a study file saying ``method = "powell"`` was ignored and
+        the caller had to remember ``fit_spectra(method="powell")`` — which the
+        tutorial does and nothing enforced.
+
+        It matters. On the 28 PNR windows lmfit's default returns a **negative
+        corner frequency** on one station where Powell does not; a corner
+        frequency below zero is not a degraded measurement but a meaningless
+        one, and nothing downstream rejects it.
+        """
+        fitting = cfg.load_config().config.fitting
+        if weight_method is None:
+            weight_method = fitting.weight_method
+        kwargs.setdefault("method", fitting.method)
         wm = self.__check_wm(weight_method)
         for name, mod in self.models.items():
             try:
@@ -322,10 +444,14 @@ class FitSpectra:
         # Iterate the container rather than reaching into `.group`. `Spectra`
         # and `core.SpectrumSet` both present this interface, which is what
         # lets the container be swapped underneath without touching the fitter.
+        # A station is fitted when it passed the gate *and* has a guess.
+        # Indexing `guess[id]` unconditionally made a partial guess dict a
+        # `KeyError` naming a station, rather than a way to fit a subset —
+        # and made `guess={}` a crash instead of "fit nothing".
         tmp = {}
         for id in self.spectra:
             signal = fittable_signal(self.spectra[id], id)
-            if signal is None:
+            if signal is None or id not in guess:
                 continue
             tmp[id] = FitSpectrum(signal, model, **guess[id], fit_bins=fit_bins)
         self.models = tmp
