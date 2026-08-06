@@ -587,13 +587,14 @@ them for binning and rotation. What is done, and what is deliberately not:
 
 | Piece | State |
 |---|---|
-| `log_bin` | Shared. `spectral.Spectrum.__bin_spectrum` calls it. |
+| `log_bin` | The only implementation. `spectral.Spectrum.__bin_spectrum` is deleted. |
 | `boost_noise` (`ROT_METHOD = 2`) | Shared, and solved rather than stepped (§4.5.2). Verified bit-identical against the legacy `SNP.rotate_noise` over 200 randomised cases before the discontinuity fixes. |
 | `parseval_scale`, `interpolate_onto` | Shared. The legacy copies are deleted. |
 | `find_bandwidth` | Shared, as a registry — `peak` (was `BW_METHOD = 2`, the default) and `widest`. |
 | `rotate_noise_full` (`ROT_METHOD = 1`) | **Ported** as `noise.RotateNoise`, registered as `"rotate"`. `SNP` no longer raises: `ROT_METHOD = 1` runs end to end and gives materially narrower bands than `boost` on 25 of the 28 PNR windows, consistent with the legacy source's own description of it as "quite aggressive". See §4.5.3. |
 | `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
 | `SpectrumSet` | `Spectra.as_spectrum_set()` converts without recomputing — each `SNP` keeps the pair its numbers came from. The golden reference and its generator read the new container; regenerating produced a **byte-identical** file, which is the proof the swap moved nothing. `Spectra.group` still holds `SNP` for the smoke test, which exists to cover the legacy seam. |
+| `pipeline` | **Waveforms to `SpectrumSet` with no legacy object in between** — see §4.5.5. The conversion path is no longer the only way to get one. |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and
@@ -752,6 +753,160 @@ quietly returning 13:09 for 13:09:31. The second is the one that mattered, and
 splitting on the decimal point handles every case. This was the fragility
 `tests/test_legacy_fixes.py` deliberately deferred to "the preprocessing
 rewrite"; that test now asserts the fix across five seconds formats.
+
+#### 4.5.5 `specmod.pipeline`: the direct route from waveforms
+
+`Spectra.as_spectrum_set()` converts *after the fact* — it needs a legacy run
+to exist first. `specmod.pipeline` removes that dependency: given a signal
+stream and its noise it builds the immutable containers directly, trace to
+`core.Spectrum` to `SpectrumPair`, with none of `spectral`'s mutable classes
+involved.
+
+**The route is shorter.** `spectral.Spectrum` converts the estimator's output
+to a PSD, copies the arrays out into a mutable object, converts back to
+magnitude, and then `SNP.__as_core` wraps them in a `core.Spectrum` again —
+`FAS -> PSD -> MAGNITUDE -> copy -> copy` where one `to_kind` will do. Every
+one of those copies exists because the legacy classes mutate in place; none is
+needed once nothing does.
+
+**It lives outside `core` on purpose.** `core` and `transforms` know nothing
+about ObsPy — they take arrays, a duration and a sampling rate — which is what
+makes them testable without constructing a Stream and usable on data that never
+came from one. `pipeline` is the single file that knows what a `Trace` is.
+
+`estimate_spectrum` moved here from `spectral` at the same time, and is now
+typed. It is the one bridge to `transforms`, and leaving it inside the untyped
+legacy shell made every caller of it untyped too. Its field selection now goes
+through `inspect.signature` rather than `dataclasses.fields`: the registry is
+typed over the `SpectralEstimator` protocol, which promises a `name` and an
+`estimate` and says nothing about being a dataclass, so asking for its fields
+was a claim the type did not support.
+
+**Agreement is measured, not argued.** `tests/test_pipeline.py` runs both paths
+over the same 28 windows and all five estimators — 140 results — and requires
+the spectra, binned spectra, SNR, resolution floors and selected bands to match
+to **1 part in 1e12**. They are not bit-identical, and should not be expected
+to be: the same map composed differently rounds differently.
+
+It also runs the **fitter** on both, because that is where a difference would
+be amplified rather than carried. Powell on a shallow minimum turns the 1e-12
+input difference into 7.5e-6 relative on `fc` — 4e-5 Hz on a 5 Hz corner, 2e-5
+in stress drop. The tell that the spectra really are the same is that `chisqr`,
+`redchi` and `bic` agree to 1e-11: the two runs land on marginally different
+points of an identical surface.
+
+**One gap the comparison found.** The legacy flatfile carries `lower-f-bound`,
+`upper-f-bound` and `pass_snr`, written by `SNP.__update_lims_to_meta`. A
+frozen pair cannot write back into its own signal — that is the point of
+freezing it — so `FittableView` supplies them instead, under the legacy column
+names so a flatfile from either container has the same schema. A fitted corner
+frequency without the band it was read over is not interpretable, and it is the
+first thing anyone comparing two runs asks for.
+
+The new path also carries what the legacy one never did: `estimator`, `id` and
+`resolution_floor` per row.
+
+**What is left tying the fitter to `spectral`.** `FitSpectra.__check_spectra`
+required `isinstance(spectra, sp.Spectra)` while only ever iterating and
+indexing, so a `SpectrumSet` was refused despite satisfying everything the
+fitter uses. It now checks for the mapping interface. `fittable_signal` returns
+a pair's `FittableView` rather than its `signal`, since the fitter wants
+`freq`, `amp`, `bfreq` and `bamp` side by side and the pair keeps the unbinned
+and binned forms separate — rightly, for the comparison.
+
+`FitSpectra(spectrum_set_from_streams(sig, noise))` now works end to end.
+
+#### 4.5.7 `spectral.py` deleted
+
+864 lines gone: `Spectrum`, `Signal`, `Noise`, `SNP`, `Spectra`, the pickle
+I/O and the `_mtspec` shim. `specmod.pipeline` and `specmod.core` do all of it,
+and `fitting` no longer imports the module at all.
+
+**Two capabilities had to be built before it could go**, both found by trying:
+
+* **Domain conversion on an event.** `Spectra.inte()`/`diff()` had no
+  equivalent — `core.Spectrum.to_motion` converts one spectrum, and nothing
+  converted a pair. `SpectrumPair.to_motion` and `SpectrumSet.to_motion` now
+  do, returning new objects rather than overwriting, so an event can be held
+  in two domains at once. To replay the binning and the band search they need
+  the settings the pair was built with, so `compare` records its own arguments
+  in `meta` under `SpectrumPair.SETTINGS_KEY`. That is also how the noise
+  avoids being lifted twice: the replay sets `rotate_noise=False`, which is
+  the `ROTATED` flag expressed as data rather than as a mutable attribute.
+* **Persistence.** Deleting the pickle I/O left nothing able to write a result
+  to disk — and `SpectrumSet` **could not be pickled at all**, because
+  `core.Spectrum.meta` is a `MappingProxyType`. `Spectrum.__reduce__` now
+  rebuilds through `__init__`, which also re-freezes the arrays: numpy restores
+  a pickled array as writeable, so any other route would have returned a
+  mutable spectrum and quietly lost the guarantee the class exists to make.
+
+**What happened to the evidence.** Deleting the legacy path also deletes every
+test that compared against it — `test_the_pair_reproduces_the_legacy_snr_and_band`,
+the 140-result comparison in `test_pipeline.py`, `Spectra.as_spectrum_set()`'s
+identity checks. That is a real loss, and the honest account of what carries
+the claim now is:
+
+`tests/golden/pipeline_reference.json` was generated by the legacy path and
+**has never been regenerated**. `specmod.pipeline` reproduces it to **1e-15**
+across all 140 window-estimator results, checked on every run. That is why the
+reference is summaries of a committed artefact rather than a live comparison:
+it is the form of the claim that survives the code being removed.
+`tests/golden/motion_reference.json` is the same pattern for `to_motion`,
+captured while `Spectra.inte()` still existed and validated against it at
+2.2e-15 with identical bands on all 28.
+
+**One test now asserts the opposite of what it did.** `test_pipeline_smoke.py`
+checked `spectrum.amp.flags.writeable`, because the legacy classes mutated in
+place and a frozen array reaching them raised. Nothing mutates, so the property
+worth protecting is the one that used to break the pipeline.
+
+`_mtspec` went with the module. Nothing called it, and `estimate_spectrum`
+already refuses `estimator="mtspec"` with a message pointing at `prieto` — the
+same lineage without a Fortran compiler. A §5.2.6 three-way comparison would
+install mtspec and call it directly rather than through a shim.
+
+#### 4.5.6 Two live breaks found while retiring the shells
+
+Both in the domain-change path — `Spectra.inte()` and `Spectra.diff()`, which
+move a whole event between displacement, velocity and acceleration. Neither
+was covered by anything, which is why neither had been noticed.
+
+**`SNP.integrate` and `differentiate` raised `AttributeError`.** They called
+`self.__get_snr()`, which stopped existing when `__compare` replaced it; the
+call sites were not updated. This fired for every *interpolated* pair, which
+is the default and every pair the pipeline builds — so the domain-change API
+was simply broken, not degraded.
+
+Fixing it meant restoring something the pre-refactor code had and the rewrite
+dropped: the `ROTATED` flag. The noise lift is applied **once**, and
+`self.noise.amp` already carries it on any re-comparison, so re-running
+`__compare` unconditionally would lift the noise again on every domain change
+— compounding, narrowing the band each time. `master`'s `__calc_bsnr` guarded
+on `self.ROTATED == False` for exactly this.
+
+**The domain label never moved.** `spectral.Spectrum.integrate` divided `amp`
+and `bamp` by `2*pi*f` and left `self.motion` saying `velocity`. Not cosmetic:
+`SNP.__as_core` reads it to build a `core.Spectrum` and `_convert` reads it
+for every amplitude-convention change, so a spectrum integrated to
+displacement reported the wrong unit and converted as though it were still a
+velocity. It now shifts with the amplitudes, and moving past either end raises
+rather than clamping — silently stopping would leave `amp` divided by
+`2*pi*f` with nothing to say so, which is the failure being fixed.
+
+**A claim corrected by measurement.** The first version of the fix said the
+band has to be recomputed because integration changes the signal-to-noise
+ratio. It does not: both spectra are divided by the same `2*pi*f`, so the
+*unbinned* ratio is exactly invariant. The *binned* one is not, and the reason
+is worth stating — a bin holds the geometric mean of `log10(amp)`, and
+averaging `log10(a/f)` over a bin is not `log10(a)` averaged minus
+`log10(f_centre)` unless the centre is the geometric mean of the frequencies
+in that bin. Measured over the 28 PNR windows the binned ratio moves by up to
+**16%**, and **3 of 28** bands with it. So the re-comparison is doing real
+work, just not the work first claimed for it.
+
+Also deleted: `SNP.find_optimal_signal_bandwidth`, the percentile-of-the-sign-
+integral search (`BW_METHOD = 1`). Superseded by `core.bandwidth.WidestBandwidth`
+and referenced by nothing but documentation.
 
 ### 4.6 I/O — replacing pickle
 

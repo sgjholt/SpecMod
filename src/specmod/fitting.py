@@ -9,7 +9,6 @@ from matplotlib.ticker import NullFormatter, StrMethodFormatter
 
 from . import config as cfg
 from . import sources
-from . import spectral as sp
 
 # global variables
 # One home for this: it used to be defined in *both* the SPECTRAL and FITTING
@@ -21,17 +20,30 @@ PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 REQUIRED_SPECTRUM_ATTRIBUTES = ("id", "meta", "freq", "amp", "bfreq", "bamp")
 
 
-def fittable_signal(pair):
+def fittable_signal(pair, id=""):
     """The signal to fit from a paired spectrum, or ``None`` to skip it.
 
     Skipping is a decision the container should not have to spell out at every
-    call site. A pair is unfittable when the signal-to-noise gate rejected it —
-    ``pass_snr`` on the legacy `Signal`, ``passes`` on
-    :class:`specmod.core.SpectrumPair` — and both spellings mean the same
-    thing while the two containers coexist.
-    """
-    signal = getattr(pair, "signal", pair)
+    call site: a pair is unfittable when the signal-to-noise gate rejected it.
 
+    What comes back for a :class:`~specmod.core.SpectrumPair` is its
+    :class:`~specmod.core.collection.FittableView`, not its ``signal``. The
+    pair keeps the unbinned and binned spectra as separate objects, which is
+    right for the comparison and wrong for a fitter that wants ``freq``,
+    ``amp``, ``bfreq`` and ``bamp`` side by side; the view is what puts them
+    there. ``id`` names the station on it, since a frozen pair does not carry
+    one of its own.
+
+    The ``getattr`` fallback below is what a spectrum-like object that is not
+    a pair takes — a bare view, or anything else presenting the same
+    attributes. It is not a legacy shim; it is what lets the fitter be given
+    something constructed by hand.
+    """
+    view = getattr(pair, "for_fitting", None)
+    if view is not None:
+        return pair.for_fitting(id) if pair.passes else None
+
+    signal = getattr(pair, "signal", pair)
     passes = getattr(pair, "passes", None)
     if passes is None:
         passes = getattr(signal, "pass_snr", True)
@@ -41,29 +53,25 @@ def fittable_signal(pair):
 def selected_band(spectrum):
     """The band to fit over, or ``None`` to fit everything available.
 
-    Reads either spelling: the legacy ``ubfreqs`` array, empty when no band
-    survived, or :class:`specmod.core.SpectrumPair`'s ``band``, which is
-    ``None`` for the same case. Two names for one thing is the price of
-    migrating a container in place; encoding it here rather than at the call
-    site means only one place has to change when the legacy spelling goes.
+    ``None`` rather than an empty array, because "no band survived" and "a band
+    from 0 to 0" are different claims and the legacy spelling — an empty
+    ``ubfreqs`` — could be read as either.
     """
     band = getattr(spectrum, "band", None)
-    if band is not None:
-        return (float(band[0]), float(band[1]))
-
-    legacy = getattr(spectrum, "ubfreqs", None)
-    if legacy is not None and len(legacy) == 2:
-        return (float(legacy[0]), float(legacy[1]))
-    return None
+    if band is None:
+        return None
+    return (float(band[0]), float(band[1]))
 
 
 class FitSpectrum:
-    """
-    Takes an Spectral.Signal and fits an arbitrary model to the signal spectrum
-    using the lmfit package.
+    """Fit a source model to one spectrum with lmfit.
+
+    Takes anything carrying :data:`REQUIRED_SPECTRUM_ATTRIBUTES` — in practice
+    a :class:`~specmod.core.collection.FittableView` from
+    :func:`fittable_signal`.
     """
 
-    sig = sp.Signal()
+    sig = None
     mod = None
     params = None
     result = None
@@ -151,10 +159,9 @@ class FitSpectrum:
         """Accept anything carrying what the fit reads, not one named class.
 
         This used to be ``isinstance(signal, spectral.Signal)``, which is the
-        coupling that keeps `Spectra` holding `SNP` rather than
-        :class:`specmod.core.SpectrumPair` — nothing can be handed to the
-        fitter unless it *is* the legacy class. What the fit actually needs is
-        the six attributes below, so that is what is checked.
+        coupling that kept the container holding the legacy pair — nothing
+        could be handed to the fitter unless it *was* that class. What the fit
+        actually needs is the six attributes below, so that is what is checked.
 
         Named explicitly rather than left to fail at first use: a missing
         ``bamp`` should say so here, not surface as an AttributeError from
@@ -263,7 +270,7 @@ class FitSpectrum:
 
 
 class FitSpectra:
-    spectra = sp.Spectra()
+    spectra = None
     models = {}
     guess = {}
     table = pd.DataFrame([])
@@ -317,13 +324,10 @@ class FitSpectra:
         # lets the container be swapped underneath without touching the fitter.
         tmp = {}
         for id in self.spectra:
-            spec = self.spectra[id]
-            if fittable_signal(spec) is None:
+            signal = fittable_signal(self.spectra[id], id)
+            if signal is None:
                 continue
-            fit = FitSpectrum(
-                fittable_signal(spec), model, **guess[id], fit_bins=fit_bins
-            )
-            tmp.update({id: fit})
+            tmp[id] = FitSpectrum(signal, model, **guess[id], fit_bins=fit_bins)
         self.models = tmp
 
     def set_const(self, pname, value, id=None):
@@ -420,10 +424,22 @@ class FitSpectra:
                 setter(mod)
 
     def __check_spectra(self, spectra):
-        if not isinstance(spectra, sp.Spectra):
-            raise ValueError(f"Must be a spectra object not {type(spectra)}")
-        else:
-            return True
+        """Accept anything that maps trace ids to paired spectra.
+
+        Was ``isinstance(spectra, spectral.Spectra)``, which is why the fitter
+        could not be handed a :class:`~specmod.core.SpectrumSet` even though it
+        only ever iterates and indexes. Requiring one concrete class was the
+        last thing tying the fitter to the legacy module.
+        """
+        required = ("__iter__", "__getitem__", "__len__")
+        missing = [name for name in required if not hasattr(spectra, name)]
+        if missing:
+            raise ValueError(
+                f"{type(spectra).__name__} cannot be fitted: it must map trace "
+                f"ids to paired spectra, and is missing {', '.join(missing)}. "
+                f"Use specmod.pipeline.spectrum_set_from_streams."
+            )
+        return True
 
     def __num_rows(self):
         l = self.__len__()

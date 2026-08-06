@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +18,9 @@ import pytest
 
 import specmod.fitting as fit
 import specmod.preprocess as pre
-import specmod.spectral as sp
 import specmod.utils as ut
 
-SRC = Path(sp.__file__).parent
+SRC = Path(ut.__file__).parent
 
 
 # --------------------------------------------------------------- §2.5 syntax
@@ -74,29 +74,12 @@ def test_read_cat_uses_current_pandas(tmp_path: Path) -> None:
 # ------------------------------------------------------ §2.5 undefined names
 
 
-@pytest.mark.parametrize(
-    ("func", "bad_name"),
-    [
-        (sp.Spectra.__init__, None),
-    ],
-)
-def test_no_undefined_names_in_plot_branches(func, bad_name) -> None:
-    """`plot=True` branches referenced names that did not exist (F821).
-
-    ``SNP.find_optimal_signal_bandwidth_2`` used to be checked here too. It has
-    since been deleted — band selection moved to
-    :mod:`specmod.core.bandwidth`, where the strategies are pure functions of
-    arrays with no plotting branch to go stale. The bug class is gone for it by
-    construction rather than by assertion.
-    """
-    tree = ast.parse(inspect.getsource(func).lstrip())
-    loaded = {
-        n.id
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
-    }
-    if bad_name is not None:
-        assert bad_name not in loaded
+# `test_no_undefined_names_in_plot_branches` lived here. Both its subjects —
+# `SNP.find_optimal_signal_bandwidth_2` and `SNP.find_optimal_signal_bandwidth`
+# — referenced names that did not exist in their `plot=True` branches, and both
+# are deleted. Band selection is `specmod.core.bandwidth`, where the strategies
+# are pure functions of arrays with no plotting branch to go stale, so the bug
+# class is gone by construction rather than by assertion.
 
 
 def test_fit_spectra_reset_uses_the_right_attribute() -> None:
@@ -158,15 +141,16 @@ def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
     """The shipped `.spec` cannot be loaded, and the tutorial reads it.
 
     A pickle stores the import path of every class it holds. This file names
-    ``specmod.Spectral``, the pre-rename module, so ``pickle.load`` raises
-    before any of our code runs. ``Tutorial/SpecModTutorial.ipynb`` calls
-    ``read_spectra`` on it in two cells, so the notebook stops there.
+    ``specmod.Spectral``, the pre-rename module, so unpickling raises before
+    any of our code runs — and now the classes it names do not exist at all.
+    ``Tutorial/SpecModTutorial.ipynb`` calls ``read_spectra`` on it in two
+    cells, so the notebook stops there.
 
-    Pinned rather than fixed. The plan (§4.6) converts these in the legacy
-    Docker image and explicitly rejects a ``find_class`` remapping shim, which
-    would bake the old class layout into the new package permanently. So this
-    asserts the breakage on purpose: when the migration lands, this test fails
-    and is the reminder to delete it and assert the load instead.
+    Pinned rather than fixed. The plan (§4.6) explicitly rejects a
+    ``find_class`` remapping shim, which would bake the pre-refactor class
+    layout into the new package permanently. So this asserts the breakage on
+    purpose: when the migration lands, this test fails and is the reminder to
+    delete it and assert the load instead.
     """
     spec = Path(__file__).resolve().parent.parent / (
         "Tutorial/Spectra/2019-08-26T07:30:47.0.spec"
@@ -175,4 +159,13 @@ def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
         pytest.skip("the legacy .spec artifact has been removed")
 
     with pytest.raises(ModuleNotFoundError, match=r"specmod\.Spectral"):
-        sp.Spectra.read_spectra(str(spec), method="pickle", skip_warning=True)
+        pickle.loads(spec.read_bytes())
+
+
+# The §2 domain-change tests lived here: `SNP.integrate` calling a
+# `__get_snr` that no longer existed, the `ROTATED` guard that keeps the noise
+# from being lifted twice, the domain label that never moved, and the binned
+# noise that does not survive a round trip. All four were fixed against `SNP`
+# and then carried across to `SpectrumSet.to_motion`, which replaced it — see
+# `tests/test_pipeline.py::TestToMotion`, where each is asserted again on the
+# container that still exists.

@@ -6,21 +6,20 @@ through :mod:`specmod.transforms` via the layered configuration, which makes
 every estimator available to the pipeline and puts one Parseval contract behind
 all of them.
 
-These tests cover the seam. The class API is deliberately unchanged — ``Spectra``,
-``SNP`` and the fitting code still see ``freq``/``amp``/``bfreq``/``bamp`` — so
+These tests cover the seam. What reads the estimators is now
+``specmod.pipeline``; the amplitude convention and the padding behaviour are
 what needs pinning is that the numbers crossing it are now right, and by how much
 they moved.
 """
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import obspy
 import pytest
 
-from specmod.spectral import Noise, Signal, Spectrum, estimate_spectrum
+from specmod.core import Spectrum
+from specmod.pipeline import estimate_spectrum, spectrum_from_trace
 
 FS = 100.0
 DT = 1.0 / FS
@@ -81,7 +80,7 @@ def test_the_pipeline_amplitude_is_the_unfolded_transform_magnitude() -> None:
     removed on the way into this module.
     """
     tr = trace()
-    spectrum = Signal(tr.copy(), estimator="fft", taper="boxcar")
+    spectrum = spectrum_from_trace(tr.copy(), estimator="fft", taper="boxcar")
     reference = np.abs(np.fft.rfft(tr.data - tr.data.mean())) * DT
     freq = np.fft.rfftfreq(len(tr.data), DT)
 
@@ -99,7 +98,7 @@ def test_energy_is_recovered_in_the_unfolded_convention() -> None:
     one-sided spectrum does not carry.
     """
     tr = trace()
-    spectrum = Signal(tr.copy(), estimator="fft", taper="boxcar")
+    spectrum = spectrum_from_trace(tr.copy(), estimator="fft", taper="boxcar")
     energy = 2.0 * float(np.trapezoid(spectrum.amp**2, spectrum.freq))
     assert energy == pytest.approx(time_domain_energy(tr), rel=0.05)
 
@@ -113,7 +112,7 @@ def test_unpadded_amplitudes_reproduce_the_pre_refactor_run() -> None:
     same convention, keyed off something that does not move.
     """
     tr = trace()
-    spectrum = Signal(tr.copy())
+    spectrum = spectrum_from_trace(tr.copy())
     duration = spectrum.meta["npts"] * spectrum.meta["delta"]
 
     # Reconstruct what the old code would have produced from the same PSD.
@@ -123,12 +122,17 @@ def test_unpadded_amplitudes_reproduce_the_pre_refactor_run() -> None:
 
 
 def test_amplitude_conversion_round_trips() -> None:
-    tr = trace()
-    spectrum = Signal(tr.copy())
-    before = spectrum.amp.copy()
-    spectrum.amp_to_psd()
-    spectrum.psd_to_amp()
-    assert spectrum.amp == pytest.approx(before, rel=1e-12)
+    """``to_kind`` there and back, on the pipeline's own convention.
+
+    Was `spectrum.amp_to_psd(); spectrum.psd_to_amp()` on the legacy class,
+    which mutated in place. The relationship is the same one; what changed is
+    that each step now returns a new spectrum, so the round trip compares two
+    objects rather than an object against a copy of its own past.
+    """
+    spectrum = spectrum_from_trace(trace())
+    back = spectrum.to_kind("psd").to_kind("magnitude")
+    assert back.amp == pytest.approx(spectrum.amp, rel=1e-12)
+    assert back.kind == spectrum.kind
 
 
 def test_normalisation_is_independent_of_the_frequency_axis_length() -> None:
@@ -139,9 +143,9 @@ def test_normalisation_is_independent_of_the_frequency_axis_length() -> None:
     code was, it fell as ``1/sqrt(padding)``.
     """
     tr = trace()
-    plain = Signal(tr.copy())
-    padded = Signal(tr.copy(), n_fft=4096, estimator="fft")
-    reference = Signal(tr.copy(), estimator="fft")
+    plain = spectrum_from_trace(tr.copy())
+    padded = spectrum_from_trace(tr.copy(), n_fft=4096, estimator="fft")
+    reference = spectrum_from_trace(tr.copy(), estimator="fft")
 
     band = (1.0, 40.0)
 
@@ -196,14 +200,14 @@ def test_every_estimator_lands_on_the_same_amplitude_convention(
 def test_the_pipeline_conversion_matches_the_typed_one(estimator: str) -> None:
     """``psd_to_amp`` must agree with ``to_kind("magnitude")``.
 
-    The legacy class does the PSD-to-amplitude step arithmetically, because it
-    keeps the pre-refactor call sequence. The core carries the same conversion
-    as a named kind. Two implementations of one relationship is exactly how a
-    factor of two survives, so they are pinned against each other here.
+    The pipeline reads ``Omega`` off the *unfolded* magnitude while the
+    estimators return the folded ``FAS``, so a conversion happens on the way
+    in. Two spellings of one relationship is exactly how a factor of two
+    survives, so the pipeline's route is pinned against the named kind here.
     """
     tr = trace()
     typed = estimate_spectrum(tr.data, DT, estimator=estimator).to_kind("magnitude")
-    through_pipeline = Signal(tr.copy(), estimator=estimator)
+    through_pipeline = spectrum_from_trace(tr.copy(), estimator=estimator)
 
     assert through_pipeline.amp == pytest.approx(np.asarray(typed.amp), rel=1e-9)
 
@@ -218,8 +222,8 @@ def test_every_estimator_is_reachable_from_the_pipeline() -> None:
     """
     tr = trace()
     for name in ("fft", "welch", "multitaper", "quadratic", "cwt"):
-        spectrum = Signal(tr.copy(), estimator=name)
-        assert spectrum.estimator == name
+        spectrum = spectrum_from_trace(tr.copy(), estimator=name)
+        assert spectrum.meta["estimator"] == name
         assert spectrum.freq.size > 0
         assert np.isfinite(spectrum.amp).all()
 
@@ -244,40 +248,23 @@ def test_spectra_carry_their_motion() -> None:
     """Previously tracked in a module-level global that had to be kept in sync
     by hand with however many times integrate() had been called."""
     tr = trace()
-    assert Signal(tr.copy()).motion == "velocity"
+    assert spectrum_from_trace(tr.copy()).motion == "velocity"
     assert estimate_spectrum(tr.data, DT, motion="acceleration").unit == "m/s^2*s"
 
 
 # ------------------------------------------------------------- the binning
 
 
-def test_binning_uses_the_requested_number_of_bins() -> None:
-    """Default edges of 0.001-200 Hz are wider than any real record.
-
-    For a 100 sps trace that puts about a third of the bins below the lowest
-    frequency present and a third above Nyquist, so they come out empty and are
-    dropped — which is why the surviving axis was always far shorter than
-    requested. Clamping to the record's own range makes the count meaningful.
-    """
-    spectrum = Signal(trace())
-    assert spectrum.bfreq.size > 100, (
-        f"only {spectrum.bfreq.size} bins survived of 151 requested"
-    )
-    assert spectrum.bfreq.min() >= spectrum.freq.min()
-    assert spectrum.bfreq.max() <= spectrum.freq.max()
-
-
-def test_binning_does_not_warn_on_empty_bins() -> None:
-    """Log bins over a linear grid are sparse at the low end by construction,
-    so an empty bin is expected and must not raise a warning per bin."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", RuntimeWarning)
-        Signal(trace())
-
-
-def test_signal_and_noise_share_the_class() -> None:
-    tr = trace()
-    signal, noise = Signal(tr.copy()), Noise(tr.copy())
-    assert signal.kind == "signal"
-    assert noise.kind == "noise"
-    assert signal.freq == pytest.approx(noise.freq)
+# `test_binning_uses_the_requested_number_of_bins` and
+# `test_binning_does_not_warn_on_empty_bins` lived here, exercising `log_bin`
+# through the legacy `Signal`'s `bfreq`/`bamp`. They are now
+# `test_log_bin_clamps_to_the_records_own_range` and
+# `test_log_bin_drops_empty_bins_without_warning` in `test_collection.py`,
+# against the function directly rather than as a side effect of constructing a
+# spectrum from a trace.
+#
+# `test_signal_and_noise_share_the_class` also lived here. It asserted that
+# `Signal` and `Noise` were one class distinguished by a `kind` string — a
+# property of the design that has gone, not a behaviour to preserve. A
+# `SpectrumPair` has a signal and a noise, both plain `Spectrum`, and which is
+# which is structural rather than a label that could disagree with its slot.

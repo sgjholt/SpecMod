@@ -211,65 +211,60 @@ def test_magna_study_config_differs_from_defaults() -> None:
     assert study.snr.assert_bandwidths != Config().snr.assert_bandwidths
 
 
-# ------------------------------------- the legacy modules read the real config
+# ---------------------------------------- the pipeline reads the real config
 
 
-def test_the_legacy_globals_come_from_the_typed_config() -> None:
-    """``spectral`` and ``fitting`` no longer read a flat dict of magic numbers.
+def test_the_comparison_settings_come_from_the_typed_config() -> None:
+    """``pipeline`` resolves every setting from :class:`Config`, per call.
 
-    They used to bind ``cfg.SPECTRAL[...]`` at import, a hand-maintained
-    module of literals that duplicated the typed defaults and could drift from
-    them. ``_config_legacy.py`` is deleted; these globals are derived from
-    :class:`Config`, so a study's TOML layer reaches them. Every value was
-    verified identical across the swap, which is why the golden reference did
-    not move.
+    This replaces the pair of tests that pinned ``spectral``'s module-level
+    globals — ``BINNING_PARAMS``, ``ROT_METHOD`` and nine more, bound once at
+    import from a hand-maintained dict of literals. That module is deleted and
+    the dict with it; the settings now reach ``SpectrumPair.compare`` as
+    arguments, which is what makes a study's TOML layer able to change them and
+    what lets two configurations coexist in one session.
 
-    Asserted rather than trusted because the derivation is one-way: nothing
-    else would notice if ``BINNING_PARAMS`` stopped tracking
-    ``smoothing.n_bins``.
+    Asserted rather than trusted because the mapping is one-way: nothing else
+    would notice if ``n_bins`` stopped tracking ``smoothing.n_bins``.
     """
-    import specmod.fitting as ft  # noqa: PLC0415
-    import specmod.spectral as sp  # noqa: PLC0415
+    from specmod.pipeline import _compare_settings  # noqa: PLC0415
 
     resolved = load_config().config
+    settings = _compare_settings()
 
-    assert {
-        "smin": resolved.smoothing.f_min,
-        "smax": resolved.smoothing.f_max,
-        "bins": resolved.smoothing.n_bins,
-    } == sp.BINNING_PARAMS
-    assert sp.SCALE_PARSEVAL is resolved.snr.scale_parseval
-    assert sp.ROTATE_NOISE is resolved.snr.rotate_noise
-    assert resolved.snr.tolerance == sp.SNR_TOLERENCE
-    assert resolved.snr.min_points == sp.MIN_POINTS
-    assert sp.ASSERT_BANDWIDTHS is resolved.snr.assert_bandwidths
-    assert list(resolved.snr.bands) == sp.SBANDS
-    assert {
-        "inc": resolved.snr.rotation_increment,
-        "space": list(resolved.snr.rotation_space),
-    } == sp.ROT_PARS
-    assert resolved.viz.plot_columns == sp.PLOT_COLUMNS
-    assert resolved.viz.plot_columns == ft.PLOT_COLUMNS
+    assert settings["threshold"] == resolved.snr.tolerance
+    assert settings["f_min"] == resolved.smoothing.f_min
+    assert settings["f_max"] == resolved.smoothing.f_max
+    assert settings["n_bins"] == resolved.smoothing.n_bins
+    assert settings["scale_parseval"] is resolved.snr.scale_parseval
+    assert settings["rotate_noise"] is resolved.snr.rotate_noise
+    assert settings["noise_model"] == resolved.snr.rotation_method
+    assert settings["resolution_floor"] is resolved.snr.resolution_floor
+    assert settings["bandwidth"] == resolved.snr.bandwidth_method
+    assert settings["rotation_space"] == resolved.snr.rotation_space
 
 
-def test_the_two_method_integers_map_onto_the_registries() -> None:
-    """``BW_METHOD`` and ``ROT_METHOD`` survive only as an escape hatch.
+def test_an_override_reaches_the_comparison() -> None:
+    """The point of the whole change. A module-level global could not do this."""
+    from specmod.pipeline import _compare_settings  # noqa: PLC0415
 
-    Both were integers naming a branch. They are now derived from the config's
-    names, and each name resolves in the registry that owns it — which is the
-    thing the integers could not do, and why ``ROT_METHOD = 1`` sat commented
-    out and unrunnable for years.
+    assert _compare_settings({"n_bins": 41})["n_bins"] == 41
+    assert _compare_settings()["n_bins"] == load_config().config.smoothing.n_bins
+
+
+def test_the_configured_names_resolve_in_their_registries() -> None:
+    """``BW_METHOD`` and ``ROT_METHOD`` were integers naming a branch.
+
+    They are names now, and each has to resolve in the registry that owns it —
+    the thing the integers could not do, and why ``ROT_METHOD = 1`` sat
+    commented out and unrunnable for years.
     """
-    import specmod.spectral as sp  # noqa: PLC0415
     from specmod.core.bandwidth import BANDWIDTH_SELECTORS  # noqa: PLC0415
     from specmod.core.noise import NOISE_MODELS  # noqa: PLC0415
 
     resolved = load_config().config
     assert resolved.snr.bandwidth_method in BANDWIDTH_SELECTORS
     assert resolved.snr.rotation_method in NOISE_MODELS
-
-    assert (2 if resolved.snr.bandwidth_method == "peak" else 1) == sp.BW_METHOD
-    assert (1 if resolved.snr.rotation_method == "rotate" else 2) == sp.ROT_METHOD
 
 
 def test_the_legacy_config_module_is_gone() -> None:
