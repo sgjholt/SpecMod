@@ -11,6 +11,7 @@ from . import config as cfg
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
 from .core.collection import SpectrumPair as _CorePair
+from .core.collection import SpectrumSet as _CoreSet
 from .core.collection import log_bin
 from .transforms import ESTIMATORS
 
@@ -351,6 +352,9 @@ class SNP:
     signal = None
     noise = None
     bsnr = np.array([0.0])
+    #: The immutable :class:`specmod.core.SpectrumPair` this pair's numbers
+    #: came from. ``None`` only if `__compare` has not run.
+    comparison = None
     event = " "
     ubfreqs = np.array([])
     itrpn = True
@@ -411,6 +415,12 @@ class SNP:
         self.noise.bamp = np.array(pair.binned_noise.amp, dtype=float)
         self.signal.bfreq = np.array(pair.binned_signal.freq, dtype=float)
         self.signal.bamp = np.array(pair.binned_signal.amp, dtype=float)
+
+        # Kept, not discarded. `SNP` is now a mutable wrapper around an
+        # immutable `SpectrumPair`, which is what makes `Spectra` convertible
+        # to a `SpectrumSet` without recomputing anything — see
+        # `Spectra.as_spectrum_set`.
+        self.comparison = pair
 
         self.bsnr = np.array(pair.snr, dtype=float)
         self.resolution_floor = pair.resolution_floor
@@ -669,6 +679,27 @@ class Spectra:
     def ids(self):
         """Trace ids in this event, sorted."""
         return sorted(self.group)
+
+    def as_spectrum_set(self):
+        """This event as an immutable :class:`specmod.core.SpectrumSet`.
+
+        The migration path off the legacy containers. Nothing is recomputed:
+        every `SNP` already holds the `SpectrumPair` its numbers came from, so
+        this hands those over directly and the two describe the same run by
+        construction rather than by agreement.
+
+        Callers can move to the new type before the old one goes, which is the
+        point — swapping what `Spectra.group` holds in one step would break
+        every reader at once, and the readers are what carry the meaning.
+        """
+        return _CoreSet(
+            pairs={
+                id: snp.comparison
+                for id, snp in self.group.items()
+                if snp.comparison is not None
+            },
+            event=self.event or "",
+        )
 
     def passing(self):
         """Only the pairs that yielded a usable band."""

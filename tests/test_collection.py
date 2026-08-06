@@ -677,3 +677,70 @@ def test_the_view_hands_out_metadata_the_fitter_can_copy(pnr_windows) -> None:
     meta = pair.for_fitting().meta
     assert isinstance(meta, dict)
     assert copy.deepcopy(meta) == meta
+
+
+# ------------------------------------------------- the migration path off SNP
+
+
+@pytestmark_data
+def test_the_legacy_container_converts_to_a_spectrum_set() -> None:
+    """`Spectra.as_spectrum_set()` is the way off the legacy containers.
+
+    Nothing is recomputed. Each `SNP` keeps the `SpectrumPair` its own numbers
+    came from, so the conversion hands those over and the two describe the same
+    run by construction rather than by agreeing to some tolerance.
+
+    That construction is what this asserts: the values are checked for
+    *identity* of source, not closeness.
+    """
+    legacy = _legacy()
+    modern = legacy.as_spectrum_set()
+
+    assert isinstance(modern, SpectrumSet)
+    assert len(modern) == len(legacy)
+    assert modern.ids() == legacy.ids()
+    assert modern.event == legacy.event
+
+    for name in modern.ids():
+        pair, snp = modern[name], legacy[name]
+        assert pair is snp.comparison, f"{name}: not the same object"
+        assert pair.snr is snp.comparison.snr
+
+
+@pytestmark_data
+def test_the_converted_set_carries_the_same_numbers() -> None:
+    """The values the pipeline actually reports, across the conversion."""
+    legacy = _legacy()
+    modern = legacy.as_spectrum_set()
+
+    for name in modern.ids():
+        pair, snp = modern[name], legacy[name]
+        assert pair.snr == pytest.approx(snp.bsnr, rel=1e-12), name
+        assert pair.resolution_floor == pytest.approx(snp.resolution_floor), name
+
+        band = getattr(snp, "ubfreqs", None)
+        if band is not None and len(band) == 2:
+            assert pair.band is not None, name
+            assert pair.band == pytest.approx([float(band[0]), float(band[1])]), name
+
+
+@pytestmark_data
+def test_the_converted_set_can_be_fitted() -> None:
+    """End to end: convert, filter to what passed, fit one.
+
+    The whole chain on the new types — `SpectrumSet` -> `passing()` ->
+    `for_fitting()` -> `FitSpectrum` — with no legacy container involved past
+    the conversion.
+    """
+    passing = _legacy().as_spectrum_set().passing()
+    assert len(passing) > 0
+
+    name = passing.ids()[0]
+    with contextlib.redirect_stdout(io.StringIO()):
+        fit = FitSpectrum(
+            passing[name].for_fitting(id=name), llpsp=-7.0, fc=4.0, ts=0.02
+        )
+        fit.fit_mod(method="powell")
+
+    assert fit.result.success
+    assert fit.describe_model() == "brune+constant_q in velocity"
