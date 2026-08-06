@@ -26,7 +26,7 @@ $X(f)$.
 | 3 | Spectral estimation | `transforms/` |
 | 4 | Amplitude convention | `core.Spectrum.to_kind`, `spectral.Spectrum.psd_to_amp` |
 | 5 | Log binning | `core.collection.log_bin` |
-| 6 | Noise rescaling and rotation | `core.collection.parseval_scale`, `core.rotation.boost_noise` |
+| 6 | Noise rescaling and rotation | `core.collection.parseval_scale`, `core.noise.NOISE_MODELS` |
 | 7 | Signal-to-noise and bandwidth | `core.collection.find_bandwidth` |
 | 8 | Source model fitting | `models`, `fitting` |
 
@@ -63,12 +63,22 @@ the refined window runs between the times at which $I$ reaches the 1st and
 99th percentiles. This is why the 28 PNR windows come out at 1.8–3.7 s rather
 than the nominal 20 s.
 
-**The noise window** ends $0.2$ s before the P arrival and is given *the same
-length as the refined signal window*, so the two are comparable without
-further correction — mostly. On the PNR data the noise windows still run
-1.1–1.7 s against 1.8–3.7 s signals, because a noise window is truncated by
-the P arrival when there is not enough pre-event record. That residual
-difference is what [§6](#6-noise-rescaling-and-rotation) corrects.
+**The noise window** ends $0.2$ s before the P arrival and is *asked for* the
+same length as the refined signal window, so the two would be comparable
+without further correction. In practice it rarely gets it: the window is
+truncated wherever the record does not start early enough, and on the PNR data
+that is **all 28 windows**, which run 1.1–1.7 s against 1.8–3.7 s signals.
+
+Each trace therefore carries two window records: `wstart`/`wend`, which are
+what the trace actually holds, and `wstart_requested`/`wend_requested`, which
+are what the cut asked for. They differ on every truncated noise trace, and by
+up to half a sample on signal traces, where `trim` snaps to sample boundaries.
+The resulting resolution difference is what
+[§6](#6-noise-rescaling-and-rotation) corrects, and it is why
+`SpectrumPair` carries a `resolution_floor` rather than assuming the two
+spectra share a frequency axis. `tests/test_preprocess.py` pins this so that a
+change which quietly started delivering full-length noise windows would move
+every noise spectrum in the reference visibly rather than silently.
 
 ## 3. Spectral estimation
 
@@ -221,7 +231,7 @@ never needs to know which was used.
 |---|---|---|
 | `boost` | default | Noise under the signal follows the recorded shape, scaled by a power of a frequency ramp |
 | `none` | available | The recorded window is representative as measured |
-| `rotate` | not yet ported | Legacy `ROT_METHOD = 1`; rotates in log–log space through an iterated angle |
+| `rotate` | available | Legacy `ROT_METHOD = 1`; the discrepancy is a *tilt* in log–log space rather than a level offset |
 
 `none` is not a placeholder. It is the honest choice when the noise window is
 genuinely representative, and it is what a run needs in order to show what the
@@ -269,6 +279,41 @@ Using $\eta^\star$ directly fixes both: the exponent is now a continuous
 function of its input, and it is the quantity the algorithm was always trying
 to compute. Measured end to end, perturbing the input by $10^{-15}$ now moves
 the noise by $1.8\times10^{-11}$ and no band edge at all.
+
+### The rotate method
+
+`ROT_METHOD = 1`, described in the legacy source as "actual rotation, quite
+aggressive". Writing $X = \log_{10} f$ and $Y = \log_{10} A$, it tilts the
+noise spectrum about its low-frequency end:
+
+$$Y'(\theta) = X\sin\theta + Y\cos\theta + Y_0\,\theta$$
+
+The trailing $Y_0\theta$ is what makes this a rotation *about the low-frequency
+end* rather than about the axis origin — without it the curve translates as
+well as tilts, and the correction stops being anchored to the part of the noise
+record least contaminated by signal. As with `boost`, one angle is found for
+each half and the larger result kept at every frequency.
+
+**It assumes** the recorded window has the right level somewhere and the wrong
+*slope*, where `boost` assumes the right shape and the wrong *level*. Those are
+genuinely different claims about the noise process, which is why both are kept:
+comparing the two bands is the only way to see how much of a result is the
+method. On the 28 PNR windows they disagree on 25, `rotate` always narrower —
+`LV.L002..HHE` runs 1.51–38.60 Hz under `boost` and 1.51–13.87 Hz under
+`rotate`.
+
+Unlike $\eta^\star$, the touching angle has no closed form: $\theta$ appears
+inside $\sin$ and $\cos$. It is bracketed on a coarse grid and then bisected
+to $10^{-12}$, which is enough to make it continuous in the input — the grid
+only chooses the bracket, never the answer. The legacy stepped $\theta$ by a
+fixed increment and stopped at the first trial past the touch, with exactly the
+irreproducibility described above.
+
+Two departures from the legacy implementation are recorded in
+[REFACTOR_PLAN §4.5.3](REFACTOR_PLAN.md#453-rotate-ported-the-noise-registry-is-complete):
+the solved angle, and taking the low/high split from the signal rather than the
+noise. Neither can move a published number — `ROT_METHOD = 1` was commented out
+on `master` and has never produced one.
 
 ## 7. Signal-to-noise and bandwidth
 

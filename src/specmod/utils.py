@@ -1,21 +1,30 @@
-import glob
-import os
+"""Reading picks and catalogues, and looking at waveforms.
+
+What is left after the migration. The rotation machinery that used to live here
+— ``find_rotation_angle``, ``find_rotation_angle_v2``, ``rotate``,
+``rotate_noise_full``, ``get_centroid_freq`` and ``non_lin_boost_noise_func`` —
+is now :mod:`specmod.core.noise`, where the two methods are registered models
+rather than an integer flag. The SAC-discovery scaffolding that used to sit
+between them (``DataSet`` and its channel-ranking helpers, ``cps``,
+``path_to_utc``) had no callers anywhere and was hardcoded to another study's
+station codes; it is replaced by the acquisition layer in REFACTOR_PLAN §5.2.
+"""
+
+from __future__ import annotations
 
 import matplotlib
 import matplotlib.pyplot as plt
-import obspy
-
-matplotlib.rcParams["ps.fonttype"] = 42
-matplotlib.rcParams["pdf.fonttype"] = 42
-matplotlib.rcParams["svg.fonttype"] = "none"
 import numpy as np
+import obspy
 import pandas as pd
 from matplotlib.dates import num2date
 
-# def get_filt_params(x):
-#     return x.split("options=")[-1].split("::")[0].strip("{").strip("}")
-#
-# get_filt_params(sig[0].stats.processing[2])
+# Type 42 embeds fonts as editable text rather than outlines, so a figure can
+# be relabelled in a vector editor after the fact. Set at import because it is
+# a global, and this module is the one that draws.
+matplotlib.rcParams["ps.fonttype"] = 42
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["svg.fonttype"] = "none"
 
 
 def read_pyrocko(path):
@@ -167,280 +176,31 @@ def stream_distance_sort(st, dist_met="repi"):
     return st.copy()
 
 
-def cps(st):
-    return st.copy()
-
-
-class DataSet:
-    pdir = " "
-    pref = ("HH", "BH", "EN")
-    stat_pref = ("BRWY", "GAWY", "FMC", "SVWY")
-    allpaths = []
-    stations = []
-    available = []
-    filtered = []
-    pref_sta = True
-
-    def __init__(self, path, pdir="Data", pref_sta=True):
-        self.pdir = os.path.join(pdir, path)
-        self.pref_sta = pref_sta
-        self.__startup()
-
-    def get_obs_paths(self):
-
-        apaths = [os.path.join(self.pdir, ".".join(t)) for t in zip(*self.available)]
-
-        if self.pref_sta:
-            return [p for p in apaths if p.split(".")[-2] in self.stat_pref]
-        else:
-            return apaths
-
-    def __get_paths(self):
-        tmp = glob.glob(os.path.join(self.pdir, "*.sac"))
-        self.allpaths = [d.split("/")[-1] for d in tmp]
-        print(f"found {len(self.allpaths)} files in {self.pdir}.")
-
-    def __get_stations(self):
-        self.stations = sorted({x.split(".")[-3] for x in self.allpaths})
-
-    def __set_ranks(self):
-        self.ranks = rank_chans(self.pref)
-
-    def __get_available(self):
-        self.available = get_avail(self.ranks, self.allpaths)
-
-    def __startup(self):
-        self.__get_paths()
-        self.__get_stations()
-        self.__set_ranks()
-        self.__get_available()
-
-
-def getchan(path):
-    return path.split(".")[-2]
-
-
-def rank_chans(prefs):
-    num = [x + 1 for x in range(len(prefs))]
-    ranks = {}
-    for p, n in zip(prefs, num):
-        ranks.update({p: n})
-    return ranks
-
-
-def compare_ranks(ranks, current, new):
-    return ranks[current] < ranks[new]
-
-
-def get_avail(ranks, allpaths):
-    fs, chan = [], []
-    for f in allpaths:
-        if getchan(f)[:2] in ranks.keys():
-            tmp = ".".join(f.split(".")[:-2])
-            if tmp in fs:
-                ind = fs.index(tmp)
-                new = getchan(f)[:2]
-                if compare_ranks(ranks, chan[ind], new):
-                    chan[ind] = new
-
-            else:
-                fs.append(tmp)
-                chan.append(getchan(f)[:2])
-    return fs, chan
-
-
 def read_cat(path):
     return pd.read_csv(path, sep=r"\s+")
 
 
 def cat2kstyle(row):
-    d = row["Date"].replace("/", ".")
-    t = row["Time"].replace(":", ".")[:-3]
-    return ".".join([d, t])
+    """Catalogue date and time as dot-separated whole-number fields.
+
+    Sub-second precision is dropped, because :func:`keith2utc` parses every
+    field with :func:`int`. It used to be dropped with a fixed ``[:-3]`` slice,
+    which silently assumed exactly two decimal places on the seconds:
+
+    * ``"13:09:31.00"`` worked,
+    * ``"13:09:31.000"`` left a trailing separator and made ``keith2utc``
+      raise ``invalid literal for int()``,
+    * ``"13:09:31"`` — no decimals at all — lost the **seconds**, quietly
+      returning 13:09 as though it were 13:09:31.
+
+    The last is the one worth fixing: it is a wrong answer rather than an
+    error, and a catalogue written without fractional seconds is not unusual.
+    Splitting on the decimal point handles all three.
+    """
+    date = row["Date"].replace("/", ".")
+    time = row["Time"].split(".")[0].replace(":", ".")
+    return ".".join([date, time])
 
 
 def keith2utc(row):
     return obspy.UTCDateTime(*map(int, cat2kstyle(row).split(".")))
-
-
-def path_to_utc(p):
-    return obspy.UTCDateTime(*list(map(int, p.split(".")[1:])))
-
-
-def find_rotation_angle(
-    arr_from_x, arr_from_y, arr_to, cond=-1, inc=0.01, backwards=False
-):
-    """
-    Find the rotation angle required to raise one amplitude on a given array to the same
-    amplitude on a target array. This angle may be used to rotate the entire array.
-    The code increases (or decreases if backwards) the angle iteratively until the amplitude is
-    higer than or equal to the target amplitude.
-    """
-
-    max_its = 1000
-    its = 0
-    th = 0
-    tmp_from = arr_from_y[cond]
-
-    # They might already meet at one end, don't have to rotate.
-    if 10**tmp_from >= 10 ** arr_to[cond]:
-        print("already same level")
-        return 0
-
-    while 10**tmp_from <= 10 ** arr_to[cond]:
-        tmp_from = (
-            arr_from_x[cond] * np.sin(th)
-            + arr_from_y[cond] * np.cos(th)
-            + arr_from_y[0] * th
-        )
-        if backwards:
-            th -= inc
-        else:
-            th += inc
-        its += 1
-        if its > max_its:
-            print("Didn't ever meet.")
-            return 0
-    if backwards:
-        th += inc
-    else:
-        th -= inc
-    return th
-
-
-def find_rotation_angle_v2(arr_from_x, arr_from_y, arr_to, inc=0.01, backwards=False):
-    """
-    Find the rotation angle required to raise one amplitude on a given array to the same
-    amplitude on a target array. This angle may be used to rotate the entire array.
-    The code increases (or decreases if backwards) the angle iteratively until the amplitude is
-    higer than or equal to the target amplitude.
-    """
-
-    max_its = 5000
-    its = 0
-    th = 0
-
-    cent = np.sum((10**arr_from_x) * (10**arr_from_y)) / np.sum(10**arr_from_y)
-
-    print(f"centroid f @ {cent:.3f} Hz")
-
-    if backwards:
-        inds = 10**arr_from_x < cent
-    else:
-        inds = 10**arr_from_x > cent
-
-    # They might already meet at one end, don't have to rotate.
-    if np.any(10 ** arr_to[inds] <= 10 ** arr_from_y[inds]):
-        print("already same level")
-        return 0
-
-    tmp_from = arr_from_y.copy()
-
-    while True:
-        tmp_from = (
-            arr_from_x * np.sin(th) + arr_from_y * np.cos(th) + arr_from_y[0] * th
-        )
-        # if its % 500 == 0 or its==0 or its==5000:
-        #     plt.figure()
-        #     plt.title(f"iteration # {its}")
-        #     plt.plot(arr_from_x, tmp_from, 'b--', arr_from_x, arr_to, 'k')
-        #     plt.show()
-        #     input("Hi, I'm stopped")
-        #     plt.close()
-        if backwards:
-            th -= inc
-        else:
-            th += inc
-        its += 1
-
-        if np.any(10 ** tmp_from[inds] >= 10 ** arr_to[inds]):
-            break
-
-        if its > max_its:
-            print("Didn't ever meet.")
-            return 0
-
-    if backwards:
-        th += inc
-    else:
-        th -= inc
-    return th
-
-
-def rotate(x, y, theta):
-    """
-    Rotate an array through a given angle (in radians).
-    """
-    if theta == 0:
-        return y
-    else:
-        return x * np.sin(theta) + y * np.cos(theta) + y[0] * theta
-
-
-def rotate_noise_full(
-    xn, yn, ys, bcond=0, fcond=-1, inc=0.05, ret_angle=False, th1=None, th2=None
-):
-    """
-    Performs a forward and backward rotation to match low and high frequencies.
-    The output array is the input rotated forward and backwards and spliced
-    together.
-    """
-
-    xn = np.log10(xn)
-    yn = np.log10(yn)
-    ys = np.log10(ys)
-    if th1 is None and th2 is None:
-        # th1=find_rotation_angle(xn, yn, ys, cond=bcond, backwards=True, inc=inc)
-        # th2=find_rotation_angle(xn, yn, ys, cond=fcond, inc=inc)
-        th1 = find_rotation_angle_v2(xn, yn, ys, backwards=True, inc=inc)
-        th2 = find_rotation_angle_v2(xn, yn, ys, inc=inc)
-    # print(th1, th2)
-    yr1 = rotate(xn, yn, th1)
-    yr2 = rotate(xn, yn, th2)
-
-    if ret_angle:
-        return np.maximum(10**yr1, 10**yr2), th1, th2
-    else:
-        return np.maximum(10**yr1, 10**yr2)
-
-
-def get_centroid_freq(f, a):
-    # Calc the center freq of spectrum
-    return np.sum(f * a) / np.sum(a)
-
-
-def non_lin_boost_noise_func(xn, yn, ys, inc, space):
-
-    nb = 0
-    max_its = 1000
-    it = 0
-    # determin low and high freqs with respect to centroid freq
-    inds_b = xn <= get_centroid_freq(xn, ys)  # indices of 'low' freqs
-    inds_f = ~inds_b  # indices of 'high' freqs
-
-    sample_no = np.interp(xn, [xn.min(), xn.max()], space)
-    # 'rotate' the low frequencies to signal
-    while it < max_its:
-        tmp_n_b = yn / sample_no**nb
-
-        nb += inc
-        it += 1
-        # break condition looks for any low freq that is greater than signal
-        if np.any(tmp_n_b[inds_b] >= ys[inds_b]):
-            break
-
-    sample_no_f = sample_no[::-1]
-    nf = 0
-    max_its = 1000
-    it = 0
-
-    while it < max_its:
-        tmp_n_f = yn / sample_no_f**nf
-
-        nf += inc
-        it += 1
-
-        if np.any(tmp_n_f[inds_f] >= ys[inds_f]):
-            break
-
-    return np.maximum(tmp_n_b, tmp_n_f) / yn

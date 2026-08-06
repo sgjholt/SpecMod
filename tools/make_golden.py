@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
 INVENTORY = ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml"
 OUT = ROOT / "tests" / "golden" / "pipeline_reference.json"
+WINDOWS_OUT = ROOT / "tests" / "golden" / "window_reference.json"
 
 ORIGIN = "2019-08-26T07:49:24.2"
 LATITUDE, LONGITUDE, DEPTH_KM = 53.784, -2.967, 2.1
@@ -61,7 +62,8 @@ def _summary(a: np.ndarray) -> dict:
     }
 
 
-def _windows():
+def _prepared_stream():
+    """Metadata set, picks read, response removed — everything before the cut."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(INVENTORY))
@@ -83,15 +85,24 @@ def _windows():
         stream.detrend("demean")
         stream.taper(0.05)
         stream.remove_response(inventory, output="VEL")
-        signal = pre.get_signal(
-            stream,
-            pre.cut_s,
-            rafp=0.8,
-            tafs=20,
-            time_after="absolute_time",
-            refine_window=True,
-        )
-        return signal, pre.get_noise_p(stream, signal)
+        return stream
+
+
+def _cut(stream, refine_window=True):
+    return pre.get_signal(
+        stream,
+        pre.cut_s,
+        rafp=0.8,
+        tafs=20,
+        time_after="absolute_time",
+        refine_window=refine_window,
+    )
+
+
+def _windows():
+    stream = _prepared_stream()
+    signal = _cut(stream)
+    return signal, pre.get_noise_p(stream, signal)
 
 
 def capture(estimator: str) -> dict:
@@ -99,19 +110,76 @@ def capture(estimator: str) -> dict:
     with contextlib.redirect_stdout(io.StringIO()):
         result = Spectra.from_streams(signal.copy(), noise.copy(), estimator=estimator)
 
+    # Read through the immutable container, not the legacy one. The values are
+    # the same objects — `SNP` keeps the `SpectrumPair` its numbers came from —
+    # so this reference is byte-identical to the one the legacy path produced,
+    # which is what makes the swap verifiable rather than merely plausible.
     out = {}
-    for name, snp in sorted(result.group.items()):
-        band = getattr(snp, "ubfreqs", None)
+    for name, pair in sorted(result.as_spectrum_set().pairs.items()):
         out[name] = {
-            "n_freq": int(snp.signal.freq.size),
-            "freq": _summary(snp.signal.freq),
-            "amp": _summary(snp.signal.amp),
-            "noise_amp": _summary(snp.noise.amp),
-            "bsnr": _summary(snp.bsnr),
-            "resolution_floor": float(snp.resolution_floor),
-            "band": [float(band[0]), float(band[1])]
-            if band is not None and len(band) == 2
-            else None,
+            "n_freq": int(pair.signal.freq.size),
+            "freq": _summary(pair.signal.freq),
+            "amp": _summary(pair.signal.amp),
+            "noise_amp": _summary(pair.noise.amp),
+            "bsnr": _summary(pair.snr),
+            "resolution_floor": float(pair.resolution_floor),
+            "band": list(pair.band) if pair.band is not None else None,
+        }
+    return out
+
+
+def _window(tr, otime) -> dict:
+    """A window's geometry, expressed relative to the origin time.
+
+    Relative seconds rather than absolute timestamps: the numbers stay legible
+    in a diff, and a change of a tenth of a second shows up as a tenth of a
+    second instead of as two long ISO strings that have to be subtracted by eye.
+    """
+    return {
+        "start": float(tr.stats["wstart"] - otime),
+        "end": float(tr.stats["wend"] - otime),
+        "npts": int(tr.stats.npts),
+        "duration": float(tr.stats.endtime - tr.stats.starttime),
+    }
+
+
+def capture_windows() -> dict:
+    """Where every window lands, and the metadata that puts it there.
+
+    The spectral reference starts from cut windows, so it cannot see a change
+    in how those windows are chosen — such a change moves the reference rather
+    than failing against it. This is the piece that closes that gap: station
+    geometry, picks, the window before refinement, the window after it, and
+    the noise window derived from the signal's length.
+    """
+    stream = _prepared_stream()
+    refined = _cut(stream, refine_window=True)
+    unrefined = _cut(stream, refine_window=False)
+    noise = pre.get_noise_p(stream, refined)
+
+    out = {}
+    for tr, raw, sig, noi in zip(stream, unrefined, refined, noise, strict=True):
+        otime = tr.stats["otime"]
+        out[tr.id] = {
+            "sampling_rate": float(tr.stats.sampling_rate),
+            "slat": float(tr.stats["slat"]),
+            "slon": float(tr.stats["slon"]),
+            "selv": float(tr.stats["selv"]),
+            "repi": float(tr.stats["repi"]),
+            "rhyp": float(tr.stats["rhyp"]),
+            "azimuth": float(tr.stats["azimuth"]),
+            "back_azimuth": float(tr.stats["back_azimuth"]),
+            "p_time": float(tr.stats["p_time"] - otime),
+            "s_time": float(tr.stats["s_time"] - otime),
+            "unrefined": _window(raw, otime),
+            "signal": _window(sig, otime),
+            "noise": _window(noi, otime),
+            # What `signal_intensity` moved: the 1st- and 99th-percentile
+            # offsets into the unrefined window, in seconds.
+            "refinement": {
+                "lead": float(sig.stats["wstart"] - raw.stats["wstart"]),
+                "trail": float(sig.stats["wend"] - raw.stats["wstart"]),
+            },
         }
     return out
 
@@ -145,6 +213,10 @@ def main() -> None:
     n = sum(len(v) for k, v in reference.items() if k != "_environment")
     est = len(reference) - 1
     print(f"wrote {OUT.relative_to(ROOT)}: {est} estimators, {n} windows")
+
+    windows = {"_environment": _environment(), "windows": capture_windows()}
+    WINDOWS_OUT.write_text(json.dumps(windows, indent=1, sort_keys=True) + "\n")
+    print(f"wrote {WINDOWS_OUT.relative_to(ROOT)}: {len(windows['windows'])} traces")
 
 
 if __name__ == "__main__":

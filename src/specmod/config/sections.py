@@ -172,9 +172,11 @@ class SnrConfig:
     scale_parseval: bool = True
     interpolate_noise: bool = True
 
-    bandwidth_method: Literal["integral", "peak"] = "peak"
-    #: Percentile bound for the "integral" method.
-    bandwidth_percentile: float = 0.99
+    #: Names come from :data:`specmod.core.bandwidth.BANDWIDTH_SELECTORS`.
+    #: This said ``"integral"`` while the registry said ``"widest"``, from the
+    #: period when the selector was still a percentile of a sign integral —
+    #: a config value that named nothing the code would accept.
+    bandwidth_method: Literal["widest", "peak"] = "peak"
 
     #: Impose a low-frequency floor from the window length (~1/T), or the cone
     #: of influence when the spectrum came from a CWT. Nothing enforced this

@@ -26,6 +26,7 @@ import os
 import warnings
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -34,6 +35,7 @@ obspy = pytest.importorskip("obspy")
 
 import specmod.preprocess as pre  # noqa: E402
 from specmod.core import Spectrum  # noqa: E402
+from specmod.core import noise as noise_module  # noqa: E402
 from specmod.core.bandwidth import (  # noqa: E402
     BANDWIDTH_SELECTORS,
     BandwidthSelector,
@@ -54,6 +56,8 @@ from specmod.core.noise import (  # noqa: E402
     NoiseModel,
     boost_noise,
     get_noise_model,
+    rotate_log_spectrum,
+    rotate_noise,
 )
 from specmod.fitting import (  # noqa: E402
     FitSpectrum,
@@ -407,10 +411,13 @@ def test_the_registry_resolves_the_default() -> None:
 
 def test_an_unknown_noise_model_names_the_available_ones() -> None:
     with pytest.raises(ValueError, match="Unknown noise model"):
-        get_noise_model("rotate")
-    # `rotate` is the legacy ROT_METHOD = 1, not yet ported. When it lands it
-    # registers here and this test changes to assert it resolves.
-    assert "rotate" not in NOISE_MODELS
+        get_noise_model("rotation")
+
+
+def test_the_legacy_rotate_method_resolves() -> None:
+    """`ROT_METHOD = 1`, which used to raise `NotImplementedError` from `SNP`."""
+    assert get_noise_model("rotate").name == "rotate"
+    assert set(NOISE_MODELS) == {"boost", "rotate", "none"}
 
 
 def test_every_registered_model_satisfies_the_protocol() -> None:
@@ -456,6 +463,112 @@ def test_boost_lifts_the_noise_to_touch_the_signal() -> None:
 
     lifted = noise * get_noise_model("boost").factor(freq, noise, signal)
     assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
+
+
+class TestRotateNoise:
+    """The legacy ``ROT_METHOD = 1``, ported.
+
+    It was commented out on ``master`` and `SNP` raised rather than running it,
+    so there is no published number to preserve — which is what licensed
+    solving for the angle instead of stepping to it, and taking the low/high
+    split from the signal rather than the noise. See `core.noise`.
+    """
+
+    @staticmethod
+    def _case(seed: int = 5, n: int = 60) -> tuple[Any, Any, Any]:
+        rng = np.random.default_rng(seed)
+        freq = np.logspace(-1.0, 1.7, n)
+        signal = 1e-6 * freq ** rng.uniform(-2.5, -0.5) * 10 ** rng.normal(0, 0.2, n)
+        noise = signal * 10 ** rng.normal(-1.3, 0.2, n)
+        return freq, noise, signal
+
+    def test_it_lifts_the_noise_to_touch_the_signal(self) -> None:
+        """Same defining property as boost, reached by a different route."""
+        freq, noise, signal = self._case()
+        lifted = noise * get_noise_model("rotate").factor(freq, noise, signal)
+        assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
+
+    def test_a_rotation_of_zero_is_the_identity(self) -> None:
+        freq, noise, _ = self._case()
+        rotated = rotate_log_spectrum(np.log10(freq), np.log10(noise), 0.0)
+        assert rotated == pytest.approx(np.log10(noise))
+
+    def test_noise_already_at_the_signal_is_left_alone(self) -> None:
+        freq, _, signal = self._case()
+        factor = get_noise_model("rotate").factor(freq, signal.copy(), signal)
+        assert factor == pytest.approx(np.ones_like(factor))
+
+    def test_the_angle_is_continuous_in_the_input(self) -> None:
+        """The reason it is bisected rather than stepped.
+
+        The legacy loop advanced by a fixed ``inc`` and stopped at the first
+        trial past the touching point, so its answer was a step function of its
+        input and two machines differing in the last bit could land either
+        side. Perturbing the signal by one part in 1e-12 must move the factor
+        by about that much, not by a step.
+        """
+        freq, noise, signal = self._case()
+        model = get_noise_model("rotate")
+        base = model.factor(freq, noise, signal)
+        nudged = model.factor(freq, noise, signal * (1.0 + 1e-12))
+        assert np.max(np.abs(nudged / base - 1.0)) < 1e-8
+
+    def test_the_bracket_resolution_does_not_change_the_answer(self) -> None:
+        """What "continuous" buys: the coarse grid only brackets the root.
+
+        Halving the number of bracketing steps changes which interval the root
+        is found in, and must not change the root. If it did, the grid would be
+        part of the answer — which is exactly what was wrong with stepping.
+        """
+        freq, noise, signal = self._case()
+        base = rotate_noise(freq, noise, signal)
+        with mock.patch.object(noise_module, "_BRACKET_STEPS", 37):
+            coarse = rotate_noise(freq, noise, signal)
+        assert coarse == pytest.approx(base, rel=1e-9)
+
+    def test_it_reaches_the_signal_even_from_thirty_decades_down(self) -> None:
+        """The legacy "Didn't ever meet." fallback is very hard to reach.
+
+        Written expecting the opposite, and corrected by the measurement. The
+        anchor term ``log_amp[0] * theta`` grows without bound as the angle
+        does, so a backward rotation can raise the noise arbitrarily far: even
+        thirty decades below the signal it still touches, exactly, well inside
+        a quarter turn. The fallback survives for the genuinely degenerate case
+        below, not as a routine outcome.
+        """
+        freq = np.logspace(-1.0, 1.7, 40)
+        signal = np.full_like(freq, 1.0)
+        noise = np.full_like(freq, 1e-30)
+        lifted = noise * rotate_noise(freq, noise, signal)
+        assert np.max(lifted / signal) == pytest.approx(1.0, rel=1e-9)
+
+    def test_an_empty_half_contributes_no_rotation(self) -> None:
+        """The degenerate case: a half with no bins in it cannot touch anything."""
+        freq = np.logspace(-1.0, 1.7, 20)
+        log_freq, log_amp = np.log10(freq), np.log10(np.full_like(freq, 1e-9))
+        angle = noise_module._touching_angle(
+            log_freq,
+            log_amp,
+            np.zeros_like(freq),
+            np.zeros(20, dtype=bool),
+            backwards=False,
+        )
+        assert angle == 0.0
+
+    def test_it_disagrees_with_boost_which_is_why_both_are_kept(self) -> None:
+        """Two different claims about the noise give two different bands.
+
+        If these agreed there would be no reason to offer the choice. Asserted
+        so that a change collapsing one into the other is visible.
+        """
+        freq, noise, signal = self._case()
+        boost = get_noise_model("boost").factor(freq, noise, signal)
+        rotate = get_noise_model("rotate").factor(freq, noise, signal)
+        assert np.max(np.abs(rotate / boost - 1.0)) > 0.1
+
+    def test_the_shapes_must_match(self) -> None:
+        with pytest.raises(ValueError, match="must all match"):
+            rotate_noise(np.ones(5), np.ones(4), np.ones(5))
 
 
 def test_boost_is_continuous_where_the_noise_crosses_the_signal() -> None:
@@ -677,3 +790,70 @@ def test_the_view_hands_out_metadata_the_fitter_can_copy(pnr_windows) -> None:
     meta = pair.for_fitting().meta
     assert isinstance(meta, dict)
     assert copy.deepcopy(meta) == meta
+
+
+# ------------------------------------------------- the migration path off SNP
+
+
+@pytestmark_data
+def test_the_legacy_container_converts_to_a_spectrum_set() -> None:
+    """`Spectra.as_spectrum_set()` is the way off the legacy containers.
+
+    Nothing is recomputed. Each `SNP` keeps the `SpectrumPair` its own numbers
+    came from, so the conversion hands those over and the two describe the same
+    run by construction rather than by agreeing to some tolerance.
+
+    That construction is what this asserts: the values are checked for
+    *identity* of source, not closeness.
+    """
+    legacy = _legacy()
+    modern = legacy.as_spectrum_set()
+
+    assert isinstance(modern, SpectrumSet)
+    assert len(modern) == len(legacy)
+    assert modern.ids() == legacy.ids()
+    assert modern.event == legacy.event
+
+    for name in modern.ids():
+        pair, snp = modern[name], legacy[name]
+        assert pair is snp.comparison, f"{name}: not the same object"
+        assert pair.snr is snp.comparison.snr
+
+
+@pytestmark_data
+def test_the_converted_set_carries_the_same_numbers() -> None:
+    """The values the pipeline actually reports, across the conversion."""
+    legacy = _legacy()
+    modern = legacy.as_spectrum_set()
+
+    for name in modern.ids():
+        pair, snp = modern[name], legacy[name]
+        assert pair.snr == pytest.approx(snp.bsnr, rel=1e-12), name
+        assert pair.resolution_floor == pytest.approx(snp.resolution_floor), name
+
+        band = getattr(snp, "ubfreqs", None)
+        if band is not None and len(band) == 2:
+            assert pair.band is not None, name
+            assert pair.band == pytest.approx([float(band[0]), float(band[1])]), name
+
+
+@pytestmark_data
+def test_the_converted_set_can_be_fitted() -> None:
+    """End to end: convert, filter to what passed, fit one.
+
+    The whole chain on the new types — `SpectrumSet` -> `passing()` ->
+    `for_fitting()` -> `FitSpectrum` — with no legacy container involved past
+    the conversion.
+    """
+    passing = _legacy().as_spectrum_set().passing()
+    assert len(passing) > 0
+
+    name = passing.ids()[0]
+    with contextlib.redirect_stdout(io.StringIO()):
+        fit = FitSpectrum(
+            passing[name].for_fitting(id=name), llpsp=-7.0, fc=4.0, ts=0.02
+        )
+        fit.fit_mod(method="powell")
+
+    assert fit.result.success
+    assert fit.describe_model() == "brune+constant_q in velocity"

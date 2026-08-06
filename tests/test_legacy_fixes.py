@@ -33,23 +33,22 @@ def test_every_module_parses() -> None:
 
 
 def test_keith2utc_parses_a_catalogue_row() -> None:
-    """The starred-expression syntax error lived in this function.
-
-    Note the input format: ``cat2kstyle`` drops sub-second precision with a
-    fixed ``[:-3]`` slice, so it assumes exactly two decimal places on the
-    seconds field. Anything else leaves a trailing separator and raises. That
-    fragility is pre-existing and left alone here deliberately — it is a
-    behaviour change, not a syntax fix, so it belongs with the preprocessing
-    rewrite rather than in this commit.
-    """
+    """The starred-expression syntax error lived in this function."""
     row = {"Date": "2020/03/18", "Time": "13:09:31.00"}
     assert ut.keith2utc(row) == obspy.UTCDateTime(2020, 3, 18, 13, 9, 31)
 
 
-def test_cat2kstyle_precision_assumption_is_documented() -> None:
-    """Pin the known limitation so the rewrite has something to point at."""
-    with pytest.raises(ValueError, match="invalid literal for int"):
-        ut.keith2utc({"Date": "2020/03/18", "Time": "13:09:31.000"})
+@pytest.mark.parametrize("seconds", ["31", "31.0", "31.00", "31.000", "31.123456"])
+def test_cat2kstyle_takes_any_seconds_precision(seconds: str) -> None:
+    """The limitation this used to pin, now fixed.
+
+    ``cat2kstyle`` dropped sub-second precision with a fixed ``[:-3]`` slice,
+    so it assumed exactly two decimal places. Three raised
+    ``invalid literal for int()``; **none lost the seconds entirely**, which
+    was the worse case because it was silent. See the docstring there.
+    """
+    row = {"Date": "2020/03/18", "Time": f"13:09:{seconds}"}
+    assert ut.keith2utc(row) == obspy.UTCDateTime(2020, 3, 18, 13, 9, 31)
 
 
 # ------------------------------------------------- §1 removed upstream APIs

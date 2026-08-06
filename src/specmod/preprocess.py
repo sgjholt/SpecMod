@@ -1,3 +1,5 @@
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import obspy
@@ -5,7 +7,26 @@ from scipy.integrate import cumulative_trapezoid
 
 from . import utils as ut
 
-STREAM_DISTANCE_METHODS = ["mseed", "sac", "list"]
+#: How station coordinates are supplied to :func:`set_stream_distance`.
+#: ``"none"`` is a deprecated alias for ``"list"``, kept because it is the
+#: spelling the function used to test for internally — see the note there.
+STREAM_DISTANCE_METHODS = ["mseed", "sac", "list", "none"]
+
+#: Accepted values of ``time_after``. Both spellings of the relative mode are
+#: taken by both cutting functions: they used to disagree, ``cut_p`` calling it
+#: ``"relative_time"`` and ``cut_s`` ``"relative_ps"``, with neither accepting
+#: the other's word for the same idea.
+_ABSOLUTE = "absolute_time"
+_RELATIVE = ("relative_time", "relative_ps")
+TIME_AFTER_METHODS = (_ABSOLUTE, *_RELATIVE)
+
+
+def _check_time_after(time_after):
+    if time_after not in TIME_AFTER_METHODS:
+        raise ValueError(
+            f"time_after={time_after!r} is not recognised; "
+            f"choose one of {', '.join(map(repr, TIME_AFTER_METHODS))}"
+        )
 
 
 def set_origin_time(tr, ot):
@@ -25,58 +46,74 @@ def set_stream_distance(
     dtype="sac",
 ):
     """
-    This assumes the sac files already have the station lat and long (degrees)
-    and elevation in the sac header.
+    Set the origin and source-receiver geometry on every trace in a stream.
+
+    ``dtype`` selects where the station coordinates come from:
+
+    ``"sac"``
+        the SAC header already on the trace.
+    ``"mseed"``
+        an ObsPy ``inventory``, which is then required.
+    ``"list"``
+        the ``stlats``, ``stlons`` and ``stelvs`` sequences, indexed
+        positionally against the stream. ``"none"`` is a deprecated alias.
+
+    Anything else raises. It used to print ``invalid method choice`` and carry
+    on, leaving traces with an origin but no distance and deferring the failure
+    to whatever first asked for ``repi``.
     """
+    dtype = dtype.lower()
+    if dtype not in STREAM_DISTANCE_METHODS:
+        raise ValueError(
+            f"dtype={dtype!r} is not recognised; "
+            f"choose one of {', '.join(map(repr, STREAM_DISTANCE_METHODS))}"
+        )
+    if dtype == "none":
+        warnings.warn(
+            'dtype="none" is a deprecated alias for dtype="list"',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        dtype = "list"
+    if dtype == "mseed" and inventory is None:
+        raise ValueError('dtype="mseed" requires an inventory')
+    if dtype == "list" and any(x is None for x in (stlats, stlons, stelvs)):
+        raise ValueError('dtype="list" requires stlats, stlons and stelvs')
 
-    global STREAM_DISTANCE_METHODS
+    for i, tr in enumerate(st):
+        tr.stats["dep"] = odep
+        tr.stats["olon"] = olon
+        tr.stats["olat"] = olat
+        set_origin_time(tr, ot)
 
-    if dtype.lower() in STREAM_DISTANCE_METHODS:
-        for i, tr in enumerate(st):
-            tr.stats["dep"] = odep
-            tr.stats["olon"] = olon
-            tr.stats["olat"] = olat
-            set_origin_time(tr, ot)
-            if dtype.lower() == "sac":
-                tr.stats["repi"] = (
-                    obspy.geodetics.gps2dist_azimuth(
-                        tr.stats.sac.stla, tr.stats.sac.stlo, olat, olon
-                    )[0]
-                    / 1000
-                )
-                tr.stats["rhyp"] = np.sqrt(
-                    (odep + (tr.stats.sac.stel / 1000)) ** 2 + tr.stats["repi"] ** 2
-                )
-                tr.stats["slon"] = tr.stats.sac.stlo
-                tr.stats["slat"] = tr.stats.sac.stla
-                tr.stats["selv"] = tr.stats.sac.stel
-            elif dtype.lower() == "mseed":
-                stlat, stlon, stelv = get_station_loc_from_inventory(tr, inventory)
-                tr.stats["slon"] = stlon
-                tr.stats["slat"] = stlat
-                tr.stats["selv"] = stelv
-                r, a, ba = obspy.geodetics.gps2dist_azimuth(olat, olon, stlat, stlon)
-                tr.stats["back_azimuth"] = ba
-                tr.stats["azimuth"] = a
-                tr.stats["repi"] = r / 1000
-                tr.stats["rhyp"] = np.sqrt(
-                    (odep + (stelv / 1000)) ** 2 + tr.stats["repi"] ** 2
-                )
+        if dtype == "sac":
+            stlat, stlon, stelv = (
+                tr.stats.sac.stla,
+                tr.stats.sac.stlo,
+                tr.stats.sac.stel,
+            )
+        elif dtype == "mseed":
+            stlat, stlon, stelv = get_station_loc_from_inventory(tr, inventory)
+        else:
+            stlat, stlon, stelv = stlats[i], stlons[i], stelvs[i]
 
-            elif dtype.lower() == "none":
-                stlat, stlon, stelv = stlats[i], stlons[i], stelvs[i]
-                tr.stats["slon"] = stlon
-                tr.stats["slat"] = stlat
-                tr.stats["selv"] = stelv
-                tr.stats["repi"] = (
-                    obspy.geodetics.gps2dist_azimuth(stlat, stlon, olat, olon)[0] / 1000
-                )
-                tr.stats["rhyp"] = np.sqrt(
-                    (odep + (stelv / 1000)) ** 2 + tr.stats["repi"] ** 2
-                )
+        tr.stats["slat"] = stlat
+        tr.stats["slon"] = stlon
+        tr.stats["selv"] = stelv
 
-            else:
-                print("invalid method choice")
+        # Order matters to the last bit: `gps2dist_azimuth` is not symmetric in
+        # floating point, and the mseed path has always called it
+        # origin-first while the others called it station-first. Preserved, so
+        # this consolidation does not move any published number.
+        if dtype == "mseed":
+            r, a, ba = obspy.geodetics.gps2dist_azimuth(olat, olon, stlat, stlon)
+            tr.stats["azimuth"] = a
+            tr.stats["back_azimuth"] = ba
+        else:
+            r = obspy.geodetics.gps2dist_azimuth(stlat, stlon, olat, olon)[0]
+
+        tr.stats["repi"] = r / 1000
+        tr.stats["rhyp"] = np.sqrt((odep + (stelv / 1000)) ** 2 + tr.stats["repi"] ** 2)
 
 
 def get_station_loc_from_inventory(tr, inv):
@@ -96,6 +133,20 @@ def set_picks_from_pyrocko(st, pyrock_file, emergency_ratio=1.7):
             tr.stats["s_time"] = picks[id]["S"]
         except KeyError:
             sdiff = (tr.stats["p_time"] - tr.stats["otime"]) * emergency_ratio
+            # Only meaningful when the origin precedes the pick. It is not
+            # always so — a misconfigured origin time gives a negative `sdiff`
+            # and an S arrival *before* P, from which every window cut is
+            # nonsense. Leave `s_time` unset instead: the pipeline's own idiom
+            # for "unusable" is a trace without one, and callers already filter
+            # on that.
+            if sdiff <= 0:
+                warnings.warn(
+                    f"{id}: no S pick, and the origin time is not before the P "
+                    f"pick, so one cannot be extrapolated (would give S "
+                    f"{-sdiff:.3f} s before P). Leaving s_time unset.",
+                    stacklevel=2,
+                )
+                continue
             tr.stats["s_time"] = tr.stats["p_time"] + sdiff
 
 
@@ -129,8 +180,24 @@ def rstfl(fnames, wild="*", ext="sac"):
 
 
 def link_window_to_trace(tr, start, end):
-    tr.stats["wstart"] = start
-    tr.stats["wend"] = end
+    """Record a window on a trace, as asked for *and* as delivered.
+
+    Two pairs, because they are not the same thing. ``trim`` gives back
+    whatever the record actually holds, so a window that runs off either end
+    comes back short — which is the normal case for noise windows, not the
+    exception. Recording only the request is how a truncated noise trace ends
+    up claiming a duration of data it does not have.
+
+    ``wstart``/``wend`` are what the trace holds. ``wstart_requested``/
+    ``wend_requested`` are what was asked for. Callers that want a window
+    length should use the former; callers reporting on the cut want the latter.
+
+    Must be called *after* the trim, or the two pairs are the same.
+    """
+    tr.stats["wstart_requested"] = start
+    tr.stats["wend_requested"] = end
+    tr.stats["wstart"] = tr.stats.starttime
+    tr.stats["wend"] = tr.stats.endtime
 
 
 def get_sta_shift(sta, sta_shift):
@@ -160,6 +227,8 @@ def cut_p(
     the signal window.
     """
 
+    _check_time_after(time_after)
+
     stas = 0
 
     for tr in st:
@@ -169,10 +238,9 @@ def cut_p(
 
         p_start = tr.stats["p_time"] - bf + stas
 
-        if time_after == "absolute_time":
+        if time_after == _ABSOLUTE:
             p_end = p_start + tafp
-
-        if time_after == "relative_time":
+        else:
             p_end = p_start + tafp * relps
 
         if p_end > tr.stats["endtime"]:
@@ -213,6 +281,8 @@ def cut_s(
 
     Modified by Pungky Suroyo.
     """
+    _check_time_after(time_after)
+
     stas = 0
 
     for tr in st:
@@ -220,10 +290,9 @@ def cut_s(
         relps = tr.stats["s_time"] - tr.stats["p_time"]
         p_end = tr.stats["p_time"] + relps * rafp + stas
 
-        if time_after == "absolute_time":
+        if time_after == _ABSOLUTE:
             s_end = p_end + tafs
-
-        if time_after == "relative_ps":
+        else:
             s_end = p_end + tafs * relps
 
         if s_end > tr.stats["endtime"]:
@@ -293,13 +362,16 @@ def cut_c(st, bf=2, raf=0.8, tafp=1.4, sta_shift={}):
 
         s_start = tr.stats["p_time"] + relps * raf + stas
 
-        c_start = tafp * relps + s_start
+        # Was `tafp * relps + s_start`, i.e. `float + UTCDateTime`.
+        # `UTCDateTime` defines no `__radd__`, so this raised `TypeError` for
+        # every input the function was ever given.
+        c_start = s_start + tafp * relps
 
         c_end = tr.stats["endtime"]
 
-        link_window_to_trace(tr, c_start, c_end)
-
         tr.trim(c_start, c_end)
+
+        link_window_to_trace(tr, c_start, c_end)
 
 
 def normalise(x, space=[0, 1]):
@@ -315,14 +387,18 @@ def get_signal(st, func, **kwargs):
 
 def get_noise_p(st, sig, bshift=0.2):
     stc = st.copy()
-    for tr, trs in zip(stc, sig, strict=False):
+    # `strict=True`: the two streams are paired by position, so a signal
+    # stream of a different length is not a shorter result but a wrong one.
+    # It used to be `strict=False`, which left the unpaired traces in the
+    # returned stream whole and unlinked — full records presented as noise.
+    for tr, trs in zip(stc, sig, strict=True):
         end = tr.stats["p_time"] - bshift
 
         start = end - (trs.stats["wend"] - trs.stats["wstart"])
 
-        link_window_to_trace(tr, start, end)
-
         tr.trim(start, end)
+
+        link_window_to_trace(tr, start, end)
     return stc
 
 
@@ -335,6 +411,6 @@ def get_noise_s(st, bf=1, bshift=0.2, sig=None):
             start = end - (sig[i].stats["wend"] - sig[i].stats["wstart"])
         else:
             start = end - bf
-        link_window_to_trace(tr, start, end)
         tr.trim(start, end)
+        link_window_to_trace(tr, start, end)
     return stc

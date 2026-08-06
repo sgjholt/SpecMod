@@ -23,15 +23,12 @@ Currently implemented
 ``boost``
     The default, described below. Lifts the low and high tails independently
     until each touches the signal.
-
-Not yet ported
---------------
 ``rotate``
-    ``utils.rotate_noise_full`` — the legacy ``ROT_METHOD = 1``. Rotates the
-    spectrum in log-log space through an angle found by iteration, forwards
-    and backwards, and splices the two. It still lives in ``utils`` and still
-    prints diagnostics; when it moves here it registers alongside ``boost``
-    and the integer ``ROT_METHOD`` global goes away.
+    The legacy ``ROT_METHOD = 1``, described below. Rotates the log-log
+    spectrum about the origin instead of scaling it.
+``none``
+    The recorded noise, uncorrected. The control the other two are read
+    against.
 
 Anything added here should say what it assumes about the noise, because that
 assumption is the whole content of the method — and it propagates into every
@@ -56,6 +53,53 @@ the recorded noise, scaled by a power of a frequency ramp — so it can be
 corrected by a smooth monotone lift anchored at the point where noise first
 meets signal. That is an assumption about the noise process, and a different
 one would give a different band.
+
+
+The rotate method
+-----------------
+
+``ROT_METHOD = 1``, described in the legacy source as "actual rotation, quite
+aggressive". In log-log space it rotates the noise spectrum about the origin,
+
+.. code-block:: text
+
+    Y'(theta) = X sin(theta) + Y cos(theta) + Y[0] * theta
+
+with ``X = log10(f)`` and ``Y = log10(noise)``, the trailing term holding the
+low-frequency end in place so the rotation pivots there rather than about the
+axis origin. As with ``boost``, one angle is found for the low half and one for
+the high, and the larger of the two results is kept at every frequency.
+
+**It assumes** the discrepancy between recorded and underlying noise is a *tilt*
+— the recorded window has the right level somewhere in the middle and the wrong
+slope — rather than the level offset ``boost`` assumes. That is a genuinely
+different claim about the noise process, which is why both are kept: comparing
+the two bands is the only way to see how much of a result is the method.
+
+A single rotation is not monotone — tilting the spectrum raises one end and
+lowers the other — so it is not obvious that the spliced result can only raise
+the noise, the way ``boost`` provably can. There is no proof of it here, but it
+was not observed to fail: over 4000 randomised spectra spanning three decades
+of frequency, spectral slopes from ``f**-3`` to ``f**1``, and noise between
+0.1% and 99% of signal, the smallest factor returned was ``1 - 2e-15``. The
+registry-wide test asserts the property; if some real spectrum ever violates
+it, that test is where it will show up, and the honest fix is to relax the
+claim rather than to clamp the method.
+
+Two deliberate departures from the legacy implementation, neither of which can
+move a published number — ``ROT_METHOD = 1`` was commented out on ``master``,
+so it has never produced one:
+
+* **The angle is solved, not stepped.** The legacy loop advanced ``theta`` by a
+  fixed ``inc`` and stopped at the first trial past the touching point, which
+  made the result a step function of its input — the same defect that made
+  ``boost`` machine-dependent. Here the touching angle is bracketed and then
+  bisected to a tolerance, so it is continuous in the input.
+* **The split between halves is taken from the signal.** The legacy version
+  used the *noise* centroid here and the *signal* centroid in the boost path.
+  The signal is the defensible one, for the reason given at
+  :func:`centroid_frequency`, and using it in both makes the two bands
+  comparable — which is the point of having a registry rather than a flag.
 """
 
 from __future__ import annotations
@@ -70,9 +114,12 @@ __all__ = [
     "NOISE_MODELS",
     "BoostNoise",
     "NoiseModel",
+    "RotateNoise",
     "boost_noise",
     "centroid_frequency",
     "get_noise_model",
+    "rotate_log_spectrum",
+    "rotate_noise",
 ]
 
 
@@ -197,6 +244,129 @@ def _lift(
     return np.asarray(noise_amp / sample**exponent)
 
 
+#: Angles beyond this are not a correction to a noise level. At a quarter turn
+#: the frequency and amplitude axes have swapped, and past it the rotated
+#: spectrum runs backwards in frequency. The legacy loop would have kept going
+#: to 250 radians — forty full turns — before giving up and returning zero;
+#: anything needing more than this has already stopped meaning anything.
+MAX_ROTATION = np.pi / 2
+
+#: Coarse steps used to bracket the touching angle before bisection. Only the
+#: bracket depends on this; the answer inside it does not, which is what keeps
+#: the result continuous as the root crosses a step boundary.
+_BRACKET_STEPS = 128
+
+
+def rotate_log_spectrum(
+    log_freq: NDArray[np.float64], log_amp: NDArray[np.float64], theta: float
+) -> NDArray[np.float64]:
+    """Rotate a log-log spectrum through ``theta`` radians.
+
+    The trailing ``log_amp[0] * theta`` term is what makes this a rotation
+    *about the low-frequency end* rather than about the axis origin: without it
+    the whole curve translates as well as tilts, and the correction stops being
+    anchored to the one part of the noise record that is least contaminated.
+    """
+    return np.asarray(
+        log_freq * np.sin(theta) + log_amp * np.cos(theta) + log_amp[0] * theta
+    )
+
+
+def _touching_angle(
+    log_freq: NDArray[np.float64],
+    log_noise: NDArray[np.float64],
+    log_signal: NDArray[np.float64],
+    where: NDArray[np.bool_],
+    *,
+    backwards: bool,
+    tol: float = 1e-12,
+) -> float:
+    """Smallest rotation at which any point in ``where`` reaches the signal.
+
+    Bracketed then bisected rather than stepped. The margin
+
+    .. code-block:: text
+
+        g(t) = max over `where` of [ rotate(t)  -  log_signal ]
+
+    is continuous in ``t`` and negative at ``t = 0`` unless the two already
+    touch, so the first ``t`` with ``g(t) >= 0`` is a root of a continuous
+    function and moves continuously with the data. Stepping to a multiple of a
+    fixed increment does not, which is what made the legacy version — and
+    ``boost`` before it was solved — differ between machines on last-bit
+    input differences.
+
+    Returns ``0.0`` when the halves already touch, and when no rotation within
+    :data:`MAX_ROTATION` brings them together. Both are the legacy fallbacks;
+    the difference is that the second no longer takes five thousand iterations
+    to discover.
+    """
+    if not np.any(where):
+        return 0.0
+
+    sign = -1.0 if backwards else 1.0
+    target = log_signal[where]
+
+    def margin(t: float) -> float:
+        rotated = rotate_log_spectrum(log_freq, log_noise, sign * t)[where]
+        return float(np.max(rotated - target))
+
+    if margin(0.0) >= 0.0:
+        return 0.0
+
+    step = MAX_ROTATION / _BRACKET_STEPS
+    lo = 0.0
+    for i in range(1, _BRACKET_STEPS + 1):
+        hi = i * step
+        if margin(hi) >= 0.0:
+            break
+        lo = hi
+    else:
+        return 0.0
+
+    while hi - lo > tol:
+        mid = 0.5 * (lo + hi)
+        if margin(mid) >= 0.0:
+            hi = mid
+        else:
+            lo = mid
+    return sign * hi
+
+
+def rotate_noise(
+    freq: NDArray[np.float64],
+    noise_amp: NDArray[np.float64],
+    signal_amp: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Multiplicative factor from rotating the noise toward the signal.
+
+    See the module docstring for what this assumes and how it differs from
+    :func:`boost_noise`. Returns the factor, for the same reason
+    :func:`boost_noise` does.
+    """
+    if noise_amp.shape != signal_amp.shape or noise_amp.shape != freq.shape:
+        raise ValueError(
+            f"freq {freq.shape}, noise {noise_amp.shape} and signal "
+            f"{signal_amp.shape} must all match"
+        )
+
+    log_freq = np.log10(freq)
+    log_noise = np.log10(noise_amp)
+    log_signal = np.log10(signal_amp)
+
+    centroid = centroid_frequency(freq, signal_amp)
+    low = freq <= centroid
+
+    back = _touching_angle(log_freq, log_noise, log_signal, low, backwards=True)
+    forward = _touching_angle(log_freq, log_noise, log_signal, ~low, backwards=False)
+
+    lifted = np.maximum(
+        10.0 ** rotate_log_spectrum(log_freq, log_noise, back),
+        10.0 ** rotate_log_spectrum(log_freq, log_noise, forward),
+    )
+    return np.asarray(lifted / noise_amp)
+
+
 @runtime_checkable
 class NoiseModel(Protocol):
     """Anything that produces a multiplicative correction to a noise spectrum.
@@ -244,6 +414,28 @@ class BoostNoise:
 
 
 @dataclass(frozen=True)
+class RotateNoise:
+    """Tilt the noise toward the signal rather than scaling it.
+
+    The legacy ``ROT_METHOD = 1``. See the module docstring for the assumption
+    this encodes, how it differs from :class:`BoostNoise`, and the two
+    departures from the legacy implementation.
+    """
+
+    @property
+    def name(self) -> str:
+        return "rotate"
+
+    def factor(
+        self,
+        freq: NDArray[np.float64],
+        noise_amp: NDArray[np.float64],
+        signal_amp: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        return rotate_noise(freq, noise_amp, signal_amp)
+
+
+@dataclass(frozen=True)
 class NoNoiseModel:
     """Use the recorded noise as measured.
 
@@ -268,8 +460,9 @@ class NoNoiseModel:
 
 
 #: Registered noise models, by the name configuration refers to them by.
-NOISE_MODELS: dict[str, type[BoostNoise] | type[NoNoiseModel]] = {
+NOISE_MODELS: dict[str, type[BoostNoise] | type[RotateNoise] | type[NoNoiseModel]] = {
     "boost": BoostNoise,
+    "rotate": RotateNoise,
     "none": NoNoiseModel,
 }
 

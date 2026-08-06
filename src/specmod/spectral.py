@@ -11,6 +11,7 @@ from . import config as cfg
 from .config import load_config
 from .core import Spectrum as _CoreSpectrum
 from .core.collection import SpectrumPair as _CorePair
+from .core.collection import SpectrumSet as _CoreSet
 from .core.collection import log_bin
 from .transforms import ESTIMATORS
 
@@ -74,28 +75,49 @@ def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
 
 
 # VARIABLES READ FROM CONFIG
+#
+# Sourced from the typed `Config` rather than the flat `SPECTRAL` dict these
+# used to come from. Every value is identical — the typed defaults were written
+# to reproduce them — so this is a change of provenance, not of behaviour: a
+# study can now override any of them through the layered config instead of
+# editing a module, and every one is validated and recorded.
+#
+# They remain module-level rather than being read per call because that is the
+# escape hatch the legacy path and its tests use. `spectral` is a shell over
+# `core` now, so the right end state is for these to disappear with it rather
+# than to grow a plumbing layer of their own.
+
+_SNR = cfg.load_config().config.snr
+_SMOOTHING = cfg.load_config().config.smoothing
 
 SUPPORTED_SAVE_METHODS = ["pickle"]
 
-BW_METHOD = cfg.SPECTRAL["BW_METHOD"]
+#: Kept as the legacy integer because callers set it. 1 was `rotate`, 2 was
+#: `boost`; both now resolve through `core.noise.NOISE_MODELS`, and the name
+#: in `snr.rotation_method` is what a new caller should set.
+BW_METHOD = 2 if _SNR.bandwidth_method == "peak" else 1
 
-PLOT_COLUMNS = cfg.SPECTRAL["PLOT_COLUMNS"]
+PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 
-BINNING_PARAMS = cfg.SPECTRAL["BIN_PARS"]
+BINNING_PARAMS = {
+    "smin": _SMOOTHING.f_min,
+    "smax": _SMOOTHING.f_max,
+    "bins": _SMOOTHING.n_bins,
+}
 
 BIN = True
 
-SCALE_PARSEVAL = cfg.SPECTRAL["SCALE_PARSEVAL"]
+SCALE_PARSEVAL = _SNR.scale_parseval
 
-ROTATE_NOISE = cfg.SPECTRAL["ROTATE_NOISE"]
-ROT_METHOD = cfg.SPECTRAL["ROT_METHOD"]
-ROT_PARS = cfg.SPECTRAL["ROT_PARS"]
+ROTATE_NOISE = _SNR.rotate_noise
+ROT_METHOD = 1 if _SNR.rotation_method == "rotate" else 2
+ROT_PARS = {"inc": _SNR.rotation_increment, "space": list(_SNR.rotation_space)}
 
-SNR_TOLERENCE = cfg.SPECTRAL["SNR_TOLERENCE"]
-MIN_POINTS = cfg.SPECTRAL["MIN_POINTS"]
+SNR_TOLERENCE = _SNR.tolerance
+MIN_POINTS = _SNR.min_points
 
-ASSERT_BANDWIDTHS = cfg.SPECTRAL["ASSERT_BANDWIDTHS"]
-SBANDS = cfg.SPECTRAL["S_BANDS"]
+ASSERT_BANDWIDTHS = _SNR.assert_bandwidths
+SBANDS = list(_SNR.bands)
 
 
 # classes
@@ -351,6 +373,9 @@ class SNP:
     signal = None
     noise = None
     bsnr = np.array([0.0])
+    #: The immutable :class:`specmod.core.SpectrumPair` this pair's numbers
+    #: came from. ``None`` only if `__compare` has not run.
+    comparison = None
     event = " "
     ubfreqs = np.array([])
     itrpn = True
@@ -383,12 +408,17 @@ class SNP:
                 "needs the noise on the signal's frequency axis to share bin "
                 "edges with it."
             )
-        if ROTATE_NOISE and ROT_METHOD != 2:
-            raise NotImplementedError(
-                f"ROT_METHOD={ROT_METHOD} (rotate_noise_full) has not been "
-                "ported to specmod.core.noise; only the boost method (2) is "
-                "available. See REFACTOR_PLAN.md §4.5."
-            )
+        # The legacy integer, mapped to the registry it was replaced by.
+        # `ROT_METHOD = 1` was commented out on `master` and never ran; it is
+        # now `noise.RotateNoise` and does.
+        try:
+            noise_model = {1: "rotate", 2: "boost"}[ROT_METHOD]
+        except KeyError:
+            raise ValueError(
+                f"ROT_METHOD={ROT_METHOD} is not a known method; "
+                f"use 1 (rotate) or 2 (boost), or name a model from "
+                f"specmod.core.noise.NOISE_MODELS."
+            ) from None
 
         pair = _CorePair.compare(
             self.__as_core(self.signal),
@@ -399,6 +429,7 @@ class SNP:
             n_bins=BINNING_PARAMS["bins"],
             scale_parseval=SCALE_PARSEVAL,
             rotate_noise=ROTATE_NOISE,
+            noise_model=noise_model,
             resolution_floor=load_config().config.snr.resolution_floor,
             bandwidth="peak" if BW_METHOD == 2 else "widest",
         )
@@ -411,6 +442,12 @@ class SNP:
         self.noise.bamp = np.array(pair.binned_noise.amp, dtype=float)
         self.signal.bfreq = np.array(pair.binned_signal.freq, dtype=float)
         self.signal.bamp = np.array(pair.binned_signal.amp, dtype=float)
+
+        # Kept, not discarded. `SNP` is now a mutable wrapper around an
+        # immutable `SpectrumPair`, which is what makes `Spectra` convertible
+        # to a `SpectrumSet` without recomputing anything — see
+        # `Spectra.as_spectrum_set`.
+        self.comparison = pair
 
         self.bsnr = np.array(pair.snr, dtype=float)
         self.resolution_floor = pair.resolution_floor
@@ -669,6 +706,27 @@ class Spectra:
     def ids(self):
         """Trace ids in this event, sorted."""
         return sorted(self.group)
+
+    def as_spectrum_set(self):
+        """This event as an immutable :class:`specmod.core.SpectrumSet`.
+
+        The migration path off the legacy containers. Nothing is recomputed:
+        every `SNP` already holds the `SpectrumPair` its numbers came from, so
+        this hands those over directly and the two describe the same run by
+        construction rather than by agreement.
+
+        Callers can move to the new type before the old one goes, which is the
+        point — swapping what `Spectra.group` holds in one step would break
+        every reader at once, and the readers are what carry the meaning.
+        """
+        return _CoreSet(
+            pairs={
+                id: snp.comparison
+                for id, snp in self.group.items()
+                if snp.comparison is not None
+            },
+            event=self.event or "",
+        )
 
     def passing(self):
         """Only the pairs that yielded a usable band."""

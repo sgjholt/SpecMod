@@ -573,26 +573,27 @@ the spectrum came from a CWT, `~1/T` otherwise (§4.4.2). At present the selecti
 is purely amplitude-based and can return a usable band extending below what the
 window length can resolve.
 
-`rotate_noise_full` and `non_lin_boost_noise_func` move to `snr/rotation.py`
-unchanged in behaviour but as pure functions with the iteration limits and
-`print` diagnostics replaced by logging and a returned convergence flag — at
-present `find_rotation_angle_v2` prints `"Didn't ever meet."` and returns `0`,
-silently disabling the correction.
+`rotate_noise_full` and `non_lin_boost_noise_func` are now `core/noise.py`, as
+registered `NoiseModel` implementations — `boost`, `rotate` and `none` —
+selected by name rather than by the `ROT_METHOD` integer. Both are solved
+rather than iterated, so neither has an iteration limit to print
+`"Didn't ever meet."` from and silently disable the correction. The originals
+are deleted.
 
 #### 4.5.1 Status: stage 1 partially landed
 
-`core/collection.py` and `core/rotation.py` now exist and the legacy path uses
+`core/collection.py` and `core/noise.py` now exist and the legacy path uses
 them for binning and rotation. What is done, and what is deliberately not:
 
 | Piece | State |
 |---|---|
 | `log_bin` | Shared. `spectral.Spectrum.__bin_spectrum` calls it. |
-| `boost_noise` (`ROT_METHOD = 2`) | Shared. Verified bit-identical against `non_lin_boost_noise_func` over 200 randomised cases. |
+| `boost_noise` (`ROT_METHOD = 2`) | Shared, and solved rather than stepped (§4.5.2). Verified bit-identical against the legacy `SNP.rotate_noise` over 200 randomised cases before the discontinuity fixes. |
 | `parseval_scale`, `interpolate_onto` | Shared. The legacy copies are deleted. |
 | `find_bandwidth` | Shared, as a registry — `peak` (was `BW_METHOD = 2`, the default) and `widest`. |
-| `rotate_noise_full` (`ROT_METHOD = 1`) | Still not ported. `SNP` now **raises** rather than silently doing something else. |
+| `rotate_noise_full` (`ROT_METHOD = 1`) | **Ported** as `noise.RotateNoise`, registered as `"rotate"`. `SNP` no longer raises: `ROT_METHOD = 1` runs end to end and gives materially narrower bands than `boost` on 25 of the 28 PNR windows, consistent with the legacy source's own description of it as "quite aggressive". See §4.5.3. |
 | `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
-| `SpectrumSet` | `Spectra` presents the same interface but still holds `SNP`. The fitter no longer blocks the swap — it accepts a `SpectrumPair` via `for_fitting()` — so what remains is the flatfile I/O and plotting in `FitSpectra`. |
+| `SpectrumSet` | `Spectra.as_spectrum_set()` converts without recomputing — each `SNP` keeps the pair its numbers came from. The golden reference and its generator read the new container; regenerating produced a **byte-identical** file, which is the proof the swap moved nothing. `Spectra.group` still holds `SNP` for the smoke test, which exists to cover the legacy seam. |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and
@@ -668,6 +669,89 @@ Two things to fix in the same change, since they are both about that function:
 *not* related by the binning operation — re-binning the rotated `amp` does not
 reproduce `bamp`, differing by about 6% on real data. Whichever becomes
 canonical, it should be one of them and not both.
+
+#### 4.5.3 `rotate` ported: the noise registry is complete
+
+`ROT_METHOD = 1` was the last unported piece of the noise machinery, and the
+one `SNP` raised `NotImplementedError` for. It is now `noise.RotateNoise`,
+registered as `"rotate"` alongside `"boost"` and `"none"`, and
+`SNP.__compare` maps the legacy integer onto the registry instead of refusing.
+`SpectrumPair.compare` takes a `noise_model` rather than hardcoding the boost.
+
+**Why porting it was cheap.** `ROT_METHOD = 1` is *commented out* on `master`
+— it has never been the default and has never produced a published number. So
+unlike every other piece of this migration, there was nothing to preserve, and
+two changes could be made that would otherwise have needed a deliberate
+reference regeneration:
+
+* **The angle is solved, not stepped.** The legacy advanced `theta` by a fixed
+  `inc` and stopped at the first trial past the touching point — the identical
+  defect that made `boost` machine-dependent (§4.5.2). `RotateNoise` brackets
+  the touching angle on a coarse grid and bisects to `1e-12`, so the answer is
+  continuous in the input and independent of the grid. Both are asserted:
+  perturbing the signal by 1 part in 1e12 moves the factor by less than 1e-8,
+  and changing the bracket resolution from 128 steps to 37 changes nothing.
+* **The low/high split comes from the signal.** The legacy took the *noise*
+  centroid here and the *signal* centroid in the boost path. The signal is the
+  defensible choice — the split should follow where the energy is, and the
+  noise has no reason to share that shape — and using it in both is what makes
+  the two bands comparable rather than merely different.
+
+**What it does to the science.** On the 28 PNR windows, `rotate` moves the
+selected band on **25 of 28**, always narrower: `LV.L002..HHE` goes from
+1.51–38.60 Hz under `boost` to 1.51–13.87 Hz. That is a large enough difference
+that the choice has to be an explicit, recorded one — which is the argument for
+a registry over a flag, and for keeping `none` as the control both are read
+against.
+
+**A claim withdrawn.** The first draft of the module docstring asserted that
+rotation, being non-monotone, can return a factor below one. That was reasoning,
+not measurement, and the measurement disagrees: over 4000 randomised spectra
+spanning three decades of frequency, slopes from `f**-3` to `f**1` and noise
+from 0.1% to 99% of signal, the smallest factor observed was `1 - 2e-15`. There
+is no proof here that it cannot happen; the registry-wide test asserts the
+property, and if a real spectrum ever violates it the honest response is to
+relax the claim rather than clamp the method.
+
+Also found while porting: the legacy "Didn't ever meet." fallback is nearly
+unreachable. The anchor term `log_amp[0] * theta` grows without bound with the
+angle, so a backward rotation lifts the noise arbitrarily far — even thirty
+decades below the signal it still touches, exactly, well inside a quarter turn.
+
+#### 4.5.4 `utils.py` reduced to what still has callers
+
+With the rotation machinery moved, `utils.py` went from 446 lines to 206.
+Deleted: `find_rotation_angle`, `find_rotation_angle_v2`, `rotate`,
+`rotate_noise_full`, `get_centroid_freq` and `non_lin_boost_noise_func`
+(superseded by `core/noise.py`), and `DataSet` with its channel-ranking helpers
+`getchan`/`rank_chans`/`compare_ranks`/`get_avail`, plus `cps` and
+`path_to_utc` — none of which had a single caller anywhere in the package,
+the tests, the tutorial or the studies, and all of which were hardcoded to
+another study's station codes. The acquisition layer in §5.2 replaces them.
+
+`non_lin_boost_noise_func` is worth a note on its way out: it **had no return
+statement**. It computed both lifted arrays and returned `None`. Whatever the
+legacy `SNP` was doing, it was not calling this.
+
+What remains is characterised by `tests/test_utils.py`: `read_pyrocko`, which
+is upstream of both golden references and so needs the same treatment
+`preprocess` got, plus the catalogue readers and `stream_distance_sort`.
+`plot_traces` is left untested — it draws, and a test that only asserts it does
+not raise would pass just as happily on a broken figure.
+
+Two defects pinned there, unfixed: `read_pyrocko` does `readlines()[1:]`
+without checking for the Snuffler magic, so a marker file lacking the header
+line silently loses its first pick; and a station with two picks of the same
+phase — easy to produce by picking on more than one component — silently
+resolves to whichever appears last in the file.
+
+One fixed: `cat2kstyle` dropped sub-second precision with a fixed `[:-3]`
+slice, which assumed exactly two decimal places on the seconds. Three decimals
+raised `invalid literal for int()`; **no decimals lost the seconds entirely**,
+quietly returning 13:09 for 13:09:31. The second is the one that mattered, and
+splitting on the decimal point handles every case. This was the fragility
+`tests/test_legacy_fixes.py` deliberately deferred to "the preprocessing
+rewrite"; that test now asserts the fix across five seconds formats.
 
 ### 4.6 I/O — replacing pickle
 
@@ -920,11 +1004,43 @@ from what the output records, not from what the repository contains**:
 rather than a question, and later studies that moved the defaults get their own
 files alongside it. No archaeology, and every study reproducible from a named
 file.
+
+#### 4.7.1 `_config_legacy.py` deleted — the flat dicts are gone
+
+`spectral.py` and `fitting.py` bound their settings at import from a
+hand-maintained module of literals (`cfg.SPECTRAL["ROT_METHOD"]` and eleven
+more), which duplicated the typed defaults and could drift from them silently.
+Those reads now come from `Config`, and `_config_legacy.py` is deleted.
+
+Every value was compared across the swap and is identical — the typed defaults
+were written to reproduce the dict — so this changes provenance, not behaviour,
+and the golden reference did not move. What it buys: a study's TOML layer now
+reaches these settings instead of stopping at the module boundary, every one is
+validated and recorded in provenance, and `PLOT_COLUMNS` has one home rather
+than a copy in each of two dicts.
+
+The globals stay module-level, because that is the escape hatch the legacy path
+and its tests use, and `spectral` is a shell over `core` that should disappear
+rather than grow a plumbing layer. `BW_METHOD` and `ROT_METHOD` survive as
+integers derived from the config's *names* — the round trip is deliberate, so
+that a caller setting `sp.ROT_METHOD = 1` still works while the name is what
+the registry resolves. `tests/test_config.py` asserts the derivation in both
+directions, because nothing else would notice if `BINNING_PARAMS` quietly
+stopped tracking `smoothing.n_bins`.
+
+One stale value found on the way: `SnrConfig.bandwidth_method` was typed
+`Literal["integral", "peak"]` while the registry it names had `widest` and
+`peak`. `"integral"` was left over from when the selector was a percentile of
+a sign integral (§4.5.2) — a configuration value naming nothing the code would
+accept. Corrected to match `BANDWIDTH_SELECTORS`, and `bandwidth_percentile`,
+which only that method used, is removed.
 ---
 
 ## 5. Testing strategy
 
-Currently zero tests. Proposed, in dependency order:
+Proposed, in dependency order. Tiers 1, 3 and 4 are largely in place — 416
+tests, 80% overall — and the module-by-module characterisation described in
+§5.3 is what tier 4 turned into. Tier 2 is the outstanding one:
 
 **Tier 1 — property tests (`pytest` + `hypothesis`).** These encode the physics
 and are backend-independent:
@@ -1403,6 +1519,62 @@ distance spread, plus regional networks if coverage is thin; traces trimmed to
 roughly −60 s to +300 s about origin; inventory subset to exactly the channels
 included; picks and event parameters in a JSON manifest alongside. Target under
 50 MB packed so the first-use fetch stays quick.
+
+### 5.3 Characterising `preprocess` — and what it turned up
+
+The golden spectral reference (§5, tier 3) starts from **cut windows**. That
+leaves a blind spot exactly the size of `preprocess`: a change to how windows
+are chosen *moves* the reference rather than failing against it, so
+regenerating after such a change looks identical to regenerating after a
+legitimate one. `preprocess.py` could not be touched safely until that gap was
+closed.
+
+`tests/golden/window_reference.json` closes it. For each of the 28 tutorial
+traces it records station geometry, both picks, the window before refinement,
+the window after it, the refinement offsets, and the derived noise window —
+all as seconds relative to the origin, so a diff reads in seconds rather than
+in ISO timestamps. `tools/make_golden.py` writes it alongside the spectral
+reference. Tolerance is one sample: window edges are quantised to `delta`, so
+the only route for a last-bit difference is an `argmin` flip inside
+`signal_intensity`, which needs two adjacent samples equidistant from a
+percentile.
+
+Verified discriminating, not merely present: shifting the refinement
+percentile from 1 to 2 fails the refined-window, refinement-offset and noise
+tests while leaving the *unrefined* window green; shifting the noise window by
+50 ms fails only the noise test. Both report the moved edges by name.
+
+**Six defects the characterisation exposed, and their fixes.** Each was pinned
+first as current behaviour, then fixed in a follow-up commit, so the diff of
+the fix *is* the record of what observable behaviour changed:
+
+| Where | What was wrong | Now |
+|---|---|---|
+| `set_stream_distance` | `STREAM_DISTANCE_METHODS` listed `"list"`; the explicit-coordinate branch tested for `"none"`. The path was **unreachable by any argument** — `"none"` failed the guard and did nothing, `"list"` passed it, set the origin fields, then printed `invalid method choice` and computed no distance. | The three coordinate sources are one branch over `stlat/stlon/stelv`; `"list"` works, `"none"` is a deprecated alias. Unknown `dtype`, a missing inventory and missing coordinates each raise naming the argument. The mseed path keeps its original `gps2dist_azimuth` argument order — the call is not symmetric in floating point, so swapping it would move published numbers. |
+| `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`, and `UTCDateTime` has no `__radd__`: `TypeError` on **every** input. The function had never run. | Operands reversed. It runs, and is tested. |
+| `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, with the two functions spelling the relative mode differently (`"relative_time"` vs `"relative_ps"`). A typo — or the sibling's spelling — left the window end unbound, surfacing as `UnboundLocalError` from mid-function. | Validated up front against `TIME_AFTER_METHODS`; both functions accept both spellings; an unrecognised value raises naming itself. |
+| `get_noise_p` | Copied the whole input stream, then paired with `zip(..., strict=False)`, so traces the signal stream had lost came back **whole and unlinked** — full-length records presented as noise windows, no error, no warning. | `strict=True`. Positional pairing against a different-length stream is a wrong answer, not a short one. |
+| `set_picks_from_pyrocko` | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks; a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
+| `link_window_to_trace` | Recorded the *requested* window and never reconciled it with what `trim` delivered, so `wend - wstart` overstated every truncated noise trace. | Records both: `wstart`/`wend` are what the trace holds, `wstart_requested`/`wend_requested` what was asked for. All call sites link *after* the trim. |
+
+The last row is worth separating because it is not only a reporting bug.
+**Every one of the 28 noise windows is truncated** — 1.1–1.7 s against 1.8–3.7 s
+signals — because the records begin roughly two seconds before the P arrival.
+`get_noise_p` asks for the signal's length and never gets it. This is the
+reason noise and signal spectra do not share a frequency resolution, and hence
+why `SpectrumPair` carries a `resolution_floor`; see
+[`docs/processing.md` §2](processing.md#2-window-selection).
+
+**None of this moved the science.** `pipeline_reference.json` is byte-identical
+across the fix commit; only `window_reference.json` changed, and only in the
+two ways predicted — recorded edges snapped to sample boundaries, and noise
+starts moved from the requested time to the record start. The one place the
+change could propagate is `get_noise_p`, which derives its window length from
+the signal's recorded `wend - wstart`: now the delivered length rather than the
+requested one, differing by at most `delta/2`. On this data it cannot propagate
+at all, because every noise window is truncated by the record start regardless.
+
+`utils.py` is the remaining uncharacterised module upstream of the reference.
 
 ## 6. Packaging, CI/CD and process
 
