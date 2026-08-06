@@ -594,6 +594,7 @@ them for binning and rotation. What is done, and what is deliberately not:
 | `rotate_noise_full` (`ROT_METHOD = 1`) | **Ported** as `noise.RotateNoise`, registered as `"rotate"`. `SNP` no longer raises: `ROT_METHOD = 1` runs end to end and gives materially narrower bands than `boost` on 25 of the 28 PNR windows, consistent with the legacy source's own description of it as "quite aggressive". See §4.5.3. |
 | `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
 | `SpectrumSet` | `Spectra.as_spectrum_set()` converts without recomputing — each `SNP` keeps the pair its numbers came from. The golden reference and its generator read the new container; regenerating produced a **byte-identical** file, which is the proof the swap moved nothing. `Spectra.group` still holds `SNP` for the smoke test, which exists to cover the legacy seam. |
+| `pipeline` | **Waveforms to `SpectrumSet` with no legacy object in between** — see §4.5.5. The conversion path is no longer the only way to get one. |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and
@@ -752,6 +753,68 @@ quietly returning 13:09 for 13:09:31. The second is the one that mattered, and
 splitting on the decimal point handles every case. This was the fragility
 `tests/test_legacy_fixes.py` deliberately deferred to "the preprocessing
 rewrite"; that test now asserts the fix across five seconds formats.
+
+#### 4.5.5 `specmod.pipeline`: the direct route from waveforms
+
+`Spectra.as_spectrum_set()` converts *after the fact* — it needs a legacy run
+to exist first. `specmod.pipeline` removes that dependency: given a signal
+stream and its noise it builds the immutable containers directly, trace to
+`core.Spectrum` to `SpectrumPair`, with none of `spectral`'s mutable classes
+involved.
+
+**The route is shorter.** `spectral.Spectrum` converts the estimator's output
+to a PSD, copies the arrays out into a mutable object, converts back to
+magnitude, and then `SNP.__as_core` wraps them in a `core.Spectrum` again —
+`FAS -> PSD -> MAGNITUDE -> copy -> copy` where one `to_kind` will do. Every
+one of those copies exists because the legacy classes mutate in place; none is
+needed once nothing does.
+
+**It lives outside `core` on purpose.** `core` and `transforms` know nothing
+about ObsPy — they take arrays, a duration and a sampling rate — which is what
+makes them testable without constructing a Stream and usable on data that never
+came from one. `pipeline` is the single file that knows what a `Trace` is.
+
+`estimate_spectrum` moved here from `spectral` at the same time, and is now
+typed. It is the one bridge to `transforms`, and leaving it inside the untyped
+legacy shell made every caller of it untyped too. Its field selection now goes
+through `inspect.signature` rather than `dataclasses.fields`: the registry is
+typed over the `SpectralEstimator` protocol, which promises a `name` and an
+`estimate` and says nothing about being a dataclass, so asking for its fields
+was a claim the type did not support.
+
+**Agreement is measured, not argued.** `tests/test_pipeline.py` runs both paths
+over the same 28 windows and all five estimators — 140 results — and requires
+the spectra, binned spectra, SNR, resolution floors and selected bands to match
+to **1 part in 1e12**. They are not bit-identical, and should not be expected
+to be: the same map composed differently rounds differently.
+
+It also runs the **fitter** on both, because that is where a difference would
+be amplified rather than carried. Powell on a shallow minimum turns the 1e-12
+input difference into 7.5e-6 relative on `fc` — 4e-5 Hz on a 5 Hz corner, 2e-5
+in stress drop. The tell that the spectra really are the same is that `chisqr`,
+`redchi` and `bic` agree to 1e-11: the two runs land on marginally different
+points of an identical surface.
+
+**One gap the comparison found.** The legacy flatfile carries `lower-f-bound`,
+`upper-f-bound` and `pass_snr`, written by `SNP.__update_lims_to_meta`. A
+frozen pair cannot write back into its own signal — that is the point of
+freezing it — so `FittableView` supplies them instead, under the legacy column
+names so a flatfile from either container has the same schema. A fitted corner
+frequency without the band it was read over is not interpretable, and it is the
+first thing anyone comparing two runs asks for.
+
+The new path also carries what the legacy one never did: `estimator`, `id` and
+`resolution_floor` per row.
+
+**What is left tying the fitter to `spectral`.** `FitSpectra.__check_spectra`
+required `isinstance(spectra, sp.Spectra)` while only ever iterating and
+indexing, so a `SpectrumSet` was refused despite satisfying everything the
+fitter uses. It now checks for the mapping interface. `fittable_signal` returns
+a pair's `FittableView` rather than its `signal`, since the fitter wants
+`freq`, `amp`, `bfreq` and `bamp` side by side and the pair keeps the unbinned
+and binned forms separate — rightly, for the comparison.
+
+`FitSpectra(spectrum_set_from_streams(sig, noise))` now works end to end.
 
 ### 4.6 I/O — replacing pickle
 

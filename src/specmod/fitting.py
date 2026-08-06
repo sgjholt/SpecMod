@@ -21,7 +21,7 @@ PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 REQUIRED_SPECTRUM_ATTRIBUTES = ("id", "meta", "freq", "amp", "bfreq", "bamp")
 
 
-def fittable_signal(pair):
+def fittable_signal(pair, id=""):
     """The signal to fit from a paired spectrum, or ``None`` to skip it.
 
     Skipping is a decision the container should not have to spell out at every
@@ -29,9 +29,20 @@ def fittable_signal(pair):
     ``pass_snr`` on the legacy `Signal`, ``passes`` on
     :class:`specmod.core.SpectrumPair` — and both spellings mean the same
     thing while the two containers coexist.
-    """
-    signal = getattr(pair, "signal", pair)
 
+    For a :class:`~specmod.core.SpectrumPair` the thing returned is its
+    :class:`~specmod.core.collection.FittableView`, not its ``signal``. The
+    pair keeps the unbinned and binned spectra as separate objects, which is
+    right for the comparison and wrong for a fitter that wants ``freq``,
+    ``amp``, ``bfreq`` and ``bamp`` side by side; the view is what puts them
+    there. ``id`` names the station on it, since a frozen pair does not carry
+    the id the legacy `Signal` did.
+    """
+    view = getattr(pair, "for_fitting", None)
+    if view is not None:
+        return pair.for_fitting(id) if pair.passes else None
+
+    signal = getattr(pair, "signal", pair)
     passes = getattr(pair, "passes", None)
     if passes is None:
         passes = getattr(signal, "pass_snr", True)
@@ -317,13 +328,10 @@ class FitSpectra:
         # lets the container be swapped underneath without touching the fitter.
         tmp = {}
         for id in self.spectra:
-            spec = self.spectra[id]
-            if fittable_signal(spec) is None:
+            signal = fittable_signal(self.spectra[id], id)
+            if signal is None:
                 continue
-            fit = FitSpectrum(
-                fittable_signal(spec), model, **guess[id], fit_bins=fit_bins
-            )
-            tmp.update({id: fit})
+            tmp[id] = FitSpectrum(signal, model, **guess[id], fit_bins=fit_bins)
         self.models = tmp
 
     def set_const(self, pname, value, id=None):
@@ -420,10 +428,24 @@ class FitSpectra:
                 setter(mod)
 
     def __check_spectra(self, spectra):
-        if not isinstance(spectra, sp.Spectra):
-            raise ValueError(f"Must be a spectra object not {type(spectra)}")
-        else:
-            return True
+        """Accept anything that maps trace ids to paired spectra.
+
+        Was ``isinstance(spectra, sp.Spectra)``, which is why the fitter could
+        not be handed a :class:`~specmod.core.SpectrumSet` even though it only
+        ever iterates and indexes. Both containers present the same mapping
+        interface; requiring one concrete class was the last thing tying the
+        fitter to the legacy module.
+        """
+        required = ("__iter__", "__getitem__", "__len__")
+        missing = [name for name in required if not hasattr(spectra, name)]
+        if missing:
+            raise ValueError(
+                f"{type(spectra).__name__} cannot be fitted: it must map trace "
+                f"ids to paired spectra, and is missing {', '.join(missing)}. "
+                f"Use specmod.pipeline.spectrum_set_from_streams, or the legacy "
+                f"spectral.Spectra."
+            )
+        return True
 
     def __num_rows(self):
         l = self.__len__()

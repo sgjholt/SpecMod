@@ -363,7 +363,19 @@ class FittableView:
         # fitter deepcopies metadata so a fit cannot write back into the
         # spectrum it was built from. Converting here is the adapter earning
         # its keep.
-        return dict(self.pair.signal.meta)
+        meta = dict(self.pair.signal.meta)
+        # The band and the gate belong in a flat fit table: a fitted corner
+        # frequency without the band it was read over is not interpretable,
+        # and it is the first thing anyone comparing two runs asks for. Under
+        # the legacy names, so a flatfile written from either container has the
+        # same columns.
+        meta["pass_snr"] = self.pair.passes
+        if self.pair.band is not None:
+            meta["lower-f-bound"] = float(self.pair.band[0])
+            meta["upper-f-bound"] = float(self.pair.band[1])
+        if self.id:
+            meta.setdefault("id", self.id)
+        return meta
 
     @property
     def freq(self) -> NDArray[np.float64]:

@@ -1,4 +1,3 @@
-import dataclasses
 import pickle
 
 import matplotlib.pyplot as plt
@@ -13,7 +12,7 @@ from .core import Spectrum as _CoreSpectrum
 from .core.collection import SpectrumPair as _CorePair
 from .core.collection import SpectrumSet as _CoreSet
 from .core.collection import log_bin
-from .transforms import ESTIMATORS
+from .pipeline import estimate_spectrum
 
 
 def _mtspec(*args, **kwargs):
@@ -36,42 +35,6 @@ def _mtspec(*args, **kwargs):
             "`pip install specmod[mtspec]`, or use specmod.transforms instead."
         ) from exc
     return mtspec(*args, **kwargs)
-
-
-def estimate_spectrum(data, delta, *, motion="velocity", **kwargs):
-    """Transform a record, using whichever estimator the configuration names.
-
-    The bridge between this module and :mod:`specmod.transforms`. Every
-    estimator — FFT, Welch, multitaper, Prieto, quadratic, CWT — becomes
-    available to the pipeline through :class:`specmod.config.TransformConfig`,
-    where before there was a hardcoded call to ``mtspec(data, delta, 3)``.
-
-    Returns a :class:`specmod.core.Spectrum`, which carries its own units, so
-    the caller no longer has to track how many times the record has been
-    integrated or what amplitude convention is in force.
-
-    Keyword arguments override the configured estimator's parameters, which is
-    how the legacy ``**kwargs`` passthrough from ``Spectra.from_streams``
-    keeps working.
-    """
-    transform = load_config().config.transform
-    name = kwargs.pop("estimator", transform.estimator)
-    if name == "mtspec":
-        raise ValueError(
-            "estimator='mtspec' is the pre-refactor Fortran backend and is not "
-            "wired into the pipeline. Use 'prieto' for the same lineage with "
-            "no compiler, or 'multitaper' for the native implementation."
-        )
-
-    cls = ESTIMATORS[name]
-    fields = {f.name for f in dataclasses.fields(cls)}
-    settings = {
-        key: value
-        for key, value in dataclasses.asdict(transform).items()
-        if key in fields
-    }
-    settings.update({k: v for k, v in kwargs.items() if k in fields})
-    return cls(**settings).estimate(data, delta, motion=motion)
 
 
 # VARIABLES READ FROM CONFIG
