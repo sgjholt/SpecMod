@@ -101,17 +101,18 @@ _LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
 
 
 @pytest.fixture(scope="session")
-def pnr_windows():
-    """Signal and noise streams cut with the published Magna workflow.
+def pnr_stream():
+    """The prepared, *uncut* stream: metadata set, picks read, response removed.
 
-    Session-scoped and copied on handout: response removal and window
-    refinement are the slow part of the suite, every module that wants real
-    data wants the same 28 windows, and ``Spectra.from_streams`` mutates what
-    it is given.
+    This is the input to :mod:`specmod.preprocess`'s windowing functions, which
+    is what makes it useful separately from ``pnr_windows``. The golden
+    spectral reference starts from cut windows, so a change to how windows are
+    chosen *moves* that reference rather than failing against it; tests that
+    want to pin the windowing itself need the stream from before the cut.
 
-    Lives here rather than in a test module because a fixture imported *across*
-    test modules depends on pytest's path insertion having already happened,
-    which is not guaranteed and fails quietly into a skip.
+    Returns a callable, because every consumer mutates what it is given —
+    ``cut_s`` trims in place — and the expensive part (response removal) should
+    happen once per session.
     """
     obspy = pytest.importorskip("obspy")
     if not _DATA.is_dir() or not _INVENTORY.is_file():
@@ -142,15 +143,35 @@ def pnr_windows():
         stream.detrend("demean")
         stream.taper(0.05)
         stream.remove_response(inventory, output="VEL")
-        signal = pre.get_signal(
-            stream,
-            pre.cut_s,
-            rafp=0.8,
-            tafs=20,
-            time_after="absolute_time",
-            refine_window=True,
-        )
-        noise = pre.get_noise_p(stream, signal)
+
+    return stream.copy
+
+
+@pytest.fixture(scope="session")
+def pnr_windows(pnr_stream):
+    """Signal and noise streams cut with the published Magna workflow.
+
+    Session-scoped and copied on handout: response removal and window
+    refinement are the slow part of the suite, every module that wants real
+    data wants the same 28 windows, and ``Spectra.from_streams`` mutates what
+    it is given.
+
+    Lives here rather than in a test module because a fixture imported *across*
+    test modules depends on pytest's path insertion having already happened,
+    which is not guaranteed and fails quietly into a skip.
+    """
+    import specmod.preprocess as pre  # noqa: PLC0415
+
+    stream = pnr_stream()
+    signal = pre.get_signal(
+        stream,
+        pre.cut_s,
+        rafp=0.8,
+        tafs=20,
+        time_after="absolute_time",
+        refine_window=True,
+    )
+    noise = pre.get_noise_p(stream, signal)
 
     def cut():
         return signal.copy(), noise.copy()

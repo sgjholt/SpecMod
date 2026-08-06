@@ -1404,6 +1404,53 @@ roughly −60 s to +300 s about origin; inventory subset to exactly the channels
 included; picks and event parameters in a JSON manifest alongside. Target under
 50 MB packed so the first-use fetch stays quick.
 
+### 5.3 Characterising `preprocess` — and what it turned up
+
+The golden spectral reference (§5, tier 3) starts from **cut windows**. That
+leaves a blind spot exactly the size of `preprocess`: a change to how windows
+are chosen *moves* the reference rather than failing against it, so
+regenerating after such a change looks identical to regenerating after a
+legitimate one. `preprocess.py` could not be touched safely until that gap was
+closed.
+
+`tests/golden/window_reference.json` closes it. For each of the 28 tutorial
+traces it records station geometry, both picks, the window before refinement,
+the window after it, the refinement offsets, and the derived noise window —
+all as seconds relative to the origin, so a diff reads in seconds rather than
+in ISO timestamps. `tools/make_golden.py` writes it alongside the spectral
+reference. Tolerance is one sample: window edges are quantised to `delta`, so
+the only route for a last-bit difference is an `argmin` flip inside
+`signal_intensity`, which needs two adjacent samples equidistant from a
+percentile.
+
+Verified discriminating, not merely present: shifting the refinement
+percentile from 1 to 2 fails the refined-window, refinement-offset and noise
+tests while leaving the *unrefined* window green; shifting the noise window by
+50 ms fails only the noise test. Both report the moved edges by name.
+
+**Defects the characterisation exposed.** All are pinned by tests that name
+them as defects, so each fix lands as a diff in observable behaviour rather
+than as a silent change:
+
+| Where | What | Consequence |
+|---|---|---|
+| `set_stream_distance` | `STREAM_DISTANCE_METHODS` lists `"list"`; the explicit-coordinate branch tests for `"none"` | The explicit-coordinate path is **unreachable by any argument**. `dtype="none"` fails the guard and does nothing at all; `dtype="list"` passes it, sets the origin fields, then prints `invalid method choice` and computes no distance. |
+| `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`; `UTCDateTime` has no `__radd__` | `TypeError` on **every** input. The function has never run. |
+| `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, and the two functions spell the relative mode differently (`"relative_time"` vs `"relative_ps"`) | A typo — or the sibling function's spelling — leaves the window end unbound, surfacing as `UnboundLocalError` from mid-function instead of a message naming the bad argument. |
+| `get_noise_p` | Copies the whole input stream, then pairs with `zip(..., strict=False)` | Traces the signal stream lost are returned **whole and unlinked**: full-length records presented as noise windows, no error, no warning. |
+| `set_picks_from_pyrocko` | Emergency S pick is `p + (p − otime)·ratio`, unchecked | Only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks, so a station missing an S pick there would get S before P and a nonsense window. Every tutorial station has an S pick, which is why this has never been seen. |
+| `link_window_to_trace` | Records the *requested* window, never reconciled with what `trim` delivered | On a truncated noise trace `wend - wstart` overstates its extent. This is all 28 tutorial windows, so the misreporting is the normal case, not the edge case. |
+
+The last row is worth separating from the others because it is not only a
+reporting bug. **Every one of the 28 noise windows is truncated** — 1.1–1.7 s
+against 1.8–3.7 s signals — because the records begin roughly two seconds
+before the P arrival. `get_noise_p` asks for the signal's length and never
+gets it. This is the reason noise and signal spectra do not share a frequency
+resolution, and hence why `SpectrumPair` carries a `resolution_floor`; see
+[`docs/processing.md` §2](processing.md#2-window-selection).
+
+`utils.py` is the remaining uncharacterised module upstream of the reference.
+
 ## 6. Packaging, CI/CD and process
 
 ### 6.1 Packaging

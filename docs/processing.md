@@ -63,12 +63,21 @@ the refined window runs between the times at which $I$ reaches the 1st and
 99th percentiles. This is why the 28 PNR windows come out at 1.8–3.7 s rather
 than the nominal 20 s.
 
-**The noise window** ends $0.2$ s before the P arrival and is given *the same
-length as the refined signal window*, so the two are comparable without
-further correction — mostly. On the PNR data the noise windows still run
-1.1–1.7 s against 1.8–3.7 s signals, because a noise window is truncated by
-the P arrival when there is not enough pre-event record. That residual
-difference is what [§6](#6-noise-rescaling-and-rotation) corrects.
+**The noise window** ends $0.2$ s before the P arrival and is *asked for* the
+same length as the refined signal window, so the two would be comparable
+without further correction. In practice it rarely gets it: the window is
+truncated wherever the record does not start early enough, and on the PNR data
+that is **all 28 windows**, which run 1.1–1.7 s against 1.8–3.7 s signals.
+
+Note that `tr.stats.wstart` and `tr.stats.wend` record what was *requested*,
+not what was delivered — on a truncated noise trace they overstate its extent,
+and `tr.stats.starttime`/`endtime` are the truthful pair. The resulting
+resolution difference is what
+[§6](#6-noise-rescaling-and-rotation) corrects, and it is why
+`SpectrumPair` carries a `resolution_floor` rather than assuming the two
+spectra share a frequency axis. `tests/test_preprocess.py` pins this so that a
+change which quietly started delivering full-length noise windows would move
+every noise spectrum in the reference visibly rather than silently.
 
 ## 3. Spectral estimation
 
