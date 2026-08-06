@@ -9,14 +9,12 @@ and that the pieces compose without a global.
 
 from __future__ import annotations
 
-import contextlib
-import io
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from specmod.fitting import FitSpectra, FitSpectrum
+from specmod.fitting import FitSpectra, FitSpectrum, fittable_signal
+from specmod.pipeline import spectrum_set_from_streams
 from specmod.sources import (
     ATTENUATION_MODELS,
     SOURCE_MODELS,
@@ -28,7 +26,6 @@ from specmod.sources import (
     get_source_model,
     motion_scaling,
 )
-from specmod.spectral import Spectra
 
 FREQ = np.logspace(-1.0, 2.0, 60)
 OMEGA, FC, TSTAR = -7.0, 4.0, 0.02
@@ -262,11 +259,11 @@ def test_the_model_can_actually_be_fitted() -> None:
 def real_signal(pnr_windows):
     """One passing station from the committed PNR waveforms."""
     signal, noise = pnr_windows()
-    with contextlib.redirect_stdout(io.StringIO()):
-        spectra = Spectra.from_streams(signal, noise)
-    for snp in spectra.group.values():
-        if snp.signal.pass_snr:
-            return snp.signal
+    spectra = spectrum_set_from_streams(signal, noise)
+    for id in spectra.ids():
+        fittable = fittable_signal(spectra[id], id)
+        if fittable is not None:
+            return fittable
     pytest.skip("no station passed the signal-to-noise gate")
     return None
 

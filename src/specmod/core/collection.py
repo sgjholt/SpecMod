@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -35,6 +35,7 @@ from numpy.typing import NDArray
 from .bandwidth import get_bandwidth_selector
 from .noise import BoostNoise, NoiseModel, get_noise_model
 from .spectrum import Spectrum
+from .units import Motion
 
 __all__ = [
     "BinnedSpectrum",
@@ -189,6 +190,9 @@ class SpectrumPair:
     binning and the band search in the order they depend on each other.
     """
 
+    #: Where :meth:`compare` records its own arguments inside ``meta``.
+    SETTINGS_KEY: ClassVar[str] = "compare_settings"
+
     signal: Spectrum
     noise: Spectrum
     binned_signal: BinnedSpectrum
@@ -289,6 +293,25 @@ class SpectrumPair:
             sampling_rate=noise.sampling_rate,
             meta=dict(noise.meta),
         )
+        recorded = dict(meta or {})
+        # How this pair was made, kept so it can be remade. `to_motion` needs
+        # to replay the binning and the band search on converted amplitudes,
+        # and a pair that cannot say what settings produced it could only do
+        # that by being told again — which is how the settings of a stored
+        # result drift from the settings it was actually computed with.
+        recorded[cls.SETTINGS_KEY] = {
+            "threshold": threshold,
+            "f_min": f_min,
+            "f_max": f_max,
+            "n_bins": n_bins,
+            "scale_parseval": scale_parseval,
+            "resolution_floor": resolution_floor,
+            "rotate_noise": rotate_noise,
+            "noise_model": noise_model,
+            "bandwidth": bandwidth,
+            "rotation_inc": rotation_inc,
+            "rotation_space": rotation_space,
+        }
         return cls(
             signal=signal,
             noise=aligned_noise,
@@ -297,7 +320,40 @@ class SpectrumPair:
             snr=snr,
             resolution_floor=floor,
             band=band,
-            meta=dict(meta or {}),
+            meta=recorded,
+        )
+
+    def to_motion(self, motion: Motion | str) -> SpectrumPair:
+        """This pair in another ground-motion domain, re-binned and re-banded.
+
+        Replaces ``spectral.SNP.integrate``/``differentiate``, which mutated
+        in place and had no way to express "the same event, as displacement"
+        other than destroying the velocity one. This returns a new pair.
+
+        **The noise is not lifted again.** ``self.noise`` already carries the
+        lift from the comparison that built this pair, and applying it a second
+        time would compound on every conversion — narrowing the band each time.
+        The pre-refactor code guarded this with a ``ROTATED`` flag; here it
+        falls out of the settings being replayed with ``rotate_noise=False``.
+
+        **The band can move, and not for the reason it first appears.** The
+        *unbinned* signal-to-noise ratio is invariant under a domain change —
+        both spectra are multiplied by the same power of ``2*pi*f``. The
+        *binned* ratio is not, because a bin holds the geometric mean of
+        ``log10(amp)`` and averaging ``log10(a/f)`` over a bin is not
+        ``log10(a)`` averaged minus ``log10(f_centre)`` unless the centre is
+        the geometric mean of the frequencies in it. Measured on the 28 PNR
+        windows: the binned ratio moves by up to 16%, and 3 of the 28 bands
+        with it.
+        """
+        settings = dict(self.meta.get(self.SETTINGS_KEY, {}))
+        settings["rotate_noise"] = False
+        meta = {k: v for k, v in self.meta.items() if k != self.SETTINGS_KEY}
+        return type(self).compare(
+            self.signal.to_motion(motion),
+            self.noise.to_motion(motion),
+            meta=meta,
+            **settings,
         )
 
 
@@ -434,3 +490,15 @@ class SpectrumSet:
 
     def ids(self) -> Sequence[str]:
         return sorted(self.pairs)
+
+    def to_motion(self, motion: Motion | str) -> SpectrumSet:
+        """The whole event in another ground-motion domain.
+
+        Replaces ``spectral.Spectra.inte``/``diff``. See
+        :meth:`SpectrumPair.to_motion` for what is recomputed and what is not.
+        """
+        return SpectrumSet(
+            pairs={k: v.to_motion(motion) for k, v in self.pairs.items()},
+            event=self.event,
+            meta=dict(self.meta),
+        )

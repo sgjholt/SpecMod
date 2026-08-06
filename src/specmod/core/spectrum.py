@@ -132,6 +132,34 @@ class Spectrum:
         object.__setattr__(self, "kind", AmplitudeKind(self.kind))
         object.__setattr__(self, "meta", MappingProxyType(dict(self.meta)))
 
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Rebuild through ``__init__`` rather than by restoring ``__dict__``.
+
+        ``meta`` is a :class:`~types.MappingProxyType`, which is the right
+        thing for an immutable spectrum and **is not picklable**. Without this
+        the whole container tree — a ``SpectrumPair``, a ``SpectrumSet``, an
+        event — could not be written to disk at all, which was found the moment
+        the legacy pickle I/O was removed and there was nothing left to
+        persist a result with.
+
+        Reconstructing through the constructor also re-freezes the arrays.
+        ``numpy`` restores a pickled array as writeable, so a spectrum
+        round-tripped by any other route would come back mutable and quietly
+        lose the guarantee it exists to make.
+        """
+        return (
+            self.__class__,
+            (
+                self.freq,
+                self.amp,
+                self.motion,
+                self.kind,
+                self.duration,
+                self.sampling_rate,
+                dict(self.meta),
+            ),
+        )
+
     # ------------------------------------------------------------------ units
 
     @property

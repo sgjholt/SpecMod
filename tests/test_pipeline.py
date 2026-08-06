@@ -1,27 +1,20 @@
-"""The direct waveform-to-``SpectrumSet`` path, against the legacy one.
+"""The waveform-to-``SpectrumSet`` path: trace, spectrum, pair, event.
 
-:mod:`specmod.pipeline` goes trace to :class:`~specmod.core.Spectrum` to
-:class:`~specmod.core.SpectrumPair` without touching ``spectral``'s mutable
-classes. The legacy route reaches the same place by a longer one: the
-estimator's spectrum is converted to a PSD, copied out into a mutable object,
-converted back to magnitude, and wrapped in a ``core.Spectrum`` again by
-``SNP``.
+:mod:`specmod.pipeline` is the single file that knows what an ObsPy ``Trace``
+is. ``core`` and ``transforms`` below it take arrays, a duration and a sampling
+rate, which is what makes them testable without constructing a Stream.
 
-Whether those two agree is the question this file exists to answer, and it
-answers it by measurement over all 28 PNR windows and all five estimators
-rather than by argument about whether the conversions cancel. They are not
-expected to be bit-identical — the legacy takes ``FAS -> PSD -> MAGNITUDE``
-where this takes ``FAS -> MAGNITUDE``, which is the same map composed
-differently — so the bound is 1 part in 1e12, twelve orders tighter than
-anything that would matter seismologically and tight enough that a genuine
-change in the arithmetic cannot hide under it.
+This covers the adapter and the domain change. The numerical guarantee — that
+these are the same numbers the pre-refactor pipeline produced — is carried by
+``tests/test_golden_reference.py``, against a committed artefact rather than
+against live legacy code, so that it survives the legacy code being removed.
 """
 
 from __future__ import annotations
 
-import contextlib
 import functools
-import io
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -35,24 +28,28 @@ from specmod.pipeline import (  # noqa: E402
     spectrum_from_trace,
     spectrum_set_from_streams,
 )
-from specmod.spectral import Spectra  # noqa: E402
 
-#: The legacy path composes the same conversion in two steps rather than one,
-#: so agreement is to floating-point round-off, not to the bit.
+#: Tolerance for comparisons between two routes to the same quantity. Tight
+#: enough that a change in the arithmetic cannot hide under it, loose enough
+#: not to demand bit-identity from operations composed in a different order.
 RTOL = 1e-12
 
 ESTIMATORS = ["fft", "welch", "multitaper", "quadratic", "cwt"]
 
-
-@functools.cache
-def _legacy_container(estimator: str, windows: Any) -> Spectra:
-    signal, noise = windows()
-    with contextlib.redirect_stdout(io.StringIO()):
-        return Spectra.from_streams(signal, noise, estimator=estimator)
+#: Fixed probabilities the golden summaries are sampled at. Must match
+#: ``tools/make_golden.py``; a mismatch would compare different quantities.
+QUANTILES = np.linspace(0.0, 1.0, 33)
 
 
-def _legacy(estimator: str, windows: Any) -> SpectrumSet:
-    return _legacy_container(estimator, windows).as_spectrum_set()
+def _summary(a: Any) -> dict[str, Any]:
+    a = np.asarray(a, dtype=np.float64)
+    return {
+        "n": int(a.size),
+        "median": float(np.median(a)),
+        "max": float(a.max()),
+        "sum": float(a.sum()),
+        "quantiles": [float(q) for q in np.quantile(a, QUANTILES)],
+    }
 
 
 @functools.cache
@@ -121,68 +118,20 @@ class TestSpectrumFromTrace:
             spectrum.amp[0] = 0.0
 
 
-# --------------------------------------------------- against the legacy path
-
-
-@pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_the_same_windows_come_out(estimator: str, pnr_windows: Any) -> None:
-    assert (
-        _direct(estimator, pnr_windows).ids() == _legacy(estimator, pnr_windows).ids()
-    )
-
-
-@pytest.mark.parametrize("estimator", ESTIMATORS)
-@pytest.mark.parametrize(
-    "attribute", ["signal", "noise", "binned_signal", "binned_noise"]
-)
-def test_the_spectra_are_unchanged(
-    estimator: str, attribute: str, pnr_windows: Any
-) -> None:
-    direct, legacy = _direct(estimator, pnr_windows), _legacy(estimator, pnr_windows)
-    problems = []
-    for id in legacy.ids():
-        want = getattr(legacy[id], attribute)
-        got = getattr(direct[id], attribute)
-        for field in ("freq", "amp"):
-            a, b = getattr(got, field), getattr(want, field)
-            if a.shape != b.shape:
-                problems.append(f"{id} {attribute}.{field}: {b.shape} -> {a.shape}")
-            elif a != pytest.approx(b, rel=RTOL):
-                rel = float(np.max(np.abs(a - b) / np.maximum(np.abs(b), 1e-300)))
-                problems.append(f"{id} {attribute}.{field}: max rel {rel:.2e}")
-    assert not problems, "\n".join(problems)
-
-
-@pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_the_signal_to_noise_is_unchanged(estimator: str, pnr_windows: Any) -> None:
-    direct, legacy = _direct(estimator, pnr_windows), _legacy(estimator, pnr_windows)
-    for id in legacy.ids():
-        assert direct[id].snr == pytest.approx(legacy[id].snr, rel=RTOL), id
-
-
-@pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_the_selected_bands_are_unchanged(estimator: str, pnr_windows: Any) -> None:
-    """The one that matters most: the band is what every fitted parameter is
-    read over, so a band that moved is a result that moved."""
-    direct, legacy = _direct(estimator, pnr_windows), _legacy(estimator, pnr_windows)
-    problems = []
-    for id in legacy.ids():
-        want, got = legacy[id].band, direct[id].band
-        if (want is None) != (got is None) or (
-            want is not None and got != pytest.approx(want, rel=RTOL)
-        ):
-            problems.append(f"{id}: {want} -> {got}")
-    assert not problems, "\n".join(problems)
-
-
-@pytest.mark.parametrize("estimator", ESTIMATORS)
-def test_the_resolution_floors_are_unchanged(estimator: str, pnr_windows: Any) -> None:
-    direct, legacy = _direct(estimator, pnr_windows), _legacy(estimator, pnr_windows)
-    for id in legacy.ids():
-        assert direct[id].resolution_floor == pytest.approx(
-            legacy[id].resolution_floor, rel=RTOL
-        ), id
-
+# The legacy comparison lived here: both paths run over the same 28 windows and
+# all five estimators, spectra, SNR, floors and bands held to 1e-12, plus the
+# fitter run on each container. It found the one real gap — the flatfile's band
+# columns — and it agreed everywhere else.
+#
+# `spectral` is deleted, so it has no subject. Deleting a comparison is a real
+# loss of evidence, and the honest statement of what carries it now is:
+# `tests/golden/pipeline_reference.json` was generated by the legacy path and
+# has never been regenerated. `specmod.pipeline` reproduces it to 1e-15 across
+# all 140 window-estimator results, and `tests/test_golden_reference.py` checks
+# that on every run. That is why the reference is summaries of a committed
+# artefact rather than a comparison against live code: it is the form of the
+# claim that survives the code being removed.
+#
 
 # ------------------------------------------------------------------ contract
 
@@ -225,108 +174,131 @@ def test_the_result_is_the_immutable_container(pnr_windows: Any) -> None:
     assert all(isinstance(p.signal, Spectrum) for p in got.pairs.values())
 
 
-# ------------------------------------------------------- through the fitter
+# ------------------------------------------------------- ground-motion domain
 
 
-@functools.cache
-def _fits(estimator: str, windows: Any) -> tuple[Any, Any]:
-    """The same event fitted through both containers.
+class TestToMotion:
+    """`SpectrumSet.to_motion`, replacing `Spectra.inte()`/`diff()`.
 
-    The fit is where a difference in the spectra would be amplified rather
-    than merely carried: a nonlinear minimiser near a shallow minimum can walk
-    a visibly different path from an input difference far below the noise
-    floor. Running it is the only way to know how far that goes.
+    The legacy pair mutated in place, so "the same event as displacement" could
+    only be had by destroying the velocity one. These return new objects.
     """
-    import numpy as np  # noqa: PLC0415
 
-    from specmod.fitting import FitSpectra, fittable_signal  # noqa: PLC0415
+    def test_it_matches_the_recorded_displacement(self, pnr_windows: Any) -> None:
+        """Against ``tests/golden/motion_reference.json``.
 
-    def guesses(container: Any) -> dict[str, dict[str, float]]:
-        out = {}
-        for id in container:
-            signal = fittable_signal(container[id], id)
-            if signal is not None:
-                out[id] = {
-                    "llpsp": float(np.log10(np.median(signal.amp[:5]))),
-                    "fc": 5.0,
-                    "ts": 0.01,
-                }
-        return out
+        That file was captured while ``spectral.Spectra.inte()`` still existed
+        and was validated against it: **2.2e-15 on the summaries and identical
+        bands on all 28**. The comparison itself could not be kept — one side
+        of it is deleted — so this is its durable form, the same numbers held
+        against a committed artefact.
+        """
+        reference = json.loads(
+            (Path(__file__).parent / "golden" / "motion_reference.json").read_text()
+        )["displacement"]
+        displacement = _direct("fft", pnr_windows).to_motion("displacement")
 
-    tables = []
-    for container in (
-        _direct(estimator, windows),
-        _legacy_container(estimator, windows),
-    ):
-        with contextlib.redirect_stdout(io.StringIO()):
-            fit = FitSpectra(container, guess=guesses(container))
-            fit.fit_spectra()
-        tables.append(fit.table)
-    return tables[0], tables[1]
+        assert sorted(displacement.ids()) == sorted(reference)
+        problems = []
+        for id in displacement.ids():
+            pair, want = displacement[id], reference[id]
+            assert str(pair.signal.motion) == want["motion"], id
+            for key, array in (
+                ("amp", pair.signal.amp),
+                ("noise_amp", pair.noise.amp),
+                ("bsnr", pair.snr),
+            ):
+                got = _summary(array)
+                for field in ("median", "max", "sum"):
+                    if got[field] != pytest.approx(want[key][field], rel=1e-9):
+                        problems.append(
+                            f"{id} {key}.{field}: {want[key][field]:.6e} -> "
+                            f"{got[field]:.6e}"
+                        )
+            if want["band"] is None:
+                if pair.band is not None:
+                    problems.append(f"{id} band: none -> {pair.band}")
+            elif pair.band != pytest.approx(want["band"], rel=1e-9):
+                problems.append(f"{id} band: {want['band']} -> {pair.band}")
+        assert not problems, "\n".join(problems)
 
+    def test_the_original_is_untouched(self, pnr_windows: Any) -> None:
+        """The property the legacy could not have. `Spectra.inte()` overwrote
+        the event; here both domains exist at once."""
+        direct = _direct("fft", pnr_windows)
+        id = direct.ids()[0]
+        before = direct[id].signal.amp.copy()
+        displacement = direct.to_motion("displacement")
+        assert direct[id].signal.amp == pytest.approx(before)
+        assert displacement[id].signal.amp != pytest.approx(before)
 
-def test_both_containers_fit_every_station(pnr_windows: Any) -> None:
-    direct, legacy = _fits("fft", pnr_windows)
-    assert len(direct) == len(legacy) == 28
+    def test_the_domain_label_follows(self, pnr_windows: Any) -> None:
+        direct = _direct("fft", pnr_windows)
+        for pair in direct.to_motion("acceleration").pairs.values():
+            assert str(pair.signal.motion) == "acceleration"
+            assert str(pair.noise.motion) == "acceleration"
 
+    def test_the_noise_is_not_lifted_a_second_time(self, pnr_windows: Any) -> None:
+        """`self.noise` already carries the lift, so replaying the comparison
+        with it on would compound on every conversion, narrowing the band each
+        time. The pre-refactor code guarded this with a `ROTATED` flag; here it
+        falls out of the recorded settings being replayed with the lift off."""
+        direct = _direct("fft", pnr_windows)
+        settings = direct[direct.ids()[0]].meta[SpectrumPair.SETTINGS_KEY]
+        assert settings["rotate_noise"] is True
 
-def test_the_goodness_of_fit_is_unchanged(pnr_windows: Any) -> None:
-    """The tell that the spectra really are the same.
+        once = direct.to_motion("displacement")
+        twice = once.to_motion("velocity").to_motion("displacement")
+        for id in once.ids():
+            assert twice[id].noise.amp == pytest.approx(once[id].noise.amp, rel=RTOL)
 
-    ``chisqr`` is evaluated at whatever parameters the minimiser reached, so
-    two runs landing on slightly different parameters of the *same* surface
-    still agree here to round-off. If the surface itself had moved, this is
-    what would show it.
-    """
-    direct, legacy = _fits("fft", pnr_windows)
-    for column in ("chisqr", "redchi", "bic"):
-        assert direct[column].to_numpy() == pytest.approx(
-            legacy[column].to_numpy(), rel=1e-9
-        ), column
+    def test_the_settings_travel_with_the_pair(self, pnr_windows: Any) -> None:
+        """A pair that could not say how it was made could only be remade by
+        being told again, which is how a stored result's recorded settings drift
+        from the ones it was computed with."""
+        pair = _direct("fft", pnr_windows)[_direct("fft", pnr_windows).ids()[0]]
+        settings = pair.meta[SpectrumPair.SETTINGS_KEY]
+        assert settings["n_bins"] == 151
+        assert settings["bandwidth"] == "peak"
+        assert settings["noise_model"] == "boost"
 
+    def test_the_unbinned_arrays_round_trip_exactly(self, pnr_windows: Any) -> None:
+        direct = _direct("fft", pnr_windows)
+        back = direct.to_motion("displacement").to_motion("velocity")
+        for id in direct.ids():
+            assert back[id].signal.amp == pytest.approx(
+                direct[id].signal.amp, rel=RTOL
+            ), id
+            assert back[id].noise.amp == pytest.approx(
+                direct[id].noise.amp, rel=RTOL
+            ), id
 
-def test_the_fitted_parameters_agree_to_far_better_than_they_are_known(
-    pnr_windows: Any,
-) -> None:
-    """Not to 1e-12, and the reason is the minimiser rather than the spectra.
+    def test_the_binned_noise_does_not_round_trip(self, pnr_windows: Any) -> None:
+        """A pre-existing inconsistency, inherited rather than introduced.
 
-    Powell on a shallow minimum amplifies the 1e-12 input difference between
-    the two paths. Measured, the worst is ``fc`` at 7.5e-6 relative — 4e-5 Hz
-    on a 5 Hz corner, which propagates to 2e-5 in stress drop. The bound here
-    is 1e-4, loose enough not to fail on a different BLAS and four orders
-    tighter than anything a corner frequency is ever known to.
-    """
-    direct, legacy = _fits("fft", pnr_windows)
-    for column in ("fc", "llpsp", "ts"):
-        a = direct[column].to_numpy(dtype=float)
-        b = legacy[column].to_numpy(dtype=float)
-        assert a == pytest.approx(b, rel=1e-4), column
+        The lift is applied to the binned noise directly but to the unbinned
+        noise by interpolating the factor onto the finer axis, so the two are
+        **not related by the binning operation**: re-binning the lifted
+        unbinned noise does not reproduce the lifted binned one. A domain
+        change re-bins, so the round trip restores the unbinned arrays exactly
+        and lands the binned noise 18.8% away at worst, moving 3 of 28 bands.
 
+        Measured identical to the legacy path — same percentage, same three
+        stations — so `to_motion` reproduces it rather than causing it. Fixing
+        it moves `snr`, and therefore bands, and therefore every fitted
+        parameter; that is a science decision. See REFACTOR_PLAN §4.6.
+        """
+        direct = _direct("fft", pnr_windows)
+        back = direct.to_motion("displacement").to_motion("velocity")
+        worst = max(
+            float(
+                np.max(
+                    np.abs(back[id].binned_noise.amp / direct[id].binned_noise.amp - 1)
+                )
+            )
+            for id in direct.ids()
+        )
+        assert 0.1 < worst < 0.5, worst
 
-def test_the_flatfile_records_the_band_each_fit_used(pnr_windows: Any) -> None:
-    """A corner frequency without the band it was read over is not
-    interpretable, and it is the first thing anyone comparing runs asks for.
-
-    The legacy container wrote these from ``SNP.__update_lims_to_meta``. The
-    frozen pair cannot write back into its own signal, so ``FittableView``
-    supplies them — under the legacy column names, so a flatfile from either
-    container has the same schema.
-    """
-    direct, legacy = _fits("fft", pnr_windows)
-    for column in ("lower-f-bound", "upper-f-bound", "pass_snr"):
-        assert column in direct.columns, column
-        assert direct[column].to_numpy() == pytest.approx(
-            legacy[column].to_numpy(dtype=float)
-        ), column
-
-
-def test_the_flatfile_gains_the_provenance_the_legacy_one_lacked(
-    pnr_windows: Any,
-) -> None:
-    """Which estimator, which station, and what the window could resolve."""
-    direct, legacy = _fits("fft", pnr_windows)
-    for column in ("estimator", "id", "resolution_floor"):
-        assert column in direct.columns
-        assert column not in legacy.columns
-    assert set(direct["estimator"]) == {"fft"}
-    assert len(set(direct["id"])) == 28
+        moved = [id for id in direct.ids() if back[id].band != direct[id].band]
+        assert 0 < len(moved) < len(direct)

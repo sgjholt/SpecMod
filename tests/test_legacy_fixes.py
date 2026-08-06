@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +18,9 @@ import pytest
 
 import specmod.fitting as fit
 import specmod.preprocess as pre
-import specmod.spectral as sp
 import specmod.utils as ut
 
-SRC = Path(sp.__file__).parent
+SRC = Path(ut.__file__).parent
 
 
 # --------------------------------------------------------------- §2.5 syntax
@@ -74,29 +74,12 @@ def test_read_cat_uses_current_pandas(tmp_path: Path) -> None:
 # ------------------------------------------------------ §2.5 undefined names
 
 
-@pytest.mark.parametrize(
-    ("func", "bad_name"),
-    [
-        (sp.Spectra.__init__, None),
-    ],
-)
-def test_no_undefined_names_in_plot_branches(func, bad_name) -> None:
-    """`plot=True` branches referenced names that did not exist (F821).
-
-    ``SNP.find_optimal_signal_bandwidth_2`` used to be checked here too. It has
-    since been deleted — band selection moved to
-    :mod:`specmod.core.bandwidth`, where the strategies are pure functions of
-    arrays with no plotting branch to go stale. The bug class is gone for it by
-    construction rather than by assertion.
-    """
-    tree = ast.parse(inspect.getsource(func).lstrip())
-    loaded = {
-        n.id
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
-    }
-    if bad_name is not None:
-        assert bad_name not in loaded
+# `test_no_undefined_names_in_plot_branches` lived here. Both its subjects —
+# `SNP.find_optimal_signal_bandwidth_2` and `SNP.find_optimal_signal_bandwidth`
+# — referenced names that did not exist in their `plot=True` branches, and both
+# are deleted. Band selection is `specmod.core.bandwidth`, where the strategies
+# are pure functions of arrays with no plotting branch to go stale, so the bug
+# class is gone by construction rather than by assertion.
 
 
 def test_fit_spectra_reset_uses_the_right_attribute() -> None:
@@ -158,15 +141,16 @@ def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
     """The shipped `.spec` cannot be loaded, and the tutorial reads it.
 
     A pickle stores the import path of every class it holds. This file names
-    ``specmod.Spectral``, the pre-rename module, so ``pickle.load`` raises
-    before any of our code runs. ``Tutorial/SpecModTutorial.ipynb`` calls
-    ``read_spectra`` on it in two cells, so the notebook stops there.
+    ``specmod.Spectral``, the pre-rename module, so unpickling raises before
+    any of our code runs — and now the classes it names do not exist at all.
+    ``Tutorial/SpecModTutorial.ipynb`` calls ``read_spectra`` on it in two
+    cells, so the notebook stops there.
 
-    Pinned rather than fixed. The plan (§4.6) converts these in the legacy
-    Docker image and explicitly rejects a ``find_class`` remapping shim, which
-    would bake the old class layout into the new package permanently. So this
-    asserts the breakage on purpose: when the migration lands, this test fails
-    and is the reminder to delete it and assert the load instead.
+    Pinned rather than fixed. The plan (§4.6) explicitly rejects a
+    ``find_class`` remapping shim, which would bake the pre-refactor class
+    layout into the new package permanently. So this asserts the breakage on
+    purpose: when the migration lands, this test fails and is the reminder to
+    delete it and assert the load instead.
     """
     spec = Path(__file__).resolve().parent.parent / (
         "Tutorial/Spectra/2019-08-26T07:30:47.0.spec"
@@ -175,126 +159,13 @@ def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
         pytest.skip("the legacy .spec artifact has been removed")
 
     with pytest.raises(ModuleNotFoundError, match=r"specmod\.Spectral"):
-        sp.Spectra.read_spectra(str(spec), method="pickle", skip_warning=True)
+        pickle.loads(spec.read_bytes())
 
 
-# ------------------------------------- §2 domain changes on a paired spectrum
-
-
-def _paired(pnr_windows):
-    import contextlib  # noqa: PLC0415
-    import io  # noqa: PLC0415
-
-    from specmod.spectral import Spectra  # noqa: PLC0415
-
-    signal, noise = pnr_windows()
-    with contextlib.redirect_stdout(io.StringIO()):
-        return Spectra.from_streams(signal, noise, estimator="fft")
-
-
-def test_integrating_a_paired_spectrum_does_not_raise(pnr_windows) -> None:
-    """``SNP.integrate`` called ``self.__get_snr()``, which stopped existing.
-
-    ``__compare`` replaced it and the call site was not updated, so both
-    ``integrate`` and ``differentiate`` raised ``AttributeError`` for every
-    interpolated pair — which is the default and every pair the pipeline
-    builds. Nothing covered them, so nothing noticed.
-    """
-    spectra = _paired(pnr_windows)
-    spectra.inte()
-    spectra.diff()
-
-
-def test_a_domain_round_trip_returns_the_original(pnr_windows) -> None:
-    """Integrate then differentiate is the identity, to round-off.
-
-    The binding check that the re-comparison is idempotent: it re-runs the
-    Parseval rescale, the interpolation and the binning, and if any of those
-    were applied twice the amplitudes would not come back.
-    """
-    spectra = _paired(pnr_windows)
-    id = spectra.ids()[0]
-    signal = spectra[id].signal.amp.copy()
-    noise = spectra[id].noise.amp.copy()
-    band = tuple(spectra[id].ubfreqs)
-
-    spectra.inte()
-    spectra.diff()
-
-    assert spectra[id].signal.amp == pytest.approx(signal, rel=1e-12)
-    assert spectra[id].noise.amp == pytest.approx(noise, rel=1e-12)
-    assert tuple(spectra[id].ubfreqs) == band
-
-
-def test_the_noise_is_not_lifted_a_second_time(pnr_windows) -> None:
-    """``ROTATED`` exists for this and the pre-refactor code guarded on it.
-
-    ``self.noise.amp`` already carries the lift after construction, so a
-    re-comparison that lifted again would raise the noise compounding-ly on
-    every domain change and narrow the band each time.
-    """
-    spectra = _paired(pnr_windows)
-    id = spectra.ids()[0]
-    assert spectra[id].ROTATED is True
-
-    before = spectra[id].noise.amp.copy()
-    spectra.inte()
-    spectra.diff()
-    assert spectra[id].noise.amp == pytest.approx(before, rel=1e-12)
-
-
-def test_the_domain_label_follows_the_amplitudes(pnr_windows) -> None:
-    """It did not move at all, so an integrated spectrum went on calling
-    itself velocity.
-
-    Not cosmetic: ``SNP.__as_core`` reads it to build a ``core.Spectrum`` and
-    ``_convert`` reads it for every amplitude-convention change, so a
-    mislabelled spectrum reports the wrong unit and converts as though it were
-    still a velocity.
-    """
-    spectra = _paired(pnr_windows)
-    id = spectra.ids()[0]
-    assert spectra[id].signal.motion == "velocity"
-
-    spectra.inte()
-    assert spectra[id].signal.motion == "displacement"
-    assert spectra[id].noise.motion == "displacement"
-
-    spectra.diff()
-    spectra.diff()
-    assert spectra[id].signal.motion == "acceleration"
-
-
-def test_moving_past_the_end_of_the_domains_raises(pnr_windows) -> None:
-    """Rather than clamping. There is no spectrum one integration below
-    displacement, and stopping silently would leave ``amp`` divided by
-    ``2*pi*f`` with nothing to say so — the failure being fixed."""
-    spectra = _paired(pnr_windows)
-    spectra.inte()
-    with pytest.raises(ValueError, match="cannot move"):
-        spectra.inte()
-
-
-def test_binning_does_not_commute_with_integration(pnr_windows) -> None:
-    """Why the re-comparison is not a formality.
-
-    The *unbinned* ratio is invariant under integration — both spectra are
-    divided by the same ``2*pi*f``. The binned one is not: a bin holds the
-    geometric mean of ``log10(amp)``, and averaging ``log10(a/f)`` over a bin
-    is not ``log10(a)`` averaged minus ``log10(f_centre)``. Measured, the
-    binned ratio moves by up to 16%, and 3 of the 28 bands with it.
-    """
-    spectra = _paired(pnr_windows)
-    before = {id: spectra[id].bsnr.copy() for id in spectra.ids()}
-    bands = {id: tuple(spectra[id].ubfreqs) for id in spectra.ids()}
-
-    spectra.inte()
-
-    moved = max(
-        float(np.max(np.abs(spectra[id].bsnr / before[id] - 1))) for id in before
-    )
-    assert moved > 0.01, "the binned ratio should not be invariant"
-    assert moved < 1.0
-
-    shifted = [id for id in bands if tuple(spectra[id].ubfreqs) != bands[id]]
-    assert 0 < len(shifted) < len(bands)
+# The §2 domain-change tests lived here: `SNP.integrate` calling a
+# `__get_snr` that no longer existed, the `ROTATED` guard that keeps the noise
+# from being lifted twice, the domain label that never moved, and the binned
+# noise that does not survive a round trip. All four were fixed against `SNP`
+# and then carried across to `SpectrumSet.to_motion`, which replaced it — see
+# `tests/test_pipeline.py::TestToMotion`, where each is asserted again on the
+# container that still exists.
