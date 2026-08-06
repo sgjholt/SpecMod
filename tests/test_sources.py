@@ -13,10 +13,10 @@ import contextlib
 import io
 
 import numpy as np
+import pandas as pd
 import pytest
 
-import specmod.models as legacy
-from specmod.fitting import FitSpectrum
+from specmod.fitting import FitSpectra, FitSpectrum
 from specmod.sources import (
     ATTENUATION_MODELS,
     SOURCE_MODELS,
@@ -34,6 +34,27 @@ FREQ = np.logspace(-1.0, 2.0, 60)
 OMEGA, FC, TSTAR = -7.0, 4.0, 0.02
 
 
+def reference_model(f, llpsp, fc, ts, a=None):
+    """The pre-refactor ``models.simple_model``, transcribed.
+
+    Written out here rather than imported because ``specmod.models`` is gone —
+    it held these two functions, ``MODEL = which_model(...)`` bound at import,
+    and nothing else. Keeping the formula as literal text is the point: it is
+    the independent statement the new composition is checked against, and an
+    import would have made the check circular the moment the old module started
+    delegating to the new one.
+
+        log10 A(f) = log10 Omega
+                   - (1/gamma) log10[1 + (f/fc)^(gamma n)]     source, Brune
+                   - pi f^(1-a) t* / ln 10                     attenuation
+                   + log10(2 pi f)                             velocity
+    """
+    source = llpsp - np.log10(1.0 + (f / fc) ** 2)
+    exponent = 1.0 if a is None else 1.0 - a
+    decay = -(np.pi * f**exponent * ts / np.log(10))
+    return source + decay + np.log10(2 * np.pi * f)
+
+
 # ------------------------------------------------------- against the legacy
 
 
@@ -42,7 +63,7 @@ def test_the_composite_reproduces_the_legacy_model_exactly() -> None:
     mine = build_model(source="brune", motion="velocity").evaluate(
         FREQ, OMEGA, FC, TSTAR
     )
-    assert mine == pytest.approx(legacy.simple_model(FREQ, OMEGA, FC, TSTAR), rel=1e-12)
+    assert mine == pytest.approx(reference_model(FREQ, OMEGA, FC, TSTAR), rel=1e-12)
 
 
 def test_the_frequency_dependent_variant_reproduces_the_legacy_too() -> None:
@@ -51,7 +72,7 @@ def test_the_frequency_dependent_variant_reproduces_the_legacy_too() -> None:
     )
     assert model.parameters == ("llpsp", "fc", "ts", "a")
     mine = model.evaluate(FREQ, OMEGA, FC, TSTAR, 0.3)
-    expected = legacy.simple_model_fdep(FREQ, OMEGA, FC, TSTAR, 0.3)
+    expected = reference_model(FREQ, OMEGA, FC, TSTAR, 0.3)
     assert mine == pytest.approx(expected, rel=1e-12)
 
 
@@ -272,7 +293,7 @@ def test_the_fitter_reports_what_it_fitted(real_signal) -> None:
 
 def test_a_bare_callable_still_works_but_carries_no_provenance(real_signal) -> None:
     """Fitting an ad-hoc shape stays possible — it just cannot describe itself."""
-    fit = FitSpectrum(real_signal, legacy.simple_model, llpsp=-7.0, fc=4.0, ts=0.02)
+    fit = FitSpectrum(real_signal, reference_model, llpsp=-7.0, fc=4.0, ts=0.02)
     assert fit.spectral_model is None
     assert fit.describe_model() is None
     assert fit.mod.param_names == ["llpsp", "fc", "ts"]
@@ -305,3 +326,33 @@ def test_changing_the_configured_source_changes_the_fit(real_signal) -> None:
         results[name] = fit.result.params["fc"].value
 
     assert results["brune"] != results["boatwright"]
+
+
+# --------------------------------------------------------------- flatfile
+
+
+def test_the_flatfile_writes_to_a_bare_filename(tmp_path, monkeypatch) -> None:
+    """A path with no directory component used to raise.
+
+    ``os.makedirs(os.path.join(*path.split("/")[:-1]))`` unpacks an empty list
+    for ``"out.csv"``, so ``os.path.join()`` got no arguments and raised
+    ``TypeError``. It also split on ``/`` literally, which does nothing useful
+    on Windows.
+    """
+
+    class Fits:
+        table = pd.DataFrame([{"id": "XX.TEST", "fc": 4.0}])
+
+    monkeypatch.chdir(tmp_path)
+    FitSpectra.write_flatfile("out.csv", Fits())
+    assert (tmp_path / "out.csv").is_file()
+    assert FitSpectra.read_flatfile("out.csv")["fc"].iloc[0] == pytest.approx(4.0)
+
+
+def test_the_flatfile_creates_missing_directories(tmp_path) -> None:
+    class Fits:
+        table = pd.DataFrame([{"id": "XX.TEST", "fc": 4.0}])
+
+    target = tmp_path / "nested" / "deeper" / "out.csv"
+    FitSpectra.write_flatfile(str(target), Fits())
+    assert target.is_file()

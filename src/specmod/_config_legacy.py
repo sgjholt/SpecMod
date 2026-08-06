@@ -27,8 +27,6 @@ SPECTRAL = {
     "PLOT_COLUMNS": 3,
 }
 
-MODELS = {"MODEL": "BRUNE", "MOTION": "velocity"}
-
 FITTING = {
     ### HOW MANY COLS TO PLOT
     "PLOT_COLUMNS": 3

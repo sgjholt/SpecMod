@@ -17,6 +17,7 @@ observed through 28 stations' worth of end-to-end run.
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import functools
 import glob
@@ -53,6 +54,11 @@ from specmod.core.noise import (  # noqa: E402
     NoiseModel,
     boost_noise,
     get_noise_model,
+)
+from specmod.fitting import (  # noqa: E402
+    FitSpectrum,
+    fittable_signal,
+    selected_band,
 )
 from specmod.spectral import (  # noqa: E402
     BINNING_PARAMS,
@@ -561,3 +567,113 @@ def test_the_legacy_container_behaves_like_a_mapping() -> None:
     assert first in spectra
     assert spectra[first] is spectra.group[first]
     assert len(spectra.passing()) <= len(spectra)
+
+
+# ----------------------------------------------- the fitter accepts both
+
+
+def test_the_fitter_takes_what_it_needs_not_a_named_class() -> None:
+    """The coupling that kept `Spectra` holding `SNP`.
+
+    `FitSpectrum` used to require `isinstance(signal, spectral.Signal)`, so
+    nothing could be fitted unless it *was* the legacy class — which is why the
+    container could not be swapped. It now checks for the attributes it reads,
+    and says which are missing rather than failing later from inside a band
+    selection.
+    """
+    bare = Spectrum(
+        freq=np.array([1.0, 2.0]),
+        amp=np.array([1.0, 1.0]),
+        motion="velocity",
+        kind="magnitude",
+        duration=2.0,
+        sampling_rate=100.0,
+    )
+    with pytest.raises(ValueError, match="missing id, bfreq, bamp"):
+        FitSpectrum(bare)
+
+
+def test_selected_band_reads_both_spellings() -> None:
+    """`ubfreqs` on the legacy, `band` on the pair — one meaning, two names."""
+
+    class Legacy:
+        ubfreqs = np.array([2.0, 20.0])
+
+    class Modern:
+        band = (2.0, 20.0)
+
+    class Neither:
+        ubfreqs = np.array([])
+
+    assert selected_band(Legacy()) == (2.0, 20.0)
+    assert selected_band(Modern()) == (2.0, 20.0)
+    assert selected_band(Neither()) is None
+    assert selected_band(object()) is None
+
+
+def test_fittable_signal_skips_what_the_gate_rejected() -> None:
+    class Rejected:
+        passes = False
+        signal = "unused"
+
+    class Accepted:
+        passes = True
+        signal = "the spectrum"
+
+    assert fittable_signal(Rejected()) is None
+    assert fittable_signal(Accepted()) == "the spectrum"
+
+
+@pytestmark_data
+def test_a_spectrum_pair_can_be_fitted(pnr_windows) -> None:
+    """The point of the whole seam: one fitter, either container.
+
+    `SpectrumPair` keeps the unbinned spectrum and its binned form apart, which
+    is right for the comparison and wrong for a fitter, so `for_fitting()`
+    presents them side by side. This runs a real pair through `FitSpectrum`
+    and checks it fits over the band the pair selected.
+    """
+    signal_stream, noise_stream = pnr_windows()
+    with contextlib.redirect_stdout(io.StringIO()):
+        legacy_signal = Signal(signal_stream[0].copy())
+        legacy_noise = Noise(noise_stream[0].copy())
+        pair = SpectrumPair.compare(
+            _as_core(legacy_signal),
+            _as_core(legacy_noise),
+            threshold=SNR_TOLERENCE,
+            f_min=BINNING_PARAMS["smin"],
+            f_max=BINNING_PARAMS["smax"],
+            n_bins=BINNING_PARAMS["bins"],
+        )
+        view = pair.for_fitting(id=signal_stream[0].id)
+        fit = FitSpectrum(view, llpsp=-7.0, fc=4.0, ts=0.02)
+        fit.fit_mod(method="powell")
+
+    assert fit.result.success
+    assert fit.describe_model() == "brune+constant_q in velocity"
+    # Fitted over the band the pair chose, not the whole axis.
+    assert pair.band is not None
+    assert fit.mod_freq.min() >= pair.band[0]
+    assert fit.mod_freq.max() <= pair.band[1]
+    assert fit.mod_freq.size < view.freq.size
+
+
+@pytestmark_data
+def test_the_view_hands_out_metadata_the_fitter_can_copy(pnr_windows) -> None:
+    """`core.Spectrum.meta` is a mappingproxy, which `deepcopy` cannot pickle.
+
+    The fitter deepcopies metadata so a fit cannot write back into the spectrum
+    it came from. The proxy is right for an immutable spectrum, so the view
+    converts — which is the adapter earning its keep rather than either side
+    bending.
+    """
+    signal_stream, noise_stream = pnr_windows()
+    with contextlib.redirect_stdout(io.StringIO()):
+        pair = SpectrumPair.compare(
+            _as_core(Signal(signal_stream[0].copy())),
+            _as_core(Noise(noise_stream[0].copy())),
+            threshold=SNR_TOLERENCE,
+        )
+    meta = pair.for_fitting().meta
+    assert isinstance(meta, dict)
+    assert copy.deepcopy(meta) == meta

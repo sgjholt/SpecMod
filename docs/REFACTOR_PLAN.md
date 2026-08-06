@@ -108,7 +108,8 @@ Consequences:
 - Changing `cfg.SPECTRAL[...]` after import has no effect. Users must edit
   `config.py` in the installed package.
 - **You cannot fit a Brune and a Boatwright model in the same session.**
-  `MODEL` is bound once at import.
+  `MODEL` is bound once at import. **Fixed** — `models.py` is deleted and
+  models are values resolved through `specmod.sources`; see §4.6.5.
 - Tests cannot vary configuration without reimporting modules, and cannot run in
   parallel.
 - `Spectral.py:490` `global PLOT_COLUMNS` sits inside a class body, above the
@@ -591,7 +592,7 @@ them for binning and rotation. What is done, and what is deliberately not:
 | `find_bandwidth` | Shared, as a registry — `peak` (was `BW_METHOD = 2`, the default) and `widest`. |
 | `rotate_noise_full` (`ROT_METHOD = 1`) | Still not ported. `SNP` now **raises** rather than silently doing something else. |
 | `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
-| `SpectrumSet` | `Spectra` presents the same interface but still holds `SNP`; swapping what it holds needs the `fitting` rewrite (stage 2). |
+| `SpectrumSet` | `Spectra` presents the same interface but still holds `SNP`. The fitter no longer blocks the swap — it accepts a `SpectrumPair` via `for_fitting()` — so what remains is the flatfile I/O and plotting in `FitSpectra`. |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and

@@ -1,5 +1,5 @@
-import os
 from copy import deepcopy
+from pathlib import Path
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -13,6 +13,46 @@ from . import spectral as sp
 
 # global variables
 PLOT_COLUMNS = cfg.FITTING["PLOT_COLUMNS"]
+
+#: What :class:`FitSpectrum` reads off whatever it is given. Kept as data so
+#: the requirement is stated once and can be asserted against.
+REQUIRED_SPECTRUM_ATTRIBUTES = ("id", "meta", "freq", "amp", "bfreq", "bamp")
+
+
+def fittable_signal(pair):
+    """The signal to fit from a paired spectrum, or ``None`` to skip it.
+
+    Skipping is a decision the container should not have to spell out at every
+    call site. A pair is unfittable when the signal-to-noise gate rejected it —
+    ``pass_snr`` on the legacy `Signal`, ``passes`` on
+    :class:`specmod.core.SpectrumPair` — and both spellings mean the same
+    thing while the two containers coexist.
+    """
+    signal = getattr(pair, "signal", pair)
+
+    passes = getattr(pair, "passes", None)
+    if passes is None:
+        passes = getattr(signal, "pass_snr", True)
+    return signal if passes else None
+
+
+def selected_band(spectrum):
+    """The band to fit over, or ``None`` to fit everything available.
+
+    Reads either spelling: the legacy ``ubfreqs`` array, empty when no band
+    survived, or :class:`specmod.core.SpectrumPair`'s ``band``, which is
+    ``None`` for the same case. Two names for one thing is the price of
+    migrating a container in place; encoding it here rather than at the call
+    site means only one place has to change when the legacy spelling goes.
+    """
+    band = getattr(spectrum, "band", None)
+    if band is not None:
+        return (float(band[0]), float(band[1]))
+
+    legacy = getattr(spectrum, "ubfreqs", None)
+    if legacy is not None and len(legacy) == 2:
+        return (float(legacy[0]), float(legacy[1]))
+    return None
 
 
 class FitSpectrum:
@@ -106,10 +146,28 @@ class FitSpectrum:
             par.max = np.inf
 
     def __check_input(self, signal):
-        if not isinstance(signal, sp.Signal):
-            raise ValueError(f"Must be a signal object not {type(signal)}")
-        else:
-            return True
+        """Accept anything carrying what the fit reads, not one named class.
+
+        This used to be ``isinstance(signal, spectral.Signal)``, which is the
+        coupling that keeps `Spectra` holding `SNP` rather than
+        :class:`specmod.core.SpectrumPair` — nothing can be handed to the
+        fitter unless it *is* the legacy class. What the fit actually needs is
+        the six attributes below, so that is what is checked.
+
+        Named explicitly rather than left to fail at first use: a missing
+        ``bamp`` should say so here, not surface as an AttributeError from
+        inside a band selection three calls later.
+        """
+        missing = [
+            name for name in REQUIRED_SPECTRUM_ATTRIBUTES if not hasattr(signal, name)
+        ]
+        if missing:
+            raise ValueError(
+                f"{type(signal).__name__} cannot be fitted: missing "
+                f"{', '.join(missing)}. A fittable spectrum needs "
+                f"{', '.join(REQUIRED_SPECTRUM_ATTRIBUTES)}."
+            )
+        return True
 
     def __set_mod_amp_freq(self):
         """
@@ -123,10 +181,9 @@ class FitSpectrum:
             freq = self.sig.freq
             amp = self.sig.amp
 
-        if self.sig.ubfreqs.size > 0:
-            inds = np.where(
-                (freq >= self.sig.ubfreqs[0]) & (freq <= self.sig.ubfreqs[1])
-            )
+        band = selected_band(self.sig)
+        if band is not None:
+            inds = np.where((freq >= band[0]) & (freq <= band[1]))
             self.mod_freq = freq[inds]
             self.mod_amp = amp[inds]
         else:
@@ -253,11 +310,18 @@ class FitSpectra:
         which is cheap and keeps every fit in a run agreeing on what it is
         fitting.
         """
+        # Iterate the container rather than reaching into `.group`. `Spectra`
+        # and `core.SpectrumSet` both present this interface, which is what
+        # lets the container be swapped underneath without touching the fitter.
         tmp = {}
-        for id, spec in self.spectra.group.items():
-            if spec.signal.pass_snr:
-                fit = FitSpectrum(spec.signal, model, **guess[id], fit_bins=fit_bins)
-                tmp.update({id: fit})
+        for id in self.spectra:
+            spec = self.spectra[id]
+            if fittable_signal(spec) is None:
+                continue
+            fit = FitSpectrum(
+                fittable_signal(spec), model, **guess[id], fit_bins=fit_bins
+            )
+            tmp.update({id: fit})
         self.models = tmp
 
     def set_const(self, pname, value, id=None):
@@ -300,7 +364,17 @@ class FitSpectra:
 
     @staticmethod
     def write_flatfile(path, fits):
-        os.makedirs(os.path.join(*path.split("/")[:-1]), exist_ok=True)
+        """Write the group fit table as CSV, creating the directory if needed.
+
+        The previous implementation was ``os.makedirs(os.path.join(
+        *path.split("/")[:-1]))``, which raised ``TypeError: join() missing 1
+        required positional argument`` for any path without a directory
+        component — ``write_flatfile("out.csv", fits)`` could not work. It also
+        split on ``/`` literally, so it did nothing useful on Windows.
+        """
+        parent = Path(path).parent
+        if parent != Path():
+            parent.mkdir(parents=True, exist_ok=True)
         fits.table.to_csv(path, index=False)
 
     @staticmethod
@@ -324,9 +398,24 @@ class FitSpectra:
         self.table = df1
 
     def __set_fit_models_to_spectrum(self):
+        """Hand each fit back to the spectrum it came from, where that is possible.
+
+        The legacy `Signal` carries its own fit so that plotting and
+        serialisation can reach it from the spectrum. `core.SpectrumPair` is
+        frozen and cannot, by design — a result writing itself back into its
+        own input is how a container stops being trustworthy.
+
+        Nothing is lost by skipping it: `self.models` is the source of truth
+        either way, and the write-back was only ever a convenience. So this
+        writes where the container accepts it and moves on where it does not,
+        rather than requiring every container to be mutable.
+        """
         for id, mod in self.models.items():
-            tmp = self.spectra.get_spectra(id)
-            tmp.signal.set_model(mod)
+            spectrum = self.spectra[id]
+            signal = getattr(spectrum, "signal", spectrum)
+            setter = getattr(signal, "set_model", None)
+            if setter is not None:
+                setter(mod)
 
     def __check_spectra(self, spectra):
         if not isinstance(spectra, sp.Spectra):

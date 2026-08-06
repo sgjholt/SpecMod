@@ -18,8 +18,6 @@ import specmod
 MODULES = [
     "specmod.config",
     "specmod.fitting",
-    "specmod.model_guess",
-    "specmod.models",
     "specmod.preprocess",
     "specmod.spectral",
     "specmod.utils",
