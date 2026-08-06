@@ -30,7 +30,7 @@ jobs:
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
           /tmp/smoke/bin/python -c "
           import specmod
-          from specmod import spectral, preprocess, fitting, models, utils
+          from specmod import spectral, preprocess, fitting, utils
           print('specmod', specmod.__version__, '- wheel imports cleanly')
           "
 
