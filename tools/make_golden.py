@@ -99,19 +99,20 @@ def capture(estimator: str) -> dict:
     with contextlib.redirect_stdout(io.StringIO()):
         result = Spectra.from_streams(signal.copy(), noise.copy(), estimator=estimator)
 
+    # Read through the immutable container, not the legacy one. The values are
+    # the same objects — `SNP` keeps the `SpectrumPair` its numbers came from —
+    # so this reference is byte-identical to the one the legacy path produced,
+    # which is what makes the swap verifiable rather than merely plausible.
     out = {}
-    for name, snp in sorted(result.group.items()):
-        band = getattr(snp, "ubfreqs", None)
+    for name, pair in sorted(result.as_spectrum_set().pairs.items()):
         out[name] = {
-            "n_freq": int(snp.signal.freq.size),
-            "freq": _summary(snp.signal.freq),
-            "amp": _summary(snp.signal.amp),
-            "noise_amp": _summary(snp.noise.amp),
-            "bsnr": _summary(snp.bsnr),
-            "resolution_floor": float(snp.resolution_floor),
-            "band": [float(band[0]), float(band[1])]
-            if band is not None and len(band) == 2
-            else None,
+            "n_freq": int(pair.signal.freq.size),
+            "freq": _summary(pair.signal.freq),
+            "amp": _summary(pair.signal.amp),
+            "noise_amp": _summary(pair.noise.amp),
+            "bsnr": _summary(pair.snr),
+            "resolution_floor": float(pair.resolution_floor),
+            "band": list(pair.band) if pair.band is not None else None,
         }
     return out
 

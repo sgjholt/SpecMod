@@ -592,7 +592,7 @@ them for binning and rotation. What is done, and what is deliberately not:
 | `find_bandwidth` | Shared, as a registry — `peak` (was `BW_METHOD = 2`, the default) and `widest`. |
 | `rotate_noise_full` (`ROT_METHOD = 1`) | Still not ported. `SNP` now **raises** rather than silently doing something else. |
 | `SpectrumPair` | **`SNP` delegates to it.** Its rescale, interpolation, rotation, ratio and band search are gone — 171 lines removed. |
-| `SpectrumSet` | `Spectra` presents the same interface but still holds `SNP`. The fitter no longer blocks the swap — it accepts a `SpectrumPair` via `for_fitting()` — so what remains is the flatfile I/O and plotting in `FitSpectra`. |
+| `SpectrumSet` | `Spectra.as_spectrum_set()` converts without recomputing — each `SNP` keeps the pair its numbers came from. The golden reference and its generator read the new container; regenerating produced a **byte-identical** file, which is the proof the swap moved nothing. `Spectra.group` still holds `SNP` for the smoke test, which exists to cover the legacy seam. |
 
 The safety net for all of this is `tests/golden/pipeline_reference.json` —
 digests of amplitudes, noise, SNR and selected band over 28 real windows and

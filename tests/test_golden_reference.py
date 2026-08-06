@@ -202,9 +202,17 @@ def _reference() -> dict[str, Any]:
 
 @functools.cache
 def _run(estimator: str) -> Any:
+    """The pipeline's output as a :class:`specmod.core.SpectrumSet`.
+
+    Read through the immutable container rather than the legacy one. Verified
+    to be the same numbers: regenerating the reference through this path
+    produced a byte-identical file, because `SNP` keeps the `SpectrumPair` its
+    values came from rather than copying them.
+    """
     signal, noise = _build_windows()
     with contextlib.redirect_stdout(io.StringIO()):
-        return Spectra.from_streams(signal.copy(), noise.copy(), estimator=estimator)
+        legacy = Spectra.from_streams(signal.copy(), noise.copy(), estimator=estimator)
+    return legacy.as_spectrum_set()
 
 
 ESTIMATORS = ["fft", "welch", "multitaper", "quadratic", "cwt"]
@@ -217,7 +225,7 @@ ESTIMATORS = ["fft", "welch", "multitaper", "quadratic", "cwt"]
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
 def test_the_same_windows_are_still_produced(estimator: str) -> None:
-    assert sorted(_run(estimator).group) == sorted(_reference()[estimator])
+    assert _run(estimator).ids() == sorted(_reference()[estimator])
 
 
 @pytest.mark.parametrize("estimator", ESTIMATORS)
@@ -225,10 +233,10 @@ def test_amplitudes_are_unchanged(estimator: str) -> None:
     """The strict check. A behaviour-preserving refactor passes untouched."""
     expected = _reference()[estimator]
     problems: list[str] = []
-    for name, snp in sorted(_run(estimator).group.items()):
+    for name, pair in sorted(_run(estimator).pairs.items()):
         want = expected[name]
-        problems += _compare(_summary(snp.signal.amp), want["amp"], f"{name} amp")
-        problems += _compare(_summary(snp.signal.freq), want["freq"], f"{name} freq")
+        problems += _compare(_summary(pair.signal.amp), want["amp"], f"{name} amp")
+        problems += _compare(_summary(pair.signal.freq), want["freq"], f"{name} freq")
     assert not problems, "\n".join(
         [f"{len(problems)} difference(s) under {estimator!r}:", *problems]
     )
@@ -258,11 +266,11 @@ def test_the_noise_and_snr_are_structurally_sound(estimator: str) -> None:
     """
     expected = _reference()[estimator]
     problems = []
-    for name, snp in sorted(_run(estimator).group.items()):
+    for name, pair in sorted(_run(estimator).pairs.items()):
         want = expected[name]
         for label, got, ref in (
-            ("noise", np.asarray(snp.noise.amp), want["noise_amp"]),
-            ("bsnr", np.asarray(snp.bsnr), want["bsnr"]),
+            ("noise", np.asarray(pair.noise.amp), want["noise_amp"]),
+            ("bsnr", np.asarray(pair.snr), want["bsnr"]),
         ):
             where = f"{name} {label}"
             if not np.isfinite(got).all():
@@ -294,13 +302,13 @@ def test_the_noise_and_snr_are_exactly_unchanged(estimator: str) -> None:
     """
     expected = _reference()[estimator]
     problems: list[str] = []
-    for name, snp in sorted(_run(estimator).group.items()):
+    for name, pair in sorted(_run(estimator).pairs.items()):
         want = expected[name]
         rtol = RTOL_BY_ESTIMATOR.get(estimator, RTOL)
         problems += _compare(
-            _summary(snp.noise.amp), want["noise_amp"], f"{name} noise", rtol
+            _summary(pair.noise.amp), want["noise_amp"], f"{name} noise", rtol
         )
-        problems += _compare(_summary(snp.bsnr), want["bsnr"], f"{name} bsnr", rtol)
+        problems += _compare(_summary(pair.snr), want["bsnr"], f"{name} bsnr", rtol)
     assert not problems, "\n".join(
         [f"{len(problems)} difference(s) under {estimator!r}:", *problems]
     )
@@ -323,10 +331,9 @@ def test_the_selected_bandwidth_still_covers_the_same_measurement(
     """
     expected = _reference()[estimator]
     problems = []
-    for name, snp in sorted(_run(estimator).group.items()):
-        want, band = expected[name], getattr(snp, "ubfreqs", None)
-        has_band = band is not None and len(band) == 2
-        got = [float(band[0]), float(band[1])] if has_band else None
+    for name, pair in sorted(_run(estimator).pairs.items()):
+        want = expected[name]
+        got = list(pair.band) if pair.band is not None else None
 
         if (got is None) != (want["band"] is None):
             problems.append(f"{name}: {want['band']} -> {got}")
@@ -341,7 +348,7 @@ def test_the_selected_bandwidth_still_covers_the_same_measurement(
                 f"{name}: {want['band']} -> {got} — the narrower band is not "
                 f"contained in the wider one"
             )
-        if float(snp.resolution_floor) != pytest.approx(
+        if float(pair.resolution_floor) != pytest.approx(
             want["resolution_floor"], rel=RTOL
         ):
             problems.append(f"{name}: resolution floor moved")
