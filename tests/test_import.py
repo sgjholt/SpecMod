@@ -1,32 +1,66 @@
-"""Smoke tests: the package imports and its modules are reachable.
+"""Smoke tests: the package imports and every module in it is reachable.
 
-These exist because they would not have passed before this refactor. Every
-module below was unimportable on ``master`` — ``utils`` carried a syntax error
+These exist because they would not have passed before this refactor. Nearly
+every module was unimportable on ``master`` — ``utils`` carried a syntax error
 dating to the initial commit (2020-02-27), which took ``preprocess`` with it,
 ``spectral`` imported ``mtspec`` eagerly, and ``fitting`` imported a module
 under its pre-rename name.
+
+**The module list is discovered, not written down.** It used to be a literal,
+and a hand-maintained list of modules is a trap that has now sprung twice in
+this refactor: once when ``models`` was deleted and once when ``spectral``
+was, each time leaving a stale name behind that failed somewhere unrelated to
+where the change was made. Walking the package means a module cannot be
+forgotten when it is added, and cannot be left behind when it is removed.
 """
 
 from __future__ import annotations
 
 import importlib
+import pkgutil
 
 import pytest
 
 import specmod
 
-MODULES = [
-    "specmod.config",
-    "specmod.fitting",
-    "specmod.preprocess",
-    "specmod.pipeline",
-    "specmod.utils",
-]
+
+def _modules() -> list[str]:
+    """Every importable module in the package, found by walking it.
+
+    ``_vendor`` is skipped: it is third-party source kept close to upstream,
+    and whether it imports is upstream's business rather than a claim this
+    suite should be making.
+    """
+    return sorted(
+        info.name
+        for info in pkgutil.walk_packages(specmod.__path__, prefix="specmod.")
+        if "._vendor" not in info.name
+    )
 
 
-@pytest.mark.parametrize("name", MODULES)
+@pytest.mark.parametrize("name", _modules())
 def test_module_imports(name: str) -> None:
     assert importlib.import_module(name) is not None
+
+
+def test_the_walk_finds_the_modules_that_matter() -> None:
+    """A guard on the guard.
+
+    ``walk_packages`` silently returning nothing would make every test above
+    vacuous — zero parametrised cases, all passing. Naming a few modules that
+    must be there is what stops that failing open.
+    """
+    found = set(_modules())
+    for name in (
+        "specmod.config",
+        "specmod.core",
+        "specmod.pipeline",
+        "specmod.preprocess",
+        "specmod.transforms",
+        "specmod.utils",
+    ):
+        assert name in found, f"{name} was not discovered"
+    assert len(found) > 15, found
 
 
 def test_package_exposes_version() -> None:
