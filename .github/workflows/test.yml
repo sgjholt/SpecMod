@@ -21,9 +21,9 @@ jobs:
       - run: uv python install 3.11
       - run: uv venv
       - name: ruff check
-        run: uvx ruff check --output-format=github src/ tests/ tools/
+      - run: uvx ruff@0.16.1 check --output-format=github src/ tests/ tools/
       - name: ruff format
-        run: uvx ruff format --check src/ tests/ tools/
+        run: uvx ruff@0.16.1 format --check src/ tests/ tools/
 
   typecheck:
     runs-on: ubuntu-latest
