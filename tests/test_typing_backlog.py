@@ -32,8 +32,6 @@ ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_EXEMPT = frozenset(
     {
         "specmod.fitting",
-        "specmod.preprocess",
-        "specmod.utils",
     }
 )
 

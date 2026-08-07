@@ -114,9 +114,13 @@ ignore = [
 # Legacy modules awaiting decomposition; see docs/REFACTOR_PLAN.md phases 2-5.
 # E501 stays here because ruff format does not split long strings or comments,
 # and rewrapping legacy prose is decomposition work, not formatting.
+#
+# `utils.py` is off this list entirely and `preprocess.py` is down to three
+# rules, both as a side effect of annotating them: mutable default arguments
+# (B006) had to become `None` to be typed at all, and the rebinding that
+# tripped PLW2901 was what made two functions unannotatable.
 "src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741"]
-"src/specmod/preprocess.py" = ["B006", "PLR", "SIM", "E501", "PLW2901", "PLW0602"]
-"src/specmod/utils.py" = ["RUF012", "B", "SIM", "PLR", "E501", "E741", "PLW2901", "E402", "UP", "C4", "RUF"]
+"src/specmod/preprocess.py" = ["PLR", "SIM", "E501"]
 
 # Vendored third-party code. Its structure is kept close to upstream so the
 # diff stays reviewable; restructuring it to suit our lint rules would defeat
@@ -145,11 +149,15 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 files = ["src/specmod"]
+# Hand-written ObsPy stubs; see stubs/README.md. ObsPy ships no py.typed and
+# no stub package is published, so without these every Stream, Trace and
+# UTCDateTime is `Any`.
+mypy_path = "stubs"
 
 [[tool.mypy.overrides]]
 # None of these ship type stubs.
 module = [
-    "obspy.*", "lmfit.*", "mtspec.*", "multitaper.*",
+    "lmfit.*", "mtspec.*", "multitaper.*",
     "pooch.*", "matplotlib.*", "scipy.*",
     "h5py.*", "pyarrow.*", "pandas.*",
 ]
@@ -169,8 +177,6 @@ ignore_missing_imports = true
 # this comment claimed CI already asserted that. It did not.
 module = [
     "specmod.fitting",
-    "specmod.preprocess",
-    "specmod.utils",
 ]
 ignore_errors = true
 
