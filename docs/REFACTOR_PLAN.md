@@ -1035,7 +1035,7 @@ and there are presumably more in your working directories.
 Two ways out, and the first is much better:
 
 1. **Convert in the old environment.** Phase 0 is already building a Docker image
-   where the 0.1.0 code runs (§6.5). Add a small
+   where the 0.1.0 code runs (§6.7). Add a small
    `scripts/convert_legacy_spec.py` to it that loads `.spec` files with the old
    classes present and writes the new HDF5 format. This is a one-shot migration
    with no lasting cost to the codebase.
@@ -1586,7 +1586,7 @@ Two further problems with reproducing the published run from this repository:
    workflow the paper describes. Only `09f57b9` (removed cython) changes
    `specmod/` after that, so the realistic candidates are `ba3f7ec` and
    `453c77c`. Pick one, record the reasoning, and move on — this is the
-   strongest possible argument for the `v0.1.0` tag (§6.6) and for `hatch-vcs`
+   strongest possible argument for the `v0.1.0` tag (§6.7) and for `hatch-vcs`
    (§6.4): it must never be this hard again.
 2. **The full published pipeline is not in this repository.** The two-stage
    inversion (fit Ω/`f_c`/`t*` free, then fix event `f_c` to the
@@ -1901,9 +1901,50 @@ plan:
    libraries and checks the declarations against them. It caught an error in
    the stubs on its first run.
 
-**pre-commit** runs ruff (lint + format), mypy, `nbstripout` on the tutorial
+**Dependency floors are measured, not guessed.** The `floors` CI job installs
+`--resolution lowest-direct` so the declared minimums are exercised rather than
+left for a user to discover. It did not work: `uv run` re-resolves the project
+before running, and with no committed lock file it installed the newest of
+everything and discarded the floor install. The job was a duplicate of the
+ubuntu/3.11 matrix entry, and green for that reason — for as long as it had
+existed.
+
+Two declared floors were wrong, and both broke real behaviour:
+
+| declared | actual | what failed below it |
+|---|---|---|
+| `lmfit>=1.2` | `>=1.3` | 1.2.x calls `np.asfarray`, removed in NumPy 2.0. `lmfit>=1.2` and `numpy>=2.0` were never both satisfiable; 15 tests fail. |
+| `scipy>=1.13` | `>=1.15` | 1.15 reimplemented `scipy.optimize.nnls`. Below it the vendored `qiinv` does not converge for every input scale and the quadratic estimator's peak recovery moves between 0.53 and 1.02 for the same signal. |
+
+`tools/check_floors.py` asserts the installed versions *are* the declared
+minimums, and the job runs it before pytest. That guard is the point rather
+than the floors themselves: a floors job quietly testing the newest versions
+looks exactly like one that works, so the mismatch has to be an error rather
+than something a reader might notice.
+
+This is the third instance in this document of one shape — an intention stated
+here, restated as fact in a comment, with no mechanism behind it. The other two
+were "CI can assert it never grows" for the mypy backlog, and the
+`ignore_missing_imports` recommendation that would have made every ObsPy and
+lmfit object `Any`. Worth reading the remaining "CI can ..." sentences in this
+plan as open questions rather than as descriptions.
+
+**pre-commit** runs ruff (lint + format), `nbstripout` on the tutorial
 notebook, and `check-added-large-files` — the last one specifically to stop
 another 70 waveform files landing in git.
+
+Two corrections to what this used to say, both found by the audit in §6.6.
+**mypy is not a pre-commit hook.** It never was; the sentence listed it and
+nothing installed it. That is a defensible position — mypy needs the project
+environment and is slow to run on every commit, and the `typecheck` CI job
+covers it — but the plan should not claim a hook that is not there. The
+actually-installed set is `ruff-check`, `ruff-format`,
+`check-added-large-files`, `check-toml`, `check-yaml`, `end-of-file-fixer`,
+`trailing-whitespace`, `mixed-line-ending`, `nbstripout` and a local
+`no-session-links` commit-msg hook. That last one is not mentioned anywhere
+else in this document and is the only mechanism keeping private session URLs
+out of a public repository's history — it belongs in the plan rather than
+existing only in the config file.
 
 ### 6.3 Documentation (Sphinx)
 
@@ -1917,8 +1958,14 @@ another 70 waveform files landing in git.
 - `intersphinx` to numpy, scipy, obspy, lmfit, matplotlib.
 - `sphinx.ext.doctest` — the units/normalisation examples in §4.2 and §4.4 are
   exactly the kind of thing that should be executable in the docs.
-- `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference or an
-  undocumented public symbol fails the build.
+- `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference fails
+  the build. **Not** an undocumented public symbol, which is what this line
+  used to claim — `-W` promotes warnings that Sphinx already emits, and
+  autodoc emits none for a symbol it was never asked to document. Catching
+  that needs `sphinx.ext.coverage` with `coverage_show_missing_items`, or
+  `nitpicky` for unresolved references. Worth having; it is a different
+  setting, and writing it as a property of `-W` would have meant discovering
+  the gap only after trusting it.
 - Structure: Getting started → User guide (preprocessing, transforms, SNR,
   fitting) → **Theory** (the normalisation conventions, one page, with the
   Parseval contract stated explicitly) → Tutorial → API reference → Migration
@@ -1958,7 +2005,7 @@ hook. It is a small discipline and it is what makes the changelog automatic.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `test.yml` | PR, push | matrix 3.11/3.12/3.13 × ubuntu/macos → ruff check, ruff format --check, mypy, pytest + coverage → Codecov |
+| `test.yml` | PR, push | `lint` (ruff check + format), `typecheck` (mypy), `test` matrix 3.11/3.12/3.13 × ubuntu/macos (pytest + coverage → Codecov), `floors` (`--resolution lowest-direct`, see §6.6). Five job names, not one matrix — the row used to describe them as a single matrix step |
 | `docs.yml` | PR, push | `sphinx-build -W`; on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
 | `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
 | `release-please.yml` | push to `main` | maintains the release PR; creates tag + GitHub Release on merge |
@@ -1975,7 +2022,78 @@ is needed (§3.1). Tag `v0.2.0` at the end of Phase 2 to prove the pipeline;
 Zenodo DOI give the project a citable artefact, which it currently lacks
 entirely.
 
-### 6.6 Branch layout and preserving the pre-refactor state
+### 6.6 Audit: which enforcement claims in this document are real
+
+Three separate claims in this plan turned out to describe mechanisms that did
+not exist, each discovered only when something downstream went wrong:
+
+1. *"The override list is the migration backlog, and CI can assert it never
+   grows."* Became the comment `# CI asserts it never grows` above the mypy
+   override. Nothing did. Adding a fourth module would have been green.
+2. *`ignore_missing_imports` for ObsPy and lmfit.* Would have made every object
+   from both libraries `Any` — in the two modules where nearly every value
+   comes from one of them. Silences the import; checks nothing.
+3. *The `floors` job.* `uv run` re-resolved the project and discarded the
+   `--resolution lowest-direct` install, so the job tested the newest of
+   everything while its comment said the opposite. Two declared floors were
+   unsatisfiable as a result.
+
+One shape, three times: an intention stated here, restated as fact in a
+comment, with no mechanism behind it. So the rest were checked rather than
+read. What follows is the result, and it is recorded because a plan that has
+been audited once is worth more than one that reads confidently throughout.
+
+**Claims that were false, now corrected in place:**
+
+| Claim | Reality |
+|---|---|
+| "pre-commit runs ruff, **mypy**, nbstripout, check-added-large-files" | mypy is not a hook and never was. CI's `typecheck` job covers it. §6.2 corrected. |
+| "Conventional Commits, **`commitlint`-enforced**" (§7) | No `commitlint` hook. The convention is followed by hand. §7 corrected. |
+| "`sphinx-build -W` … an **undocumented public symbol** fails the build" | `-W` promotes warnings Sphinx emits; autodoc emits none for a symbol it was never asked to document. Needs `sphinx.ext.coverage` or `nitpicky`. §6.3 corrected. |
+| `test.yml` "matrix … → ruff, mypy, pytest" | Five jobs, not one matrix: `lint`, `typecheck`, `test`, `floors`, plus `build.yml`. §6.5 corrected. |
+
+**A claim whose mechanism is absent but whose property holds — for a different
+reason, which matters:**
+
+> "Regression tests pin an explicit config file, never the defaults, so
+> changing a default cannot silently move a golden test."
+
+Nothing pins a config. `tests/test_golden_reference.py` reads the shipped
+defaults through `load_config()`. But the property was tested directly —
+bumping `smoothing.n_bins` from 151 to 158 and running the suite — and **9 of
+25 golden tests fail**, loudly. The golden values live in a committed JSON
+file, so any behaviour change breaks them whatever moved it.
+
+The residual gap is narrower than the claim suggests but real: the golden file
+records no config, so a *regenerated* reference silently adopts whatever
+defaults were current. Pinning a study file, as this plan proposes, is what
+would close it. Until then the protection is "the numbers are frozen", not
+"the settings are frozen".
+
+**Claims that were checked and hold:**
+
+- "One normalisation contract, enforced by one test, for all backends" — the
+  Parseval contract is asserted across the registry in `tests/test_transforms.py`.
+- "`PLOT_COLUMNS` … semantic grouping makes [two disagreeing copies]
+  structurally impossible" — one definition, `viz.plot_columns`, read through
+  the config by both `fitting` and `plotting`.
+- "the registry-wide test asserts the property" (noise rotation returning a
+  factor ≥ 1) — `tests/test_collection.py` asserts finiteness, shape and
+  positivity for every registered model.
+
+**One passage that is simply stale**, in §5.2 on configuration: it describes
+`BW_METHOD` and `ROT_METHOD` surviving as module-level globals in `spectral`
+"a shell over `core`", and `sp.ROT_METHOD = 1` as a live escape hatch.
+`spectral.py` and `_config_legacy.py` were both deleted in phase 2. The test it
+names still exists and still asserts a derivation, but of `_compare_settings`
+in `pipeline`, not of legacy globals.
+
+**Not yet built, and correctly forward-looking** — no correction needed, but
+worth listing so nothing here reads as a description of the present: Sphinx docs and
+`docs.yml`, `release-please`, `datasets/magna_2020.toml`, the acquisition layer
+of §5.2, and the two-stage fit API of §5.2.5.
+
+### 6.7 Branch layout and preserving the pre-refactor state
 
 **`master` is frozen; `main` is the trunk.** `main` was branched from `master` at
 `453c77c` and is where all refactor work lands. `master` is never committed to
@@ -2068,7 +2186,9 @@ year.
 `docs:`, `test:`, `chore:`; `feat!:` or a `BREAKING CHANGE:` trailer for
 breaks), enforced by a `commitlint` pre-commit hook. This is what makes the
 changelog and version bumps automatic. The same `commit-msg` stage should reject
-Claude session URLs (§6.6) — public repository, private links.
+Claude session URLs (§6.7) — public repository, private links. That hook
+exists and is installed; the `commitlint` half of this sentence does not
+(§6.6).
 
 **PyPI name.** `specmod` is unregistered (checked: 404 on `specmod`, `spec-mod`
 and `pyspecmod`). Worth claiming with the `v0.2.0` release at the end of Phase 2
@@ -2083,7 +2203,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.6); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.7 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
@@ -2121,8 +2241,9 @@ end-to-end proves the pipeline while the stakes are zero.
 - **Backwards compatibility** — clean break. No downstream users, so the 0.x API
   is removed outright: no `legacy.py`, no deprecation cycle (§3.1). Breaking
   changes expected throughout `0.x`; `1.0` when the API settles.
-- **Commit convention** — Conventional Commits, `commitlint`-enforced, driving
-  release-please (§6.4).
+- **Commit convention** — Conventional Commits, driving release-please (§6.4).
+  Followed by hand today; the `commitlint` hook of §6.4 is **not installed**,
+  so nothing enforces it (§6.6).
 - **Validation anchor** — Magna 2020, with the published workflow transcribed
   into `datasets/magna_2020.toml` and Figure 2 / Tables S1–S2 as regression
   targets (§5.2.4–§5.2.6).
@@ -2137,8 +2258,8 @@ end-to-end proves the pipeline while the stakes are zero.
   (§4.7). Current behaviour stays the default.
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
-- **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.6). One of the three
-  preservation layers in §6.5.
+- **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.7). One of the three
+  preservation layers in §6.7.
 
 ### Still open
 

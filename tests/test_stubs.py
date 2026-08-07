@@ -164,6 +164,41 @@ def test_every_declared_function_exists_with_the_same_parameters(
         )
 
 
+def _assert_signature_matches(label: str, node: ast.FunctionDef, function: Any) -> None:
+    """Every parameter the stub names must exist upstream, in the same order.
+
+    Two separate claims, and the second is why this is a function rather than
+    one assertion. A stub is allowed to stop early where upstream ends in
+    ``**kwargs`` — declaring the parameters we use and no more is the whole
+    approach here. It is **not** allowed to name a parameter that does not
+    exist, and ``**kwargs`` upstream does not license that: it swallows the
+    call at runtime, so the mistake shows up as a silently ignored argument
+    rather than a `TypeError`.
+
+    The first version skipped any function with ``*args`` or ``**kwargs``
+    outright. That is exactly how ``Model.fit(coerce_farray=...)`` — which
+    exists on lmfit 1.3 and not on 1.2, this project's declared floor — sat in
+    the stubs unnoticed.
+    """
+    try:
+        actual = [p for p in inspect.signature(function).parameters if p != "self"]
+    except (TypeError, ValueError):  # pragma: no cover
+        return  # a C-level or property object; nothing to compare
+
+    declared = _declared_parameters(node)
+    #: Variadic names, which a stub may legitimately not mirror.
+    named = [p for p in actual if p not in ("args", "kwargs", "kws", "options")]
+
+    invented = [p for p in declared if p not in actual]
+    assert not invented, (
+        f"{label}: stub declares {invented}, which the installed library does "
+        f"not take. It has {actual}."
+    )
+    assert declared[: len(named)] == named[: len(declared)], (
+        f"{label}: stub declares {declared}, library has {actual}"
+    )
+
+
 def test_the_class_methods_take_the_parameters_the_stub_claims() -> None:
     """The same check for methods, where the risk is identical."""
     checks: list[tuple[str, Any]] = [
@@ -174,18 +209,8 @@ def test_the_class_methods_take_the_parameters_the_stub_claims() -> None:
         for name, methods in _stub_classes(STUBS / stub).items():
             cls = getattr(real, name)
             for node in methods:
-                function = getattr(cls, node.name)
-                try:
-                    actual = [
-                        p for p in inspect.signature(function).parameters if p != "self"
-                    ]
-                except (TypeError, ValueError):  # pragma: no cover
-                    continue  # a C-level or property object; nothing to compare
-                declared = _declared_parameters(node)
-                if "args" in actual or "kwargs" in actual:
-                    continue  # upstream forwards; the stub says so too
-                assert declared[: len(actual)] == actual[: len(declared)], (
-                    f"{name}.{node.name}: stub declares {declared}, ObsPy has {actual}"
+                _assert_signature_matches(
+                    f"{name}.{node.name}", node, getattr(cls, node.name)
                 )
 
 
@@ -220,18 +245,8 @@ def test_lmfit_methods_take_the_parameters_the_stub_claims() -> None:
         for name, methods in _stub_classes(STUBS / stub).items():
             cls = getattr(real, name)
             for node in methods:
-                function = getattr(cls, node.name)
-                try:
-                    actual = [
-                        p for p in inspect.signature(function).parameters if p != "self"
-                    ]
-                except (TypeError, ValueError):  # pragma: no cover
-                    continue
-                declared = _declared_parameters(node)
-                if "args" in actual or "kwargs" in actual:
-                    actual = [p for p in actual if p not in ("args", "kwargs")]
-                assert declared[: len(actual)] == actual[: len(declared)], (
-                    f"{name}.{node.name}: stub declares {declared}, lmfit has {actual}"
+                _assert_signature_matches(
+                    f"{name}.{node.name}", node, getattr(cls, node.name)
                 )
 
 

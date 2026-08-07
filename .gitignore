@@ -42,3 +42,7 @@ docs/_build/
 # changes. The inputs (Tutorial/Data, Tutorial/MetaData) *are* committed.
 Tutorial/Spectra/*.h5
 Tutorial/Spectra/FlatFiles/
+
+# Created by `uv run` without --no-sync; this project resolves fresh on
+# purpose so the floors job can test the declared minimums.
+uv.lock
