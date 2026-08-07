@@ -170,9 +170,17 @@ class FitSpectrum:
         self.set_model(model, **params)
 
     def fit_mod(self, **kwargs):
+        """Fit, judge the result, then record it — in that order.
+
+        The judgement used to be made *after* the recording, so the
+        ``pass_fitting`` column of every flat file held the value from before
+        the fit ran — ``True``, the class default, on a fresh `FitSpectrum`.
+        The attribute and the table disagreed, and the table is what gets
+        written out and regressed on.
+        """
         self.result = self.mod.fit(self.mod_amp, self.params, f=self.mod_freq, **kwargs)
-        self.__set_results_to_meta()
         self.__determine_pass_or_fail()
+        self.__set_results_to_meta()
 
     def set_signal(self, signal):
         if self.__check_input(signal):
@@ -234,14 +242,23 @@ class FitSpectrum:
         something every caller had to remember. Applied here, forgetting it is
         no longer possible.
 
-        A negative ``t*`` is not a poor fit, it is an unphysical one: it says
-        the wave gained energy travelling. lmfit will happily return one if the
-        misfit surface leans that way.
+        The same applies to ``fc``, and the legacy code knew it — the line
+        ``# self.set_bounds('fc', min=0)`` sat commented out here. It is not a
+        poor fit but an unphysical one: a negative ``t*`` says the wave gained
+        energy travelling, and a corner frequency below zero says nothing at
+        all. lmfit returns either if the misfit surface leans that way, and
+        with the shipped multitaper default it returned ``fc = -4.45 Hz`` on
+        one PNR station while ``pass_fitting`` reported success — because a
+        parameter with no bound cannot be *at* its bound.
         """
         self.params = self.mod.make_params(**params)
-        floor = cfg.load_config().config.fitting.t_star_min
-        if "ts" in self.params and floor is not None:
-            self.set_bounds("ts", min=floor)
+        fitting = cfg.load_config().config.fitting
+        for name, floor in (
+            ("ts", fitting.t_star_min),
+            ("fc", fitting.corner_frequency_min),
+        ):
+            if name in self.params and floor is not None:
+                self.set_bounds(name, min=floor)
 
     def reset(self):
         for par in self.params.values():
@@ -350,16 +367,30 @@ class FitSpectrum:
         self.meta.update(self.__get_test_results())
 
     def __determine_pass_or_fail(self):
-        for par, vals in self.result.params.items():
-            try:
-                if (vals.value - vals.stderr <= vals.min) or (
-                    vals.value + vals.stderr >= vals.max
-                ):
-                    # print(par, vals)
-                    self.pass_fitting = False
-            except TypeError:
-                # print("std err is none")
-                # print(par, vals)
+        """A fit fails when a parameter is pinned against one of its bounds.
+
+        Which is the useful question: a corner frequency resting on its floor
+        is the minimiser saying "lower, if you would let me", and the value it
+        reports is the bound rather than a measurement.
+
+        Reset first. ``pass_fitting`` starts as a class attribute and was only
+        ever set *False*, so a `FitSpectrum` that failed once could never pass
+        again however many times it was refitted.
+
+        **Where there is no uncertainty, the value itself is compared.** The
+        old version treated a missing ``stderr`` as a failure, which would mark
+        every fit failed under the shipped configuration: Powell does not
+        estimate a covariance matrix, so lmfit has no uncertainties to report.
+        That is a property of the minimiser, not a fault in the fit. Asking
+        whether the value sits on the bound is the same question with the
+        error bar removed.
+        """
+        self.pass_fitting = True
+        for _par, vals in self.result.params.items():
+            if not vals.vary:
+                continue
+            spread = vals.stderr if vals.stderr is not None else 0.0
+            if (vals.value - spread <= vals.min) or (vals.value + spread >= vals.max):
                 self.pass_fitting = False
 
 

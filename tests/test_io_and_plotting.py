@@ -296,6 +296,22 @@ class TestTheLayout:
         assert path.suffix == ".h5"
         assert path.is_file()
 
+    def test_an_event_id_with_dots_in_it_is_not_truncated(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """An event id is an ISO timestamp, and timestamps contain dots.
+
+        ``Path.with_suffix`` reads ``.200000Z`` as an extension and *replaces*
+        it, so ``2019-08-26T07:49:24.200000Z`` was silently saved as
+        ``2019-08-26T07:49:24.h5`` — and two events in the same second would
+        have overwritten each other. Found by running the tutorial, which names
+        its output file after the event.
+        """
+        event = "2019-08-26T07:49:24.200000Z"
+        path = save(tmp_path / event, _spectra(pnr_windows))
+        assert path.name == f"{event}.h5"
+        assert load(path).ids() == _spectra(pnr_windows).ids()
+
 
 # -------------------------------------------------------------- plotting
 

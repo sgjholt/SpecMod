@@ -159,8 +159,13 @@ def save(path: str | Path, spectra: SpectrumSet) -> Path:
     h5py = _require_h5py()
 
     path = Path(path)
+    # Appended, never substituted. An event id is an ISO timestamp —
+    # `2019-08-26T07:49:24.200000Z` — and `Path.with_suffix` reads `.200000Z`
+    # as an extension and replaces it, silently truncating the name to
+    # `2019-08-26T07:49:24.h5`. Two events in the same second would then
+    # overwrite each other.
     if path.suffix != ".h5":
-        path = path.with_suffix(".h5")
+        path = path.with_name(path.name + ".h5")
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(path, "w") as handle:

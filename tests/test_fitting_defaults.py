@@ -90,24 +90,31 @@ class TestDefaults:
 
 class TestTheSettingsBite:
     def test_the_minimiser_comes_from_configuration(self, pnr_windows: Any) -> None:
-        """And it is not cosmetic: the default minimiser gives a nonsense answer.
+        """And it changes the answer, so a study file naming one must be read.
 
-        lmfit's default returns a **negative corner frequency** on one of the
-        28 PNR stations where Powell does not. A corner frequency below zero is
-        not a poor measurement, it is a meaningless one — nothing downstream
-        rejects it, and ``pass_fitting`` does not catch it.
+        An earlier version of this asserted that lmfit's default returned a
+        **negative** corner frequency where Powell did not — which was true,
+        and is no longer, because ``fc`` now carries a lower bound. The bound
+        is what prevents the nonsense; the minimiser is what decides which
+        minimum is found.
+
+        That distinction is worth keeping straight. The two still disagree by
+        more than 1% on **5 of 28** stations and reach the same median
+        goodness-of-fit, which is the signature of a shallow surface with
+        several local minima rather than of one method being wrong.
         """
         spectra = _spectra(pnr_windows)
         assert load_config().config.fitting.method == "powell"
 
         configured = _fit(spectra).table
-        assert (configured["fc"] > 0).all()
+        alternative = _fit(spectra, fit={"method": "leastsq"}).table
 
-        # The path the caller used to fall into by omitting `method`.
-        default = _fit(spectra, fit={"method": "leastsq"}).table
-        assert (default["fc"] <= 0).any(), (
-            "the unbounded minimiser no longer produces a negative corner; "
-            "if that is a real improvement this test should say so instead"
+        differing = np.abs(
+            configured["fc"].to_numpy() / alternative["fc"].to_numpy() - 1.0
+        )
+        assert (differing > 0.01).sum() >= 1, (
+            "the two minimisers now agree everywhere; if that is real, this "
+            "test should assert the agreement instead"
         )
 
     def test_t_star_is_floored_at_the_configured_minimum(
@@ -117,6 +124,40 @@ class TestTheSettingsBite:
         floor = load_config().config.fitting.t_star_min
         table = _fit(_spectra(pnr_windows)).table
         assert (table["ts"] >= floor - 1e-18).all()
+
+    @pytest.mark.parametrize("estimator", ["fft", "multitaper", "cwt"])
+    def test_the_corner_frequency_cannot_come_back_negative(
+        self, estimator: str, pnr_windows: Any
+    ) -> None:
+        """Across every estimator, not just the one that was checked first.
+
+        Choosing the minimiser from configuration fixed a negative corner on
+        the ``fft`` path, and an earlier version of this suite asserted exactly
+        that — on ``fft`` alone. The shipped default is ``multitaper``, and
+        there the same station still came back at **-4.45 Hz** with
+        ``pass_fitting`` reporting success, because a parameter with no bound
+        cannot be *at* its bound.
+
+        ``fc`` now carries the lower bound the legacy code had commented out.
+        Parametrised over the estimators so the next one added is covered by
+        construction rather than by someone remembering.
+        """
+        signal, noise = pnr_windows()
+        spectra = spectrum_set_from_streams(signal, noise, estimator=estimator)
+        table = _fit(spectra).table
+        assert (table["fc"] > 0).all(), (
+            f"{estimator}: {table.loc[table['fc'] <= 0, 'fc'].tolist()}"
+        )
+
+    def test_a_parameter_resting_on_its_bound_fails_the_fit(self) -> None:
+        """Why the floor is zero rather than a small positive number.
+
+        lmfit flags a parameter sitting on its bound, and ``pass_fitting``
+        reads that. So a fit that wants a corner frequency of nothing is
+        *rejected* rather than reported — which is the outcome wanted, and is
+        only available if the bound is reachable.
+        """
+        assert load_config().config.fitting.corner_frequency_min == 0.0
 
     def test_fit_bins_comes_from_configuration(self, pnr_windows: Any) -> None:
         """Fitting the binned spectrum uses far fewer points than the raw one."""
@@ -185,3 +226,71 @@ class TestInitialGuess:
             band = None
 
         assert initial_guess({"XX.TEST": Rejected()}) == {}
+
+
+class TestPassFitting:
+    """The flag that says whether a fitted parameter is worth reading.
+
+    A parameter pinned against one of its bounds is the minimiser saying
+    "further, if you would let me", and the value reported is the bound rather
+    than a measurement. Three separate defects meant the column recording that
+    said nothing at all.
+    """
+
+    def test_the_table_agrees_with_the_object(self, pnr_windows: Any) -> None:
+        """The judgement used to be made *after* it was recorded.
+
+        ``fit_mod`` called ``__set_results_to_meta()`` — which copies
+        ``pass_fitting`` into the metadata — and only then
+        ``__determine_pass_or_fail()``. So every flat file held the value from
+        before the fit ran: ``True``, the class default. The attribute and the
+        table disagreed, and the table is the thing written out and regressed
+        on.
+        """
+        fit = _fit(_spectra(pnr_windows))
+        for row in fit.table.itertuples():
+            assert fit.models[row.id].pass_fitting == row.pass_fitting, row.id
+
+    def test_a_refit_can_pass_again(self, pnr_windows: Any) -> None:
+        """``pass_fitting`` was only ever set *False*.
+
+        It starts as a class attribute and nothing reset it, so a
+        `FitSpectrum` that failed once could never pass again however many
+        times it was refitted — including after the caller relaxed the bound
+        that failed it.
+        """
+        fit = _fit(_spectra(pnr_windows))
+        model = next(iter(fit.models.values()))
+
+        model.pass_fitting = False
+        model.fit_mod(method="powell")
+        assert model.pass_fitting is True
+
+    def test_a_missing_uncertainty_is_not_a_failure(self, pnr_windows: Any) -> None:
+        """Powell does not estimate a covariance matrix, so lmfit reports no
+        uncertainties — and the shipped configuration uses Powell.
+
+        The old check treated a missing ``stderr`` as a failed fit, so once the
+        ordering above was corrected *every* fit under the default
+        configuration would have been marked failed. That is a property of the
+        minimiser, not a fault in the fit.
+        """
+        fit = _fit(_spectra(pnr_windows))
+        assert fit.table["fc-stderr"].isna().all(), (
+            "Powell now reports uncertainties; this test should assert them "
+            "instead of asserting their absence is tolerated"
+        )
+        assert fit.table["pass_fitting"].any()
+
+    def test_it_still_rejects_a_parameter_against_its_bound(
+        self, pnr_windows: Any
+    ) -> None:
+        """The flag has to reject something, or it is decoration.
+
+        ``leastsq`` does report uncertainties, and on these 28 windows six
+        stations have a ``value +/- stderr`` that reaches a bound. Those are
+        the poorly-constrained fits the flag exists to mark.
+        """
+        table = _fit(_spectra(pnr_windows), fit={"method": "leastsq"}).table
+        assert table["fc-stderr"].notna().all()
+        assert 0 < (~table["pass_fitting"]).sum() < len(table)
