@@ -1901,6 +1901,34 @@ plan:
    libraries and checks the declarations against them. It caught an error in
    the stubs on its first run.
 
+**Dependency floors are measured, not guessed.** The `floors` CI job installs
+`--resolution lowest-direct` so the declared minimums are exercised rather than
+left for a user to discover. It did not work: `uv run` re-resolves the project
+before running, and with no committed lock file it installed the newest of
+everything and discarded the floor install. The job was a duplicate of the
+ubuntu/3.11 matrix entry, and green for that reason — for as long as it had
+existed.
+
+Two declared floors were wrong, and both broke real behaviour:
+
+| declared | actual | what failed below it |
+|---|---|---|
+| `lmfit>=1.2` | `>=1.3` | 1.2.x calls `np.asfarray`, removed in NumPy 2.0. `lmfit>=1.2` and `numpy>=2.0` were never both satisfiable; 15 tests fail. |
+| `scipy>=1.13` | `>=1.15` | 1.15 reimplemented `scipy.optimize.nnls`. Below it the vendored `qiinv` does not converge for every input scale and the quadratic estimator's peak recovery moves between 0.53 and 1.02 for the same signal. |
+
+`tools/check_floors.py` asserts the installed versions *are* the declared
+minimums, and the job runs it before pytest. That guard is the point rather
+than the floors themselves: a floors job quietly testing the newest versions
+looks exactly like one that works, so the mismatch has to be an error rather
+than something a reader might notice.
+
+This is the third instance in this document of one shape — an intention stated
+here, restated as fact in a comment, with no mechanism behind it. The other two
+were "CI can assert it never grows" for the mypy backlog, and the
+`ignore_missing_imports` recommendation that would have made every ObsPy and
+lmfit object `Any`. Worth reading the remaining "CI can ..." sentences in this
+plan as open questions rather than as descriptions.
+
 **pre-commit** runs ruff (lint + format), mypy, `nbstripout` on the tutorial
 notebook, and `check-added-large-files` — the last one specifically to stop
 another 70 waveform files landing in git.
