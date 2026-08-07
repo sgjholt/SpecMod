@@ -1,5 +1,4 @@
 from copy import deepcopy
-from pathlib import Path
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -9,6 +8,7 @@ from matplotlib.ticker import NullFormatter, StrMethodFormatter
 
 from . import config as cfg
 from . import sources
+from .tables import read_table, write_table
 
 # global variables
 # One home for this: it used to be defined in *both* the SPECTRAL and FITTING
@@ -496,7 +496,10 @@ class FitSpectra:
 
     @staticmethod
     def write_flatfile(path, fits):
-        """Write the group fit table as CSV, creating the directory if needed.
+        """Write the group fit table, in the format ``path``'s suffix names.
+
+        ``.parquet`` is typed, compressed and queryable without loading;
+        ``.csv`` is what journal supplements want. See :mod:`specmod.tables`.
 
         The previous implementation was ``os.makedirs(os.path.join(
         *path.split("/")[:-1]))``, which raised ``TypeError: join() missing 1
@@ -504,14 +507,12 @@ class FitSpectra:
         component — ``write_flatfile("out.csv", fits)`` could not work. It also
         split on ``/`` literally, so it did nothing useful on Windows.
         """
-        parent = Path(path).parent
-        if parent != Path():
-            parent.mkdir(parents=True, exist_ok=True)
-        fits.table.to_csv(path, index=False)
+        return write_table(path, fits.table)
 
     @staticmethod
     def read_flatfile(path):
-        return pd.read_csv(path)
+        """Read a fit table back. Format follows the suffix."""
+        return read_table(path)
 
     def __check_wm(self, wm):
         if wm not in ["log", "none"]:

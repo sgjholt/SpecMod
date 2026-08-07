@@ -10,8 +10,6 @@ like the rest.
 from __future__ import annotations
 
 import functools
-import json
-import zipfile
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -34,6 +32,37 @@ from specmod.plotting import plot_pair, plot_set  # noqa: E402
 def _spectra(windows: Any) -> SpectrumSet:
     signal, noise = windows()
     return spectrum_set_from_streams(signal, noise, estimator="fft")
+
+
+def _spectra_without_band() -> SpectrumSet:
+    """A one-station set whose pair selected no band.
+
+    Built by hand rather than hunted for in the real data: every PNR window
+    passes, so the no-band path would otherwise never be exercised.
+    """
+    from specmod.core import BinnedSpectrum, Spectrum, SpectrumPair  # noqa: PLC0415
+
+    freq = np.linspace(1.0, 40.0, 128)
+    spectrum = Spectrum(
+        freq=freq,
+        amp=np.full_like(freq, 1e-8),
+        motion="velocity",
+        kind="magnitude",
+        duration=3.2,
+        sampling_rate=100.0,
+        meta={"id": "XX.TEST..HHZ"},
+    )
+    binned = BinnedSpectrum(freq=freq[:16], amp=np.full(16, 1e-8))
+    pair = SpectrumPair(
+        signal=spectrum,
+        noise=spectrum,
+        binned_signal=binned,
+        binned_noise=binned,
+        snr=np.ones(16),
+        resolution_floor=1.0 / 3.2,
+        band=None,
+    )
+    return SpectrumSet(pairs={"XX.TEST..HHZ": pair}, event="synthetic")
 
 
 @pytest.fixture(autouse=True)
@@ -109,40 +138,154 @@ class TestRoundTrip:
             assert got[id].signal.amp == pytest.approx(want[id].signal.amp), id
 
 
-class TestTheFormat:
-    def test_it_does_not_pickle(self, pnr_windows: Any, tmp_path: Path) -> None:
-        """The whole reason for replacing the old format.
+class TestTheLayout:
+    """The four rules in REFACTOR_PLAN §4.6.2, each asserted.
 
-        Pickle stores the import path of every class, so a stored result stops
-        loading the moment a class is renamed — which is why the shipped
-        ``.spec`` files have been unreadable since before this refactor. Read
-        back with ``allow_pickle=False``, which raises if anything in the
-        archive needs unpickling.
+    They are lessons from how pickle failed rather than general good practice,
+    so each one is a specific claim about this file and worth a specific test.
+    """
+
+    def test_it_names_no_python_type(self, pnr_windows: Any, tmp_path: Path) -> None:
+        """*Never store class identity.*
+
+        Pickle broke because it recorded ``specmod.Spectral`` / ``Spectra``. A
+        schema that names no Python type cannot be broken by renaming one, so
+        the whole file is searched for the package's own name.
         """
         path = save(tmp_path / "event", _spectra(pnr_windows))
-        with np.load(path, allow_pickle=False) as archive:
-            assert len(archive.files) > 1
+        blob = path.read_bytes()
+        for forbidden in (
+            b"specmod.core",
+            b"SpectrumPair",
+            b"SpectrumSet",
+            b"__main__",
+            b"copy_reg",
+            b"__reduce__",
+        ):
+            assert forbidden not in blob, forbidden
 
-    def test_the_metadata_is_readable_without_python(
+    def test_every_file_carries_a_format_version(
         self, pnr_windows: Any, tmp_path: Path
     ) -> None:
-        """An ``.npz`` is a zip, so the header is greppable from a shell."""
+        """*Every file carries `specmod_format_version`.* Its absence is the
+        whole problem with what came before."""
+        h5py = pytest.importorskip("h5py")
         path = save(tmp_path / "event", _spectra(pnr_windows))
-        with zipfile.ZipFile(path) as archive:
-            assert "header.npy" in archive.namelist()
-        with np.load(path, allow_pickle=False) as archive:
-            header = json.loads(str(archive["header"]))
-        assert header["format_version"] == FORMAT_VERSION
-        assert len(header["pairs"]) == 28
+        with h5py.File(path, "r") as handle:
+            assert handle.attrs["specmod_format_version"] == FORMAT_VERSION
 
-    def test_an_unreadable_version_says_so(self, tmp_path: Path) -> None:
-        """Naming both versions, rather than a ``KeyError`` on a renamed field."""
-        path = tmp_path / "old.npz"
-        np.savez_compressed(
-            path, header=np.array(json.dumps({"format_version": 0, "pairs": {}}))
-        )
+    def test_an_unreadable_version_names_both(self, tmp_path: Path) -> None:
+        h5py = pytest.importorskip("h5py")
+        path = tmp_path / "old.h5"
+        with h5py.File(path, "w") as handle:
+            handle.attrs["specmod_format_version"] = 0
         with pytest.raises(ValueError, match="format version 0"):
             load(path)
+
+    def test_the_units_are_stored_not_implied(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """*Self-describing units.*
+
+        A frequency array and an amplitude array do not say whether they are a
+        velocity magnitude or a displacement power spectral density, and the
+        two differ by factors that would pass unnoticed.
+        """
+        h5py = pytest.importorskip("h5py")
+        spectra = _spectra(pnr_windows)
+        path = save(tmp_path / "event", spectra)
+        with h5py.File(path, "r") as handle:
+            group = handle[spectra.ids()[0]]
+            for prefix in ("signal", "noise"):
+                for field in ("motion", "kind", "duration", "sampling_rate"):
+                    assert f"{prefix}_{field}" in group.attrs
+
+    def test_one_group_per_channel_named_by_trace_id(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """*One file per event, group per channel.*
+
+        HDF5 group names may contain dots, so ``LV.L001..HHE`` needs no
+        mangling and the file browses with the names the pipeline uses.
+        """
+        h5py = pytest.importorskip("h5py")
+        spectra = _spectra(pnr_windows)
+        path = save(tmp_path / "event", spectra)
+        with h5py.File(path, "r") as handle:
+            assert sorted(handle.keys()) == spectra.ids()
+            assert "LV.L001..HHE" in handle
+
+    def test_the_shared_frequency_axis_is_stored_once(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """`compare` interpolates the noise onto the signal's axis and bins
+        both against the same edges, so the two spectra share an axis *by
+        construction*.
+
+        Storing it per spectrum would be waste, and worse, would make a file
+        expressible in which the two disagree — a state the containers cannot
+        represent and no reader could act on. Seven datasets per group, not
+        nine.
+        """
+        h5py = pytest.importorskip("h5py")
+        spectra = _spectra(pnr_windows)
+        path = save(tmp_path / "event", spectra)
+        with h5py.File(path, "r") as handle:
+            group = handle[spectra.ids()[0]]
+            assert sorted(group.keys()) == [
+                "binned_freq",
+                "binned_noise_amp",
+                "binned_signal_amp",
+                "freq",
+                "noise_amp",
+                "signal_amp",
+                "snr",
+            ]
+
+        back = load(path)
+        for id in spectra.ids():
+            assert np.array_equal(back[id].noise.freq, back[id].signal.freq), id
+            assert np.array_equal(
+                back[id].binned_noise.freq, back[id].binned_signal.freq
+            ), id
+
+    def test_small_arrays_are_not_compressed_and_large_ones_are(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """Measured, not assumed.
+
+        Compression in HDF5 needs chunked storage, which costs a chunk index
+        per dataset. These arrays have a median of 91 float64, and compressing
+        every one took the file from 370 KB to **867 KB** against a 250 KB
+        payload — the indices cost more than the data. Above the threshold the
+        ratio flips, which is the case the plan's "chunked, compressed"
+        argument was about: a scalogram is ~1 MB per trace.
+        """
+        h5py = pytest.importorskip("h5py")
+        from specmod.io import _COMPRESS_ABOVE_BYTES, _dataset  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        path = save(tmp_path / "event", spectra)
+        with h5py.File(path, "r") as handle:
+            group = handle[spectra.ids()[0]]
+            assert all(group[name].compression is None for name in group)
+
+        big = tmp_path / "big.h5"
+        with h5py.File(big, "w") as handle:
+            _dataset(handle, "big", np.zeros(_COMPRESS_ABOVE_BYTES))
+            assert handle["big"].compression == "gzip"
+
+    def test_a_pair_with_no_band_omits_it_rather_than_storing_a_sentinel(
+        self, tmp_path: Path
+    ) -> None:
+        """A NaN pair would read back as a band. "No usable bandwidth" and "a
+        band at nowhere" are different claims."""
+        h5py = pytest.importorskip("h5py")
+        spectra = _spectra_without_band()
+        path = save(tmp_path / "event", spectra)
+        with h5py.File(path, "r") as handle:
+            assert "band" not in handle["XX.TEST..HHZ"].attrs
+        assert load(path)["XX.TEST..HHZ"].band is None
 
     def test_the_suffix_and_directory_are_supplied(
         self, pnr_windows: Any, tmp_path: Path
@@ -150,7 +293,7 @@ class TestTheFormat:
         """The legacy version raised ``FileNotFoundError`` from inside ``open``,
         naming the file rather than the directory that did not exist."""
         path = save(tmp_path / "nested" / "deeper" / "event", _spectra(pnr_windows))
-        assert path.suffix == ".npz"
+        assert path.suffix == ".h5"
         assert path.is_file()
 
 
@@ -268,3 +411,108 @@ class TestPlotSet:
         empty = SpectrumSet(pairs={}, event="none")
         with pytest.raises(ValueError, match="no pair in this set"):
             plot_set(empty)
+
+
+# --------------------------------------------------------------- tables
+
+
+class TestTables:
+    """Fit results, the other half of §4.6.
+
+    Arrays are asked about one event at a time; tables are a columnar scan over
+    every event ever fitted. One format for both would be worse at each.
+    """
+
+    @staticmethod
+    def _table() -> Any:
+        import pandas as pd  # noqa: PLC0415
+
+        return pd.DataFrame(
+            {
+                "id": ["LV.L001..HHE", "LV.L002..HHN"],
+                "fc": [4.25, 7.5],
+                "llpsp": [-6.5, -7.25],
+                "pass_fitting": [True, False],
+                "note": ["ok", None],
+            }
+        )
+
+    def test_parquet_preserves_dtypes_where_csv_does_not(self, tmp_path: Path) -> None:
+        """The concrete reason this is not fashion.
+
+        A CSV column holding one ``None`` comes back as object-dtype strings,
+        so ``pass_fitting`` stops being a boolean and a downstream ``.sum()``
+        silently counts the wrong thing.
+        """
+        pytest.importorskip("pyarrow")
+        from specmod.tables import read_table, write_table  # noqa: PLC0415
+
+        want = self._table()
+        parquet = read_table(write_table(tmp_path / "fits.parquet", want))
+        csv = read_table(write_table(tmp_path / "fits.csv", want))
+
+        assert parquet["pass_fitting"].dtype == want["pass_fitting"].dtype
+        assert parquet["fc"].dtype == want["fc"].dtype
+        assert parquet["id"].tolist() == want["id"].tolist()
+        # CSV survives the numerics but loses the null-bearing column's type.
+        assert csv["fc"].dtype == want["fc"].dtype
+        assert csv["note"].isna().iloc[1]
+
+    def test_floats_survive_parquet_exactly(self, tmp_path: Path) -> None:
+        """CSV round-trips every float through decimal text. A fitted corner
+        frequency that changes in the last bits each time it is written is a
+        result that cannot be compared with itself."""
+        pytest.importorskip("pyarrow")
+        import numpy as _np  # noqa: PLC0415
+        import pandas as pd  # noqa: PLC0415
+
+        from specmod.tables import read_table, write_table  # noqa: PLC0415
+
+        rng = _np.random.default_rng(0)
+        want = pd.DataFrame({"fc": rng.normal(5, 2, 500) ** 3})
+        back = read_table(write_table(tmp_path / "f.parquet", want))
+        assert _np.array_equal(back["fc"].to_numpy(), want["fc"].to_numpy())
+
+    def test_provenance_rides_along_in_parquet(self, tmp_path: Path) -> None:
+        """And is dropped by CSV, which has nowhere to put it — stated rather
+        than hidden, because a lossy export is how a run stops being
+        reproducible."""
+        pytest.importorskip("pyarrow")
+        import pyarrow.parquet as pq  # noqa: PLC0415
+
+        from specmod.tables import write_table  # noqa: PLC0415
+
+        path = write_table(
+            tmp_path / "fits.parquet", self._table(), meta={"config_hash": "abc123"}
+        )
+        stored = pq.read_table(path).schema.metadata
+        assert stored[b"config_hash"] == b"abc123"
+
+    def test_an_unknown_suffix_says_what_is_supported(self, tmp_path: Path) -> None:
+        from specmod.tables import write_table  # noqa: PLC0415
+
+        with pytest.raises(ValueError, match="cannot tell what format"):
+            write_table(tmp_path / "fits.txt", self._table())
+
+    def test_the_fitter_writes_through_it(
+        self, pnr_windows: Any, tmp_path: Path
+    ) -> None:
+        """`write_flatfile` is the documented entry point and now follows the
+        suffix, so an existing `.csv` call keeps working."""
+        import contextlib  # noqa: PLC0415
+        import io as _io  # noqa: PLC0415
+
+        from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+        pytest.importorskip("pyarrow")
+        with contextlib.redirect_stdout(_io.StringIO()):
+            fits = FitSpectra(_spectra(pnr_windows))
+            fits.fit_spectra()
+
+        for suffix in (".parquet", ".csv"):
+            path = FitSpectra.write_flatfile(tmp_path / f"fits{suffix}", fits)
+            back = FitSpectra.read_flatfile(path)
+            assert len(back) == len(fits.table), suffix
+            assert back["fc"].to_numpy() == pytest.approx(
+                fits.table["fc"].to_numpy()
+            ), suffix
