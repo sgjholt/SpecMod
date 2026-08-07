@@ -45,6 +45,23 @@ def _tidy_frequency_axis(ax: Axes) -> None:
     ax.xaxis.set_minor_formatter(NullFormatter())
 
 
+def _fits(fit: Any) -> list[tuple[str, Any]]:
+    """Normalise ``fit`` to ``[(label, fit), ...]``, dropping anything unfitted.
+
+    Accepts one fit or a mapping of label to fit, so a caller comparing two
+    minimisers does not have to reach into the axes afterwards.
+    """
+    if fit is None:
+        return []
+    if hasattr(fit, "items"):
+        return [
+            (str(k), v)
+            for k, v in fit.items()
+            if getattr(v, "result", None) is not None
+        ]
+    return [("best fit", fit)] if getattr(fit, "result", None) is not None else []
+
+
 def plot_pair(
     pair: SpectrumPair,
     ax: Axes | None = None,
@@ -67,9 +84,16 @@ def plot_pair(
         is there and this is not.
     fit
         A :class:`~specmod.fitting.FitSpectrum` whose model to overlay, if it
-        has been fitted. Passed in rather than read off the spectrum: the
-        containers are frozen precisely so a result cannot write itself back
-        into its own input.
+        has been fitted — or a **mapping of label to fit**, to draw several at
+        once. Passed in rather than read off the spectrum: the containers are
+        frozen precisely so a result cannot write itself back into its own
+        input.
+
+        Several matters more than it sounds. Fitting a source model is not a
+        unique inversion, and two minimisers can reach the same goodness of fit
+        at corner frequencies differing by tens of percent — which is a factor
+        of several in stress drop, since it scales as ``fc**3``. Drawing them
+        together is how that stops being invisible.
     show_binned
         Also draw the log-binned spectra the signal-to-noise ratio is actually
         computed on. Off by default because it doubles the lines, on when the
@@ -103,14 +127,9 @@ def plot_pair(
             label="binned noise",
         )
 
-    if fit is not None and getattr(fit, "result", None) is not None:
-        ax.loglog(
-            fit.mod_freq,
-            10**fit.result.best_fit,
-            color="green",
-            lw=2,
-            label="best fit",
-        )
+    # Not `label` — that name holds the station id the title is built from.
+    for name, one in _fits(fit):
+        ax.loglog(one.mod_freq, 10**one.result.best_fit, lw=2, label=name)
 
     if pair.band is None:
         ax.set_title(f"{label} — no usable band")

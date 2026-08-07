@@ -1606,6 +1606,24 @@ The two-stage fit is, separately, a good candidate for the new API: it is the
 workflow the science actually uses, and it currently has to be rebuilt by hand
 by every user.
 
+The tutorial now does exactly that rebuilding-by-hand, deliberately, because it
+is the clearest available demonstration of *why* the second stage exists. On
+the 28 PNR windows, Powell and `leastsq` reach the same reduced chi-squared at
+corner frequencies differing by a factor of **1.44** on the worst station — a
+factor of **three** in stress drop, since it scales as `f_c**3`. The
+inverse-hypocentral-distance-weighted event `f_c` from the two minimisers
+differs by **0.6%**, and stage two — `set_const("fc", event_fc)` then refit —
+brings `t*` to within **0.31%** and Ω to within **2.3e-3** log₁₀ units.
+
+Two things that measurement does *not* show, and the notebook says so: the
+stage-two agreement is largely by construction, since fixing `f_c` removes the
+parameter the minimisers were disagreeing about; and none of it says which
+`f_c` is right. What it does establish is that the residual two-parameter
+problem is well conditioned once the corner is pinned, which is the premise the
+second stage rests on. Fifteen lines of notebook is the right amount of code
+for that to cost, and it is the argument for putting those fifteen lines behind
+an API rather than leaving each user to write them again.
+
 #### 5.2.6 The three-way comparison
 
 The published values were produced by code containing the bugs in §2.2 and §2.5,

@@ -391,6 +391,58 @@ class TestPlotPair:
         ax = plot_pair(spectra[id], id=id, fit=fits.models[id])
         assert "best fit" in [line.get_label() for line in ax.get_lines()]
 
+    def test_several_fits_can_be_overlaid(self, pnr_windows: Any) -> None:
+        """Fitting a source model is not a unique inversion.
+
+        Two minimisers reach the same goodness of fit at corner frequencies
+        differing by tens of percent on some stations — a factor of several in
+        stress drop, which scales as ``fc**3``. Drawing them together is how
+        that stops being invisible, so `plot_pair` takes a mapping of label to
+        fit as well as a single one.
+        """
+        import contextlib  # noqa: PLC0415
+        import io as _io  # noqa: PLC0415
+
+        from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        fits = {}
+        for method in ("powell", "leastsq"):
+            with contextlib.redirect_stdout(_io.StringIO()):
+                fit = FitSpectra(spectra)
+                fit.fit_spectra(method=method)
+            fits[method] = fit
+
+        id = next(iter(fits["powell"].models))
+        ax = plot_pair(
+            spectra[id],
+            id=id,
+            fit={m: f.models[id] for m, f in fits.items()},
+        )
+        labels = [line.get_label() for line in ax.get_lines()]
+        assert "powell" in labels
+        assert "leastsq" in labels
+        # The title still names the station. Drawing the fits used to rebind
+        # the variable holding the station id, so the panel came out titled
+        # after whichever minimiser was drawn last.
+        assert ax.get_title().startswith(id)
+
+    def test_an_unfitted_model_is_skipped_rather_than_drawn(
+        self, pnr_windows: Any
+    ) -> None:
+        """A `FitSpectrum` that was built but never fitted has no `result`.
+        Drawing it would raise; skipping lets a partial run still plot."""
+        from specmod.fitting import FitSpectrum  # noqa: PLC0415
+        from specmod.plotting import _fits  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        id = spectra.ids()[0]
+        unfitted = FitSpectrum(spectra[id].for_fitting(id), llpsp=-7.0, fc=4.0, ts=0.02)
+
+        assert _fits(unfitted) == []
+        assert _fits({"a": unfitted}) == []
+        assert _fits(None) == []
+
 
 class TestPlotSet:
     def test_it_draws_one_panel_per_pair(self, pnr_windows: Any) -> None:
