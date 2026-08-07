@@ -1,5 +1,4 @@
 from copy import deepcopy
-from pathlib import Path
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -9,6 +8,7 @@ from matplotlib.ticker import NullFormatter, StrMethodFormatter
 
 from . import config as cfg
 from . import sources
+from .tables import read_table, write_table
 
 # global variables
 # One home for this: it used to be defined in *both* the SPECTRAL and FITTING
@@ -48,6 +48,86 @@ def fittable_signal(pair, id=""):
     if passes is None:
         passes = getattr(signal, "pass_snr", True)
     return signal if passes else None
+
+
+def initial_guess(spectra, model=None):
+    """Starting parameters for every fittable spectrum in ``spectra``.
+
+    Replaces ``model_guess.create_simple_guess`` and its ``_fdep`` twin, which
+    were two near-identical functions differing only in whether they added an
+    ``a`` for frequency-dependent Q — so adding a third model meant writing a
+    third guess function, and picking the wrong one gave lmfit a parameter the
+    model did not take.
+
+    **Which parameters are needed is asked of the model, not assumed.** The
+    fitted callable declares them in its signature, so a model gets exactly the
+    guesses it takes and nothing else. Values that cannot be read off the
+    spectrum come from ``[fitting]`` in the configuration.
+
+    The two that *are* read off the spectrum:
+
+    ``llpsp``
+        ``log10`` of the largest amplitude inside the selected band — the
+        long-period plateau, which is what ``Omega`` is.
+    ``fc``
+        the frequency at which that maximum falls.
+
+    Both assume a **velocity** spectrum, where the peak sits near the corner.
+    On a displacement spectrum the peak is at the low-frequency end and ``fc``
+    would start at the bottom of the band; that is the pre-existing assumption,
+    made explicit here rather than left in a function name.
+
+    Stations with no band are omitted rather than given ``None`` guesses. The
+    old version emitted ``{"llpsp": None, "fc": None, "ts": None}`` on
+    ``IndexError``, which lmfit cannot use — the failure simply moved to the
+    fit call.
+    """
+    import inspect  # noqa: PLC0415
+
+    if model is None:
+        model = sources.from_config()
+    callable_ = (
+        model.as_callable() if isinstance(model, sources.SpectralModel) else model
+    )
+    wanted = set(inspect.signature(callable_).parameters) - {"f"}
+
+    fitting = cfg.load_config().config.fitting
+    #: Parameters no spectrum can suggest a value for.
+    defaults = {
+        "ts": fitting.initial_t_star,
+        "a": fitting.initial_alpha,
+    }
+
+    guesses = {}
+    for id in spectra:
+        signal = fittable_signal(spectra[id], id)
+        if signal is None:
+            continue
+        band = selected_band(signal)
+        if band is None:
+            continue
+        inside = (signal.freq >= band[0]) & (signal.freq <= band[1])
+        if not inside.any():
+            continue
+
+        amp, freq = signal.amp[inside], signal.freq[inside]
+        peak = int(amp.argmax())
+        available = {
+            "llpsp": float(np.log10(amp[peak])),
+            "fc": float(freq[peak]),
+            **defaults,
+        }
+        missing = wanted - set(available)
+        if missing:
+            raise ValueError(
+                f"no initial guess is defined for {sorted(missing)}, which "
+                f"{getattr(model, 'describe', lambda: callable_.__name__)()} "
+                f"takes. Add it to specmod.config.FittingConfig and to "
+                f"`initial_guess`, or pass explicit guesses."
+            )
+        guesses[id] = {k: v for k, v in available.items() if k in wanted}
+
+    return guesses
 
 
 def selected_band(spectrum):
@@ -90,9 +170,17 @@ class FitSpectrum:
         self.set_model(model, **params)
 
     def fit_mod(self, **kwargs):
+        """Fit, judge the result, then record it — in that order.
+
+        The judgement used to be made *after* the recording, so the
+        ``pass_fitting`` column of every flat file held the value from before
+        the fit ran — ``True``, the class default, on a fresh `FitSpectrum`.
+        The attribute and the table disagreed, and the table is what gets
+        written out and regressed on.
+        """
         self.result = self.mod.fit(self.mod_amp, self.params, f=self.mod_freq, **kwargs)
-        self.__set_results_to_meta()
         self.__determine_pass_or_fail()
+        self.__set_results_to_meta()
 
     def set_signal(self, signal):
         if self.__check_input(signal):
@@ -146,8 +234,31 @@ class FitSpectrum:
         self.meta = deepcopy(meta)
 
     def __init_params(self, **params):
+        """Seed the parameters, and floor ``t*`` where the configuration says.
+
+        ``fitting.t_star_min`` existed and was read by nothing. The tutorial
+        did ``fits.set_bounds("ts", min=0.0001)`` by hand and the config value
+        is 1e-4 — the same number — so the setting was a written-down record of
+        something every caller had to remember. Applied here, forgetting it is
+        no longer possible.
+
+        The same applies to ``fc``, and the legacy code knew it — the line
+        ``# self.set_bounds('fc', min=0)`` sat commented out here. It is not a
+        poor fit but an unphysical one: a negative ``t*`` says the wave gained
+        energy travelling, and a corner frequency below zero says nothing at
+        all. lmfit returns either if the misfit surface leans that way, and
+        with the shipped multitaper default it returned ``fc = -4.45 Hz`` on
+        one PNR station while ``pass_fitting`` reported success — because a
+        parameter with no bound cannot be *at* its bound.
+        """
         self.params = self.mod.make_params(**params)
-        # self.set_bounds('fc', min=0)
+        fitting = cfg.load_config().config.fitting
+        for name, floor in (
+            ("ts", fitting.t_star_min),
+            ("fc", fitting.corner_frequency_min),
+        ):
+            if name in self.params and floor is not None:
+                self.set_bounds(name, min=floor)
 
     def reset(self):
         for par in self.params.values():
@@ -256,16 +367,30 @@ class FitSpectrum:
         self.meta.update(self.__get_test_results())
 
     def __determine_pass_or_fail(self):
-        for par, vals in self.result.params.items():
-            try:
-                if (vals.value - vals.stderr <= vals.min) or (
-                    vals.value + vals.stderr >= vals.max
-                ):
-                    # print(par, vals)
-                    self.pass_fitting = False
-            except TypeError:
-                # print("std err is none")
-                # print(par, vals)
+        """A fit fails when a parameter is pinned against one of its bounds.
+
+        Which is the useful question: a corner frequency resting on its floor
+        is the minimiser saying "lower, if you would let me", and the value it
+        reports is the bound rather than a measurement.
+
+        Reset first. ``pass_fitting`` starts as a class attribute and was only
+        ever set *False*, so a `FitSpectrum` that failed once could never pass
+        again however many times it was refitted.
+
+        **Where there is no uncertainty, the value itself is compared.** The
+        old version treated a missing ``stderr`` as a failure, which would mark
+        every fit failed under the shipped configuration: Powell does not
+        estimate a covariance matrix, so lmfit has no uncertainties to report.
+        That is a property of the minimiser, not a fault in the fit. Asking
+        whether the value sits on the bound is the same question with the
+        error bar removed.
+        """
+        self.pass_fitting = True
+        for _par, vals in self.result.params.items():
+            if not vals.vary:
+                continue
+            spread = vals.stderr if vals.stderr is not None else 0.0
+            if (vals.value - spread <= vals.min) or (vals.value + spread >= vals.max):
                 self.pass_fitting = False
 
 
@@ -275,10 +400,21 @@ class FitSpectra:
     guess = {}
     table = pd.DataFrame([])
 
-    def __init__(self, spectra, model=None, guess=None, fit_bins=False):
+    def __init__(self, spectra, model=None, guess=None, fit_bins=None):
+        """``guess=None`` derives one, rather than fitting nothing.
+
+        It used to skip `init_fitting` entirely, so `FitSpectra(spectra)` built
+        an object with no models and `fit_spectra()` silently did nothing and
+        produced an empty table. There is a sensible guess available — see
+        :func:`initial_guess` — so that is now the default and an explicit
+        ``guess={}`` is how you say "none".
+        """
         self.set_spectra(spectra)
-        if guess is not None:
-            self.init_fitting(model, guess, fit_bins)
+        if fit_bins is None:
+            fit_bins = cfg.load_config().config.fitting.fit_bins
+        if guess is None:
+            guess = initial_guess(spectra, model)
+        self.init_fitting(model, guess, fit_bins)
 
     def __len__(self):
         return len(self.models)
@@ -296,7 +432,24 @@ class FitSpectra:
         else:
             print(f"WARNING: {id.upper()} not in group of available fits.")
 
-    def fit_spectra(self, weight_method="none", **kwargs):
+    def fit_spectra(self, weight_method=None, **kwargs):
+        """Fit every station, with the configured minimiser unless told otherwise.
+
+        ``method`` and ``weight_method`` both come from ``[fitting]`` when not
+        given. Neither used to: `fit_spectra()` fell through to lmfit's default
+        minimiser, so a study file saying ``method = "powell"`` was ignored and
+        the caller had to remember ``fit_spectra(method="powell")`` — which the
+        tutorial does and nothing enforced.
+
+        It matters. On the 28 PNR windows lmfit's default returns a **negative
+        corner frequency** on one station where Powell does not; a corner
+        frequency below zero is not a degraded measurement but a meaningless
+        one, and nothing downstream rejects it.
+        """
+        fitting = cfg.load_config().config.fitting
+        if weight_method is None:
+            weight_method = fitting.weight_method
+        kwargs.setdefault("method", fitting.method)
         wm = self.__check_wm(weight_method)
         for name, mod in self.models.items():
             try:
@@ -322,10 +475,14 @@ class FitSpectra:
         # Iterate the container rather than reaching into `.group`. `Spectra`
         # and `core.SpectrumSet` both present this interface, which is what
         # lets the container be swapped underneath without touching the fitter.
+        # A station is fitted when it passed the gate *and* has a guess.
+        # Indexing `guess[id]` unconditionally made a partial guess dict a
+        # `KeyError` naming a station, rather than a way to fit a subset —
+        # and made `guess={}` a crash instead of "fit nothing".
         tmp = {}
         for id in self.spectra:
             signal = fittable_signal(self.spectra[id], id)
-            if signal is None:
+            if signal is None or id not in guess:
                 continue
             tmp[id] = FitSpectrum(signal, model, **guess[id], fit_bins=fit_bins)
         self.models = tmp
@@ -370,7 +527,10 @@ class FitSpectra:
 
     @staticmethod
     def write_flatfile(path, fits):
-        """Write the group fit table as CSV, creating the directory if needed.
+        """Write the group fit table, in the format ``path``'s suffix names.
+
+        ``.parquet`` is typed, compressed and queryable without loading;
+        ``.csv`` is what journal supplements want. See :mod:`specmod.tables`.
 
         The previous implementation was ``os.makedirs(os.path.join(
         *path.split("/")[:-1]))``, which raised ``TypeError: join() missing 1
@@ -378,14 +538,12 @@ class FitSpectra:
         component — ``write_flatfile("out.csv", fits)`` could not work. It also
         split on ``/`` literally, so it did nothing useful on Windows.
         """
-        parent = Path(path).parent
-        if parent != Path():
-            parent.mkdir(parents=True, exist_ok=True)
-        fits.table.to_csv(path, index=False)
+        return write_table(path, fits.table)
 
     @staticmethod
     def read_flatfile(path):
-        return pd.read_csv(path)
+        """Read a fit table back. Format follows the suffix."""
+        return read_table(path)
 
     def __check_wm(self, wm):
         if wm not in ["log", "none"]:

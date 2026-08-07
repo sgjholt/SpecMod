@@ -33,10 +33,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Reading and writing results. Not in the base install because the transform
+# and fitting layers work entirely in memory; a user computing a spectrum and
+# plotting it needs neither. `specmod.io` and `specmod.tables` say which to
+# install when they are reached without it.
+io = [
+    "h5py>=3.11",      # arrays: one file per event, group per channel
+    "pyarrow>=16.0",   # tables: typed, compressed, queryable without loading
+]
 multitaper = ["multitaper>=1.2"]
 wavelet = ["PyWavelets>=1.5"]
 mcmc = ["emcee>=3.1"]
 dev = [
+    "h5py>=3.11",    # the io suite is not optional to *test*
+    "pyarrow>=16.0",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "hypothesis>=6.100",
@@ -141,6 +151,7 @@ files = ["src/specmod"]
 module = [
     "obspy.*", "lmfit.*", "mtspec.*", "multitaper.*",
     "pooch.*", "matplotlib.*", "scipy.*",
+    "h5py.*", "pyarrow.*", "pandas.*",
 ]
 ignore_missing_imports = true
 

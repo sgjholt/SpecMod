@@ -36,6 +36,12 @@ import pytest
 #: from a plain ``pip install specmod``.
 OPTIONAL_DISTRIBUTIONS = ("multitaper", "mtspec", "pywt", "emcee")
 
+#: Not listed above on purpose. `specmod[io]` is optional to *install* but not
+#: optional to *test*: `--without-optional-extras` exists to reproduce what CI
+#: sees, and CI installs `[dev]`, which pulls h5py and pyarrow in so the
+#: persistence suite runs. Blocking them here would silently skip it.
+_IO_EXTRAS_ARE_TESTED = ("h5py", "pyarrow")
+
 
 class _BlockOptionalExtras(importlib.abc.MetaPathFinder):
     """Make the optional distributions genuinely unimportable.

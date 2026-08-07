@@ -910,6 +910,13 @@ and referenced by nothing but documentation.
 
 ### 4.6 I/O — replacing pickle
 
+> **Landed.** `specmod.io` (HDF5) and `specmod.tables` (Parquet) implement
+> this, `specmod[io]` carries `h5py` and `pyarrow`, and **pickle is gone from
+> the package entirely** — the dead `Tutorial/Spectra/*.spec` artefact is
+> deleted and `tests/test_legacy_fixes.py` walks the AST of every module to
+> assert nothing imports `pickle`, `cPickle` or `dill` again. See §4.6.6 for
+> what the implementation measured.
+
 Pickle is the only persistence format today, and `read_spectra` prompts on stdin
 before unpickling. It fails on five counts at once, which is worth stating
 because they point at different replacements:
@@ -1077,6 +1084,42 @@ Worth checking against the source paper when implementing rather than taking
 the above on trust: the `k` values differ between P and S and between authors,
 and the plan should not be the citation of record for a number that ends up in
 published stress drops.
+
+#### 4.6.6 What the implementation measured
+
+The four rules in §4.6.2 each became a test. Two things only showed up on
+contact with real data.
+
+**Compressing everything made the file three times larger.** The first version
+gzipped every dataset, per the "chunked, compressed" argument above, and
+produced **980 KB** for one 28-station event whose raw float payload is
+**250 KB**. Uncompressed the same file is 370 KB. Compression in HDF5 requires
+*chunked* storage, which costs a chunk index per dataset — and these arrays
+have a median of 91 float64, so the indices cost more than the data they
+describe. `specmod.io` now compresses only above 16 KB. That is where the ratio
+flips, and it is the case the argument was really about: a scalogram is ~1 MB
+per trace (§4.4.3), and those still compress.
+
+**Two of the nine datasets per station were exact duplicates.**
+`SpectrumPair.compare` interpolates the noise onto the *signal's* frequency
+axis and bins both against the same edges, so `noise.freq == signal.freq` and
+`binned_noise.freq == binned_signal.freq` hold **by construction**, on all 28.
+Storing each twice was waste, and worse, made a file expressible in which the
+two disagree — a state the containers cannot represent and no reader could act
+on. Seven datasets per group now, with the two shared axes written once.
+
+Together: 980 KB → **391 KB**.
+
+**And an honest note on the comparison.** Pickle was 325 KB for the same event.
+HDF5 is ~20% larger, and that is not a defect being hidden: 141 KB of the 391
+is self-describing structure — a format version, per-spectrum units, duration
+and sampling rate, trace metadata, and a browsable group per channel. That is
+the cost of a file that can still be read after the classes are renamed, which
+is precisely what the old one could not do. Parquet, by contrast, is a
+straight win: 30 KB against CSV's 21 KB for the fit table, with dtypes
+preserved — a CSV column carrying one `None` comes back as object-dtype
+strings, so `pass_fitting` stops being boolean and a downstream `.sum()`
+counts the wrong thing.
 
 ### 4.7 Configuration: semantic groups, layered overrides, recorded provenance
 
@@ -1562,6 +1605,24 @@ SpecMod computes.
 The two-stage fit is, separately, a good candidate for the new API: it is the
 workflow the science actually uses, and it currently has to be rebuilt by hand
 by every user.
+
+The tutorial now does exactly that rebuilding-by-hand, deliberately, because it
+is the clearest available demonstration of *why* the second stage exists. On
+the 28 PNR windows, Powell and `leastsq` reach the same reduced chi-squared at
+corner frequencies differing by a factor of **1.44** on the worst station — a
+factor of **three** in stress drop, since it scales as `f_c**3`. The
+inverse-hypocentral-distance-weighted event `f_c` from the two minimisers
+differs by **0.6%**, and stage two — `set_const("fc", event_fc)` then refit —
+brings `t*` to within **0.31%** and Ω to within **2.3e-3** log₁₀ units.
+
+Two things that measurement does *not* show, and the notebook says so: the
+stage-two agreement is largely by construction, since fixing `f_c` removes the
+parameter the minimisers were disagreeing about; and none of it says which
+`f_c` is right. What it does establish is that the residual two-parameter
+problem is well conditioned once the corner is pinned, which is the premise the
+second stage rests on. Fifteen lines of notebook is the right amount of code
+for that to cost, and it is the argument for putting those fifteen lines behind
+an API rather than leaving each user to write them again.
 
 #### 5.2.6 The three-way comparison
 

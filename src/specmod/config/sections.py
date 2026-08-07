@@ -212,7 +212,20 @@ class FittingConfig:
     #: Initial guesses that were hardcoded in ModelGuess.
     initial_t_star: float = 0.01
     initial_alpha: float = 1e-5
+
+    #: Lower bounds on the fitted parameters that have one physically.
+    #:
+    #: A negative ``t*`` says the wave gained energy travelling; a corner
+    #: frequency at or below zero is not a poor measurement but a meaningless
+    #: one. Neither is prevented by the misfit surface, and lmfit will return
+    #: either if the surface leans that way — with the shipped multitaper
+    #: default it returned ``fc = -4.45 Hz`` on one PNR station.
+    #:
+    #: Zero rather than a small positive number, deliberately: a parameter that
+    #: lands *on* its bound is flagged by ``pass_fitting``, so the fit is
+    #: rejected rather than reported as a corner frequency of nothing.
     t_star_min: float = 1e-4
+    corner_frequency_min: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

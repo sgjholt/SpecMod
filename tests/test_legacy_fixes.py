@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import ast
 import inspect
-import pickle
 from pathlib import Path
 
 import numpy as np
@@ -137,29 +136,51 @@ def test_cut_s_has_no_dead_parameter() -> None:
         assert name in src.split("\n", 1)[1], f"{name} is never used in cut_s"
 
 
-def test_the_committed_tutorial_spec_is_a_known_dead_pickle() -> None:
-    """The shipped `.spec` cannot be loaded, and the tutorial reads it.
+def test_no_pickle_survives_anywhere_in_the_package() -> None:
+    """Pickle is gone, and this is what keeps it gone.
 
-    A pickle stores the import path of every class it holds. This file names
-    ``specmod.Spectral``, the pre-rename module, so unpickling raises before
-    any of our code runs — and now the classes it names do not exist at all.
-    ``Tutorial/SpecModTutorial.ipynb`` calls ``read_spectra`` on it in two
-    cells, so the notebook stops there.
+    It was never merely inconvenient. A pickle stores the import path of every
+    class it holds, so a stored result stops loading the moment a class is
+    renamed — which is what happened to the shipped
+    ``Tutorial/Spectra/*.spec``: unreadable since the ``Spectral.py`` ->
+    ``spectral.py`` rename, years before the classes were deleted. A format
+    that breaks when you refactor is a cache, not a format.
 
-    Pinned rather than fixed. The plan (§4.6) explicitly rejects a
-    ``find_class`` remapping shim, which would bake the pre-refactor class
-    layout into the new package permanently. So this asserts the breakage on
-    purpose: when the migration lands, this test fails and is the reminder to
-    delete it and assert the load instead.
+    Arrays go to HDF5 (:mod:`specmod.io`) and tables to Parquet
+    (:mod:`specmod.tables`), neither of which can store a Python type. The
+    ``.spec`` artefact is deleted. This asserts the package cannot quietly
+    grow the capability back.
     """
-    spec = Path(__file__).resolve().parent.parent / (
-        "Tutorial/Spectra/2019-08-26T07:30:47.0.spec"
-    )
-    if not spec.is_file():  # pragma: no cover - the file may be removed outright
-        pytest.skip("the legacy .spec artifact has been removed")
+    offenders = []
+    for path in sorted(SRC.rglob("*.py")):
+        if "_vendor" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                offenders += [
+                    f"{path.name}: import {a.name}"
+                    for a in node.names
+                    if a.name.split(".")[0] in {"pickle", "cPickle", "dill"}
+                ]
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.split(".")[0] in {"pickle", "cPickle", "dill"}
+            ):
+                offenders.append(f"{path.name}: from {node.module}")
+    assert not offenders, "\n".join(offenders)
 
-    with pytest.raises(ModuleNotFoundError, match=r"specmod\.Spectral"):
-        pickle.loads(spec.read_bytes())
+
+def test_no_pickled_artefact_is_shipped() -> None:
+    """The dead ``.spec`` is deleted, not merely unused."""
+    root = Path(__file__).resolve().parent.parent
+    found = [
+        p.relative_to(root)
+        for p in root.rglob("*.spec")
+        if ".venv" not in p.parts and ".git" not in p.parts
+    ]
+    assert not found, f"pickled artefacts still committed: {found}"
 
 
 # The §2 domain-change tests lived here: `SNP.integrate` calling a
