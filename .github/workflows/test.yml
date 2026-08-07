@@ -80,4 +80,7 @@ jobs:
       # Exercise the declared minimums. CI otherwise installs the newest of
       # everything, so the floors are only ever tested by a user.
       - run: uv pip install --resolution lowest-direct -e ".[dev]"
-      - run: uv run pytest -m "not dataset" -q
+      - run: uv run --no-sync python tools/check_floors.py
+      - run: uv run --no-sync pytest -m "not dataset" -q
+
+
