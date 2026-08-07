@@ -135,6 +135,32 @@ def log_bin(
     return BinnedSpectrum(freq=centres[keep], amp=amps[keep])
 
 
+def _resolution_floor(spectrum: Spectrum) -> float:
+    """The lowest frequency ``spectrum`` can actually resolve.
+
+    Read from ``meta`` when it is there, and only derived from the axis when it
+    is not. That order is the whole point. Deriving it works exactly once: the
+    noise is interpolated onto the signal's axis before binning, so from then
+    on ``noise.freq.min()`` is the *signal's* lowest frequency and the noise's
+    own is gone. :func:`specmod.pipeline.spectrum_from_trace` records it on the
+    spectrum for that reason, and until now nothing read it.
+
+    The consequence was that a converted pair had a lower floor than the pair
+    it came from — the shorter noise window's limit silently replaced by the
+    longer signal window's. `to_motion` therefore let the band open into the
+    region below the noise's resolution, where :func:`interpolate_onto` is
+    repeating an edge value rather than reporting a measurement, and the
+    signal-to-noise ratio has an invented denominator.
+
+    Falls back to the axis for a spectrum built by hand rather than by the
+    pipeline, which is the only case where the axis is still the truth.
+    """
+    recorded = spectrum.meta.get("resolution_floor")
+    if recorded is not None:
+        return float(recorded)
+    return float(spectrum.freq.min()) if spectrum.freq.size else 0.0
+
+
 def parseval_scale(n_signal: int, n_noise: int) -> float:
     """Factor putting a noise spectrum on the signal's energy footing.
 
@@ -242,10 +268,7 @@ class SpectrumPair:
         because afterwards the noise carries the signal's axis and its own
         lowest resolvable frequency is unrecoverable.
         """
-        floor = max(
-            float(signal.freq.min()) if signal.freq.size else 0.0,
-            float(noise.freq.min()) if noise.freq.size else 0.0,
-        )
+        floor = max(_resolution_floor(signal), _resolution_floor(noise))
 
         noise_amp = np.asarray(noise.amp, dtype=np.float64)
         if scale_parseval:

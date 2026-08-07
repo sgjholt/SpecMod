@@ -244,6 +244,12 @@ class TestToMotion:
         bands on all 28**. The comparison itself could not be kept — one side
         of it is deleted — so this is its durable form, the same numbers held
         against a committed artefact.
+
+        ``amp``, ``noise_amp`` and ``bsnr`` are still those legacy values.
+        ``band`` has been regenerated once, for the resolution-floor
+        correction — see
+        :meth:`TestToMotion.test_the_band_of_a_converted_pair_respects_the_noise_floor`,
+        which keeps the superseded edges and pins what changed.
         """
         reference = json.loads(
             (Path(__file__).parent / "golden" / "motion_reference.json").read_text()
@@ -273,6 +279,79 @@ class TestToMotion:
             elif pair.band != pytest.approx(want["band"], rel=1e-9):
                 problems.append(f"{id} band: {want['band']} -> {pair.band}")
         assert not problems, "\n".join(problems)
+
+    def test_the_band_of_a_converted_pair_respects_the_noise_floor(
+        self, pnr_windows: Any
+    ) -> None:
+        """The one deliberate change to the recorded displacement bands.
+
+        ``compare`` derived the floor from ``noise.freq.min()``. That works
+        exactly once: the noise is interpolated onto the signal's axis before
+        binning, so afterwards its own lowest resolvable frequency is gone and
+        the expression returns the *signal's*. A converted pair therefore got
+        the longer signal window's floor in place of the shorter noise
+        window's, and its band could open below the frequency the noise can
+        resolve — where ``interpolate_onto`` is repeating an edge value rather
+        than reporting a measurement, so the ratio there has an invented
+        denominator.
+
+        The floor is now read from ``meta["resolution_floor"]``, which
+        ``spectrum_from_trace`` has recorded all along and nothing read.
+
+        Measured across all five estimators: the floor used to differ between a
+        pair and its own conversion on **28 of 28** stations, and now differs on
+        none. Bands of *unconverted* pairs do not move at all — 0 of 28 on every
+        estimator — so nothing computed without a domain change is affected.
+        Round-trip band stability goes from 3/28 (fft), 8/28 (multitaper),
+        27/28 (cwt), 7/28 (welch) and 8/28 (quadratic) to **0/28 everywhere**.
+
+        On the recorded displacement set the change touches 3 of 28 stations,
+        and only ever the lower edge, and only upward — toward the floor. That
+        direction is the physics rather than a coincidence: a floor that was
+        too low permitted an edge that was too low, so correcting it can raise
+        an edge and can never lower one.
+        """
+        reference = json.loads(
+            (Path(__file__).parent / "golden" / "motion_reference.json").read_text()
+        )["displacement"]
+
+        raised = 0
+        for id, want in reference.items():
+            assert "band_legacy" in want, (
+                f"{id}: band_legacy is missing. The legacy edges are the record "
+                "of what the published lineage produced; regenerating band "
+                "without keeping them discards it."
+            )
+            new, old = want["band"], want["band_legacy"]
+            if new is None or old is None:
+                assert new == old, f"{id}: a band appeared or vanished"
+                continue
+            assert new[1] == pytest.approx(old[1], rel=1e-12), (
+                f"{id}: the upper edge moved. The floor is a lower bound; "
+                "nothing about this correction can touch the top of a band."
+            )
+            assert new[0] >= old[0] - 1e-12, (
+                f"{id}: the lower edge moved DOWN, {old[0]} -> {new[0]}. "
+                "Correcting a floor that was too low can only raise an edge."
+            )
+            raised += new[0] > old[0] + 1e-12
+        assert raised == 3, f"expected 3 stations to move, got {raised}"
+
+    def test_a_conversion_does_not_change_the_resolution_floor(
+        self, pnr_windows: Any
+    ) -> None:
+        """The invariant behind the band correction, asserted on its own.
+
+        A domain change multiplies both spectra by a power of ``2*pi*f``. It
+        does not lengthen either window, so it cannot change what either one
+        can resolve.
+        """
+        direct = _direct("fft", pnr_windows)
+        displacement = direct.to_motion("displacement")
+        for id in direct.ids():
+            assert displacement[id].resolution_floor == pytest.approx(
+                direct[id].resolution_floor, rel=1e-12
+            ), id
 
     def test_the_original_is_untouched(self, pnr_windows: Any) -> None:
         """The property the legacy could not have. `Spectra.inte()` overwrote
