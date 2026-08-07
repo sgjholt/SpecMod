@@ -1,11 +1,14 @@
-"""The hand-written ObsPy stubs must describe the ObsPy that is installed.
+"""The hand-written stubs must describe the libraries that are installed.
 
-ObsPy ships no ``py.typed`` and neither ``obspy-stubs`` nor ``types-obspy``
-exists on PyPI, so ``stubs/obspy`` in this repository is what makes
-``st: Stream`` mean anything. That is worth having — wiring it in immediately
-found two latent defects that ``Any`` had hidden, an unguarded ``None``
-inventory in ``set_stream_distance`` and an unguarded ``None`` signal stream in
-``plot_traces``.
+Neither ObsPy nor lmfit ships ``py.typed``, and no stub package is published
+for either (``obspy-stubs``, ``types-obspy``, ``lmfit-stubs`` — all 404). So
+``stubs/`` in this repository is what makes ``st: Stream`` and
+``result: ModelResult`` mean anything. That is worth having — wiring them in
+found four latent defects that ``Any`` had hidden: an unguarded ``None``
+inventory in ``set_stream_distance``, an unguarded ``None`` signal stream in
+``plot_traces``, an unguarded ``None`` result behind every private reader on
+``FitSpectrum``, and ``2 * stderr`` where ``stderr`` is ``None`` under the
+shipped minimiser.
 
 It is also a liability. A stub that has drifted from the library is worse than
 no stub at all, because a type checker believes it and reports nothing. mypy
@@ -184,6 +187,74 @@ def test_the_class_methods_take_the_parameters_the_stub_claims() -> None:
                 assert declared[: len(actual)] == actual[: len(declared)], (
                     f"{name}.{node.name}: stub declares {declared}, ObsPy has {actual}"
                 )
+
+
+@pytest.mark.parametrize(
+    ("stub", "module"),
+    [
+        ("../lmfit/model.pyi", "lmfit.model"),
+        ("../lmfit/parameter.pyi", "lmfit.parameter"),
+    ],
+)
+def test_every_declared_lmfit_class_and_method_exists(stub: str, module: str) -> None:
+    import importlib  # noqa: PLC0415
+
+    real = importlib.import_module(module)
+    for name, methods in _stub_classes(STUBS / stub).items():
+        cls = getattr(real, name, None)
+        assert cls is not None, f"{module}.{name} is declared but does not exist"
+        for method in methods:
+            assert hasattr(cls, method.name), (
+                f"{module}.{name}.{method.name} is declared in {stub} but "
+                "does not exist on the installed lmfit"
+            )
+
+
+def test_lmfit_methods_take_the_parameters_the_stub_claims() -> None:
+    import lmfit  # noqa: PLC0415
+
+    for stub, real in (
+        ("../lmfit/model.pyi", lmfit.model),
+        ("../lmfit/parameter.pyi", lmfit.parameter),
+    ):
+        for name, methods in _stub_classes(STUBS / stub).items():
+            cls = getattr(real, name)
+            for node in methods:
+                function = getattr(cls, node.name)
+                try:
+                    actual = [
+                        p for p in inspect.signature(function).parameters if p != "self"
+                    ]
+                except (TypeError, ValueError):  # pragma: no cover
+                    continue
+                declared = _declared_parameters(node)
+                if "args" in actual or "kwargs" in actual:
+                    actual = [p for p in actual if p not in ("args", "kwargs")]
+                assert declared[: len(actual)] == actual[: len(declared)], (
+                    f"{name}.{node.name}: stub declares {declared}, lmfit has {actual}"
+                )
+
+
+def test_stderr_really_is_none_under_the_shipped_minimiser() -> None:
+    """The claim the ``Parameter.stderr`` annotation rests on.
+
+    Declared ``float | None`` because Powell — the configured default —
+    estimates no covariance matrix. That is not a guess about lmfit; it is
+    the reason ``__param_string`` used to raise ``TypeError`` on every default
+    fit, swallow it, and title the plot ``NaN``.
+    """
+    import lmfit  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    x = np.linspace(1.0, 10.0, 50)
+    model = lmfit.Model(lambda f, a, b: a * f + b)
+    params = model.make_params(a=1.0, b=0.0)
+
+    powell = model.fit(2.0 * x + 1.0, params, f=x, method="powell")
+    assert all(p.stderr is None for p in powell.params.values())
+
+    leastsq = model.fit(2.0 * x + 1.0, params, f=x, method="leastsq")
+    assert all(p.stderr is not None for p in leastsq.params.values())
 
 
 def test_the_open_half_of_stats_is_really_open() -> None:

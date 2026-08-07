@@ -1,19 +1,21 @@
-"""The list of modules exempted from type checking may shrink, never grow.
+"""No module may be exempted from type checking.
 
-``[tool.mypy] strict = true`` covers the package, and then an override sets
-``ignore_errors = true`` for three legacy modules. mypy still parses them and
-still reports ``Success: no issues found in 39 source files`` — which reads
-like the whole package is clean and is not what it means.
+``[tool.mypy] strict = true`` covers the package, and an override used to set
+``ignore_errors = true`` for ``fitting``, ``preprocess`` and ``utils`` — 144
+suppressed errors between them. The list is empty now, so these tests guard a
+property rather than tracking a countdown.
 
-The comment above that override said "CI asserts it never grows". Nothing
-did. CI ran ``mypy`` with the override in place, so adding a fourth module
-would have been green, and the sentence claiming otherwise was the only thing
-standing between the backlog and quiet expansion.
+They still matter, and more than they did. mypy reports ``Success: no issues
+found in 39 source files`` whether or not a module is exempt: it parses the
+exempt ones and discards what it finds. So a green mypy run is not evidence
+that the list is empty, and re-adding a module to it is invisible in CI. That
+is what these tests see and nothing else does.
 
-That is the defect class this suite exists for: a value in a configuration
-file, a claim about it somewhere else, and nothing tying the two together.
-Same shape as ``config.model.source`` before the ``sources`` package, and as
-``snr.bandwidth_method`` naming a strategy the registry would not accept.
+The comment above the override once said "CI asserts it never grows". Nothing
+did — that sentence was the entire mechanism. Same defect class as
+``config.model.source`` before the ``sources`` package existed: a value in a
+configuration file, a claim about it somewhere else, and nothing tying the two
+together.
 """
 
 from __future__ import annotations
@@ -27,13 +29,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: Exempt today. Delete entries as the modules are annotated; adding one is a
-#: deliberate act that has to change this line, which is the whole point.
-EXPECTED_EXEMPT = frozenset(
-    {
-        "specmod.fitting",
-    }
-)
+#: Empty, and meant to stay that way. Adding a module to the mypy override is
+#: a deliberate act that has to change this line too, which is the whole point.
+EXPECTED_EXEMPT: frozenset[str] = frozenset()
 
 
 def _exempt_modules() -> frozenset[str]:
@@ -45,13 +43,15 @@ def _exempt_modules() -> frozenset[str]:
     return frozenset(exempt)
 
 
-def test_the_backlog_has_not_grown() -> None:
+def test_nothing_is_exempt_from_type_checking() -> None:
     """The assertion the comment in ``pyproject.toml`` claimed to have."""
     exempt = _exempt_modules()
     added = exempt - EXPECTED_EXEMPT
     assert not added, (
-        f"{', '.join(sorted(added))} was added to the mypy exemption list. "
-        "The backlog shrinks; it does not grow. Annotate the module instead."
+        f"{', '.join(sorted(added))} was added to the mypy exemption list, "
+        "which is empty and should stay empty. Annotate the module instead — "
+        "and note that mypy reports success either way, so nothing but this "
+        "test will tell you."
     )
 
 
@@ -76,8 +76,13 @@ def test_every_exempt_module_exists() -> None:
         assert path.exists(), f"{module} is exempt but {path} does not exist"
 
 
+#: Skips cleanly rather than silently generating zero cases when the list is
+#: empty, so the suite still reports that this check exists.
+_NOTHING_EXEMPT = [pytest.param("", marks=pytest.mark.skip(reason="nothing is exempt"))]
+
+
 @pytest.mark.slow
-@pytest.mark.parametrize("module", sorted(EXPECTED_EXEMPT))
+@pytest.mark.parametrize("module", sorted(EXPECTED_EXEMPT) or _NOTHING_EXEMPT)
 def test_an_exempt_module_still_needs_its_exemption(
     module: str, tmp_path: Path
 ) -> None:
@@ -92,6 +97,10 @@ def test_an_exempt_module_still_needs_its_exemption(
     file and passing ``--strict`` still picks up the very override being tested
     and reports ``Success``. The first version of this test did exactly that
     and passed against all three modules for that reason.
+
+    Skipped while the list is empty; it is kept because it is what turned the
+    countdown into a measurement — each module came off the list when this
+    test said it could, not when someone guessed.
     """
     config = tmp_path / "mypy.ini"
     config.write_text("[mypy]\n")

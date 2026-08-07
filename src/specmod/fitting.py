@@ -1,4 +1,17 @@
+"""Fitting a source model to one spectrum, and to a whole event.
+
+The lmfit surface used here is declared in ``stubs/lmfit``; see
+``stubs/README.md``. lmfit ships no annotations, so without those a
+``ModelResult`` is `Any` and nothing checks that ``result.redchi`` exists or
+that ``Parameter.stderr`` can be `None` — which it is under every minimiser
+that estimates no covariance matrix, including the shipped default.
+"""
+
+from __future__ import annotations
+
+import inspect
 from copy import deepcopy
+from typing import TYPE_CHECKING, Any
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -10,6 +23,20 @@ from . import config as cfg
 from . import sources
 from .tables import read_table, write_table
 
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Mapping
+    from pathlib import Path
+
+    from matplotlib.axes import Axes
+    from numpy.typing import NDArray
+
+#: What a spectrum-like object handed to :class:`FitSpectrum` looks like.
+#: Structural rather than nominal on purpose — see :meth:`FitSpectrum.__check_input`.
+Spectrumish = Any
+#: A container mapping trace ids to paired spectra; see
+#: :meth:`FitSpectra.__check_spectra`.
+SpectraLike = Any
+
 # global variables
 # One home for this: it used to be defined in *both* the SPECTRAL and FITTING
 # dicts, and the two copies could disagree.
@@ -20,7 +47,7 @@ PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 REQUIRED_SPECTRUM_ATTRIBUTES = ("id", "meta", "freq", "amp", "bfreq", "bamp")
 
 
-def fittable_signal(pair, id=""):
+def fittable_signal(pair: Any, id: str = "") -> Spectrumish | None:
     """The signal to fit from a paired spectrum, or ``None`` to skip it.
 
     Skipping is a decision the container should not have to spell out at every
@@ -50,7 +77,9 @@ def fittable_signal(pair, id=""):
     return signal if passes else None
 
 
-def initial_guess(spectra, model=None):
+def initial_guess(
+    spectra: SpectraLike, model: Any = None
+) -> dict[str, dict[str, float]]:
     """Starting parameters for every fittable spectrum in ``spectra``.
 
     Replaces ``model_guess.create_simple_guess`` and its ``_fdep`` twin, which
@@ -82,8 +111,6 @@ def initial_guess(spectra, model=None):
     ``IndexError``, which lmfit cannot use — the failure simply moved to the
     fit call.
     """
-    import inspect  # noqa: PLC0415
-
     if model is None:
         model = sources.from_config()
     callable_ = (
@@ -98,7 +125,7 @@ def initial_guess(spectra, model=None):
         "a": fitting.initial_alpha,
     }
 
-    guesses = {}
+    guesses: dict[str, dict[str, float]] = {}
     for id in spectra:
         signal = fittable_signal(spectra[id], id)
         if signal is None:
@@ -130,7 +157,7 @@ def initial_guess(spectra, model=None):
     return guesses
 
 
-def selected_band(spectrum):
+def selected_band(spectrum: Any) -> tuple[float, float] | None:
     """The band to fit over, or ``None`` to fit everything available.
 
     ``None`` rather than an empty array, because "no band survived" and "a band
@@ -151,25 +178,45 @@ class FitSpectrum:
     :func:`fittable_signal`.
     """
 
-    sig = None
-    mod = None
-    params = None
-    result = None
-    mod_freq = np.array([])
-    mod_amp = np.array([])
-    pass_fitting = True
-    fit_bins = False
-    meta = {}
+    #: Declarations, not defaults. These were class attributes carrying `None`
+    #: and `{}`, which meant two things at once: every read had to cope with a
+    #: `None` that `__init__` had in fact replaced, and `meta = {}` was one
+    #: dictionary shared by every instance ever constructed. `__init__` assigns
+    #: all of them, so the type is what it is after construction — and the
+    #: shared-mutable-default hazard is gone rather than merely unreached.
+    sig: Spectrumish
+    mod: lm.Model
+    params: lm.Parameters
+    #: `None` until :meth:`fit_mod` runs. This one really is optional, and
+    #: callers test it — see :func:`specmod.plotting.plot_pair`.
+    result: lm.ModelResult | None
+    mod_freq: NDArray[np.float64]
+    mod_amp: NDArray[np.float64]
+    pass_fitting: bool
+    fit_bins: bool
+    meta: dict[str, Any]
     #: The :class:`specmod.sources.SpectralModel` behind the fit, when there is
     #: one. ``None`` if a bare callable was supplied.
-    spectral_model = None
+    spectral_model: sources.SpectralModel | None
 
-    def __init__(self, signal, model=None, fit_bins=False, **params):
+    def __init__(
+        self,
+        signal: Spectrumish,
+        model: Any = None,
+        fit_bins: bool = False,
+        **params: float,
+    ) -> None:
+        self.result = None
+        self.pass_fitting = True
+        self.meta = {}
+        self.spectral_model = None
+        self.mod_freq = np.array([])
+        self.mod_amp = np.array([])
         self.fit_bins = fit_bins
         self.set_signal(signal)
         self.set_model(model, **params)
 
-    def fit_mod(self, **kwargs):
+    def fit_mod(self, **kwargs: Any) -> None:
         """Fit, judge the result, then record it — in that order.
 
         The judgement used to be made *after* the recording, so the
@@ -182,14 +229,14 @@ class FitSpectrum:
         self.__determine_pass_or_fail()
         self.__set_results_to_meta()
 
-    def set_signal(self, signal):
+    def set_signal(self, signal: Spectrumish) -> None:
         if self.__check_input(signal):
             self.sig = signal
             self.__set_meta(signal.meta)
         # if setting a new signal - assess and adjust the freq bounds
         self.__set_mod_amp_freq()
 
-    def set_model(self, model=None, **params):
+    def set_model(self, model: Any = None, **params: float) -> None:
         """Set the model to fit.
 
         Accepts a :class:`specmod.sources.SpectralModel`, a bare callable, or
@@ -216,24 +263,43 @@ class FitSpectrum:
         # whenever a model is set the inital params must be set also
         self.__init_params(**params)
 
-    def describe_model(self):
+    @property
+    def fitted(self) -> lm.ModelResult:
+        """The fit result, or a message saying it has not been fitted.
+
+        Every private reader below went straight through ``self.result``,
+        which is ``None`` until :meth:`fit_mod` runs — so calling
+        :meth:`quick_vis` on an unfitted spectrum raised ``AttributeError:
+        'NoneType' object has no attribute 'best_fit'``, from a line that
+        names neither the station nor the missing step.
+        """
+        if self.result is None:
+            raise RuntimeError(
+                f"{getattr(self.sig, 'id', 'this spectrum')} has not been "
+                "fitted yet; call fit_mod() first"
+            )
+        return self.result
+
+    def describe_model(self) -> str | None:
         """What is being fitted, or ``None`` for a bare callable."""
         return None if self.spectral_model is None else self.spectral_model.describe()
 
-    def set_const(self, pname, value):
+    def set_const(self, pname: str, value: float) -> None:
         self.params[pname].value = value
         self.params[pname].vary = False
 
-    def set_bounds(self, pname, min=None, max=None):
+    def set_bounds(
+        self, pname: str, min: float | None = None, max: float | None = None
+    ) -> None:
         if min is not None:
             self.params[pname].min = min
         if max is not None:
             self.params[pname].max = max
 
-    def __set_meta(self, meta):
-        self.meta = deepcopy(meta)
+    def __set_meta(self, meta: Mapping[str, Any]) -> None:
+        self.meta = deepcopy(dict(meta))
 
-    def __init_params(self, **params):
+    def __init_params(self, **params: Any) -> None:
         """Seed the parameters, and floor ``t*`` where the configuration says.
 
         ``fitting.t_star_min`` existed and was read by nothing. The tutorial
@@ -251,6 +317,10 @@ class FitSpectrum:
         one PNR station while ``pass_fitting`` reported success — because a
         parameter with no bound cannot be *at* its bound.
         """
+        # `**params: Any` rather than `float`, because lmfit's `make_params`
+        # takes a leading `verbose` argument: a model with a parameter of that
+        # name would have its seed swallowed as a flag. Not a hazard for any
+        # source model here, and not one this package can fix.
         self.params = self.mod.make_params(**params)
         fitting = cfg.load_config().config.fitting
         for name, floor in (
@@ -260,13 +330,13 @@ class FitSpectrum:
             if name in self.params and floor is not None:
                 self.set_bounds(name, min=floor)
 
-    def reset(self):
+    def reset(self) -> None:
         for par in self.params.values():
             par.vary = True
             par.min = -np.inf
             par.max = np.inf
 
-    def __check_input(self, signal):
+    def __check_input(self, signal: Spectrumish) -> bool:
         """Accept anything carrying what the fit reads, not one named class.
 
         This used to be ``isinstance(signal, spectral.Signal)``, which is the
@@ -289,7 +359,7 @@ class FitSpectrum:
             )
         return True
 
-    def __set_mod_amp_freq(self):
+    def __set_mod_amp_freq(self) -> None:
         """
         Only fit between signal limits if they are specified.
         """
@@ -312,61 +382,66 @@ class FitSpectrum:
 
         self.mod_amp = np.log10(self.mod_amp)
 
-    def __param_string(self):
-        try:
-            pars = [
-                [k.name, k.value, 2 * k.stderr] for k in self.result.params.values()
-            ]
-            return ", ".join(["{}: {:.3f}+/-{:.3f}" for _ in pars]).format(
-                *[val for sublist in pars for val in sublist]
-            )
-        except Exception as msg:
-            print(msg)
-            return "NaN"
+    def __param_string(self) -> str:
+        """``name: value+/-2sigma`` per parameter, or ``name: value`` alone.
 
-    def quick_vis(self, ax=None):
+        The old version computed ``2 * k.stderr`` unconditionally inside a
+        bare ``except Exception``. ``stderr`` is ``None`` whenever the
+        minimiser estimated no covariance matrix — which Powell, the shipped
+        default, never does — so this raised ``TypeError`` on every fit made
+        with the default configuration, swallowed it, and titled the plot
+        ``NaN``. A missing uncertainty is a property of the method, not a
+        failed fit, so the value is still worth printing.
+        """
+        parts = []
+        for k in self.fitted.params.values():
+            if k.stderr is None:
+                parts.append(f"{k.name}: {k.value:.3f}")
+            else:
+                parts.append(f"{k.name}: {k.value:.3f}+/-{2 * k.stderr:.3f}")
+        return ", ".join(parts)
+
+    def quick_vis(self, ax: Axes | None = None) -> Axes:
         if ax is None:
             _fig, ax = plt.subplots(1, 1)
 
         ax.loglog(self.mod_freq, 10**self.mod_amp, color="grey", label=self.sig.id)
-        ax.loglog(self.mod_freq, 10**self.result.best_fit, "k--", label="model")
+        ax.loglog(self.mod_freq, 10**self.fitted.best_fit, "k--", label="model")
         ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.2f}"))
         ax.xaxis.set_minor_formatter(NullFormatter())
         ax.set_title(self.__param_string())
         ax.set_xlabel("freq [Hz]")
         ax.set_ylabel("spectral amp")
         ax.legend()
+        return ax
 
-        if ax is not None:
-            return ax
-
-    def __get_pars(self):
-        p = {}
-        for k in self.result.params.values():
+    def __get_pars(self) -> dict[str, Any]:
+        p: dict[str, Any] = {}
+        for k in self.fitted.params.values():
             p.update({k.name: k.value})
             p.update({k.name + "-stderr": k.stderr})
         return p
 
-    def __get_fit_stats(self):
-        res = self.result
-        s = {}
+    def __get_fit_stats(self) -> dict[str, float]:
+        res = self.fitted
+        s: dict[str, float] = {}
         s.update({"aic": res.aic})
         s.update({"bic": res.bic})
         s.update({"chisqr": res.chisqr})
         s.update({"redchi": res.redchi})
         return s
 
-    def __get_test_results(self):
-        t = {}
+    def __get_test_results(self) -> dict[str, bool]:
+        t: dict[str, bool] = {}
         t.update({"pass_fitting": self.pass_fitting})
         return t
 
-    def __set_results_to_meta(self):
+    def __set_results_to_meta(self) -> None:
         self.meta.update(self.__get_pars())
         self.meta.update(self.__get_fit_stats())
         self.meta.update(self.__get_test_results())
 
-    def __determine_pass_or_fail(self):
+    def __determine_pass_or_fail(self) -> None:
         """A fit fails when a parameter is pinned against one of its bounds.
 
         Which is the useful question: a corner frequency resting on its floor
@@ -386,7 +461,7 @@ class FitSpectrum:
         error bar removed.
         """
         self.pass_fitting = True
-        for _par, vals in self.result.params.items():
+        for _par, vals in self.fitted.params.items():
             if not vals.vary:
                 continue
             spread = vals.stderr if vals.stderr is not None else 0.0
@@ -395,12 +470,24 @@ class FitSpectrum:
 
 
 class FitSpectra:
-    spectra = None
-    models = {}
-    guess = {}
-    table = pd.DataFrame([])
+    """Fit every passing station in an event."""
 
-    def __init__(self, spectra, model=None, guess=None, fit_bins=None):
+    #: Declarations, as on :class:`FitSpectrum`. `models = {}` at class level
+    #: was one dictionary shared by every `FitSpectra` ever built; `__init__`
+    #: rebinds it, so nothing reached the shared copy, but nothing prevented it
+    #: either. `guess = {}` was never assigned anywhere at all — a class
+    #: attribute recording a constructor argument that is not kept.
+    spectra: SpectraLike
+    models: dict[str, FitSpectrum]
+    table: pd.DataFrame
+
+    def __init__(
+        self,
+        spectra: SpectraLike,
+        model: Any = None,
+        guess: Mapping[str, Mapping[str, float]] | None = None,
+        fit_bins: bool | None = None,
+    ) -> None:
         """``guess=None`` derives one, rather than fitting nothing.
 
         It used to skip `init_fitting` entirely, so `FitSpectra(spectra)` built
@@ -409,6 +496,8 @@ class FitSpectra:
         :func:`initial_guess` — so that is now the default and an explicit
         ``guess={}`` is how you say "none".
         """
+        self.models = {}
+        self.table = pd.DataFrame([])
         self.set_spectra(spectra)
         if fit_bins is None:
             fit_bins = cfg.load_config().config.fitting.fit_bins
@@ -416,23 +505,23 @@ class FitSpectra:
             guess = initial_guess(spectra, model)
         self.init_fitting(model, guess, fit_bins)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.models)
 
-    def set_spectra(self, spectra):
+    def set_spectra(self, spectra: SpectraLike) -> None:
         if self.__check_spectra(spectra):
             self.spectra = spectra
 
-    def get_spectra(self):
+    def get_spectra(self) -> SpectraLike:
         return self.spectra
 
-    def get_fit(self, id):
-        if id.upper() in self.models.keys():
+    def get_fit(self, id: str) -> FitSpectrum | None:
+        if id.upper() in self.models:
             return self.models[id.upper()]
-        else:
-            print(f"WARNING: {id.upper()} not in group of available fits.")
+        print(f"WARNING: {id.upper()} not in group of available fits.")
+        return None
 
-    def fit_spectra(self, weight_method=None, **kwargs):
+    def fit_spectra(self, weight_method: str | None = None, **kwargs: Any) -> None:
         """Fit every station, with the configured minimiser unless told otherwise.
 
         ``method`` and ``weight_method`` both come from ``[fitting]`` when not
@@ -465,7 +554,12 @@ class FitSpectra:
         self.__set_fit_models_to_spectrum()
         self.__generate_group_fit_table()
 
-    def init_fitting(self, model, guess, fit_bins):
+    def init_fitting(
+        self,
+        model: Any,
+        guess: Mapping[str, Mapping[str, float]],
+        fit_bins: bool,
+    ) -> None:
         """Build a fit per passing station.
 
         ``model=None`` resolves through the configuration once per station,
@@ -479,7 +573,7 @@ class FitSpectra:
         # Indexing `guess[id]` unconditionally made a partial guess dict a
         # `KeyError` naming a station, rather than a way to fit a subset —
         # and made `guess={}` a crash instead of "fit nothing".
-        tmp = {}
+        tmp: dict[str, FitSpectrum] = {}
         for id in self.spectra:
             signal = fittable_signal(self.spectra[id], id)
             if signal is None or id not in guess:
@@ -487,37 +581,48 @@ class FitSpectra:
             tmp[id] = FitSpectrum(signal, model, **guess[id], fit_bins=fit_bins)
         self.models = tmp
 
-    def set_const(self, pname, value, id=None):
+    def set_const(self, pname: str, value: float, id: str | None = None) -> None:
         if id is None:
             for mod in self.models.values():
                 mod.set_const(pname, value)
-        else:
-            if id in self.models.keys():
-                self.models[id].set_const(pname, value)
+        elif id in self.models:
+            self.models[id].set_const(pname, value)
 
-    def set_bounds(self, pname, min=None, max=None):
+    def set_bounds(
+        self, pname: str, min: float | None = None, max: float | None = None
+    ) -> None:
         for mod in self.models.values():
             mod.set_bounds(pname, min, max)
 
-    def reset(self, name="all"):
+    def reset(self, name: str = "all") -> None:
+        """Unbind every parameter, on one station or all of them.
+
+        The lookup tested ``name.upper()`` for membership and then indexed with
+        ``name``, so any id not already upper-case passed the check and raised
+        ``KeyError`` on the next line. Station ids are upper-case in practice,
+        which is why it never fired.
+        """
         if name.upper() == "ALL":
             for mod in self.models.values():
                 mod.reset()
-        else:
-            if name.upper() in self.models.keys():
-                self.models[name].reset()
-            else:
-                print(f"WARNING: {name.upper()} not in available channels.")
+            return
 
-    def quick_vis(self, save=None):
-        l = self.__num_rows()
-        fig, axes = plt.subplots(l, PLOT_COLUMNS, figsize=(17, int(l * 5)))
-        axes = axes.flatten()
-        for ax, mod in zip(axes, self.models.values()):
+        id = name.upper()
+        if id in self.models:
+            self.models[id].reset()
+        else:
+            print(f"WARNING: {id} not in available channels.")
+
+    def quick_vis(self, save: str | None = None) -> None:
+        rows = self.__num_rows()
+        fig, axes = plt.subplots(rows, PLOT_COLUMNS, figsize=(17, int(rows * 5)))
+        # `strict=False`: the grid is rounded up to whole rows, so there are
+        # more axes than models by construction.
+        for ax, mod in zip(axes.flatten(), self.models.values(), strict=False):
             if mod.result is None or not mod.pass_fitting:
                 ax.set_title(f"Fitting Failed for {mod.sig.id}")
             else:
-                ax = mod.quick_vis(ax)
+                mod.quick_vis(ax)
 
         if save is not None:
             if type(save) is str:
@@ -526,7 +631,7 @@ class FitSpectra:
                 raise ValueError("Must provide valid path as str.")
 
     @staticmethod
-    def write_flatfile(path, fits):
+    def write_flatfile(path: str | Path, fits: FitSpectra) -> Path:
         """Write the group fit table, in the format ``path``'s suffix names.
 
         ``.parquet`` is typed, compressed and queryable without loading;
@@ -541,18 +646,18 @@ class FitSpectra:
         return write_table(path, fits.table)
 
     @staticmethod
-    def read_flatfile(path):
+    def read_flatfile(path: str | Path) -> pd.DataFrame:
         """Read a fit table back. Format follows the suffix."""
         return read_table(path)
 
-    def __check_wm(self, wm):
+    def __check_wm(self, wm: str) -> str:
         if wm not in ["log", "none"]:
             print(f"WARNING: did not recognise weight method {wm}.")
             print("Setting to none...")
             wm = "none"
         return wm
 
-    def __generate_group_fit_table(self):
+    def __generate_group_fit_table(self) -> None:
         ds = [m.meta for m in self.models.values()]
         df1 = pd.DataFrame([])
         for i, d in enumerate(ds):
@@ -561,7 +666,7 @@ class FitSpectra:
             )
         self.table = df1
 
-    def __set_fit_models_to_spectrum(self):
+    def __set_fit_models_to_spectrum(self) -> None:
         """Hand each fit back to the spectrum it came from, where that is possible.
 
         The legacy `Signal` carries its own fit so that plotting and
@@ -581,7 +686,7 @@ class FitSpectra:
             if setter is not None:
                 setter(mod)
 
-    def __check_spectra(self, spectra):
+    def __check_spectra(self, spectra: SpectraLike) -> bool:
         """Accept anything that maps trace ids to paired spectra.
 
         Was ``isinstance(spectra, spectral.Spectra)``, which is why the fitter
@@ -599,10 +704,9 @@ class FitSpectra:
             )
         return True
 
-    def __num_rows(self):
-        l = self.__len__()
+    def __num_rows(self) -> int:
+        count = len(self)
         cols = PLOT_COLUMNS
-        if l % cols > 0:
-            return int((cols * (int(l / cols) + 1)) / cols)
-        else:
-            return int(l / cols)
+        if count % cols > 0:
+            return int((cols * (int(count / cols) + 1)) / cols)
+        return int(count / cols)

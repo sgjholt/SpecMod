@@ -111,15 +111,18 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Legacy modules awaiting decomposition; see docs/REFACTOR_PLAN.md phases 2-5.
-# E501 stays here because ruff format does not split long strings or comments,
-# and rewrapping legacy prose is decomposition work, not formatting.
+# `preprocess.py` is the last legacy module with any exemption at all, and it
+# is down from six rules to three. `fitting.py` and `utils.py` are off this
+# list entirely.
 #
-# `utils.py` is off this list entirely and `preprocess.py` is down to three
-# rules, both as a side effect of annotating them: mutable default arguments
-# (B006) had to become `None` to be typed at all, and the rebinding that
-# tripped PLW2901 was what made two functions unannotatable.
-"src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741"]
+# Most of that fell out of annotating them rather than being aimed at: mutable
+# default arguments (B006) had to become `None` to be typed, the class-level
+# `None`/`{}` attributes that tripped RUF012 had to become declarations, and
+# the loop-variable rebinding behind PLW2901 was what made several functions
+# unannotatable in the first place.
+#
+# E501 stays for preprocess because ruff format does not split long strings or
+# comments, and rewrapping legacy prose is decomposition work, not formatting.
 "src/specmod/preprocess.py" = ["PLR", "SIM", "E501"]
 
 # Vendored third-party code. Its structure is kept close to upstream so the
@@ -157,28 +160,17 @@ mypy_path = "stubs"
 [[tool.mypy.overrides]]
 # None of these ship type stubs.
 module = [
-    "lmfit.*", "mtspec.*", "multitaper.*",
+    "mtspec.*", "multitaper.*",
     "pooch.*", "matplotlib.*", "scipy.*",
     "h5py.*", "pyarrow.*", "pandas.*",
 ]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-# Migration backlog. Shrink this list each phase; target is an empty list.
-#
-# These modules are still parsed and still counted in mypy's "no issues found
-# in 39 source files" — the errors are suppressed, not absent. There are 144
-# of them as of this writing: 99 in fitting, 35 in preprocess, 16 in utils,
-# mostly `no-untyped-def` and the `no-untyped-call` that follows from it.
-#
-# tests/test_typing_backlog.py holds this list to the one above and fails if a
-# module is added, if one is removed here without being removed there, or if
-# an exempt module starts passing --strict on its own. An earlier version of
-# this comment claimed CI already asserted that. It did not.
-module = [
-    "specmod.fitting",
-]
-ignore_errors = true
+# There is no `ignore_errors` override any more. There used to be one holding
+# fitting, preprocess and utils — 144 suppressed errors between them — and the
+# whole package is now checked under `strict`. tests/test_typing_backlog.py
+# fails if one is reintroduced, which is the only thing stopping the list
+# growing back: mypy reports "no issues found in 39 source files" either way.
 
 
 # ---------------------------------------------------------------- pytest
