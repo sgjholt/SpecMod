@@ -1865,6 +1865,42 @@ the typed `Motion`/`AmplitudeKind` enums of §4.2 only actually prevent the
 unit-mixing bugs if the type checker is enforcing them. The override list is the
 migration backlog, and CI can assert it never grows.
 
+**Done, and further than planned.** The `ignore_errors` override is gone: the
+backlog held `fitting`, `preprocess` and `utils` with 144 suppressed errors
+(99, 35 and 16), and the whole package now passes `strict`.
+
+Two things about how it went are worth recording, because neither was in this
+plan:
+
+1. **"CI can assert it never grows" was never implemented.** The sentence made
+   it into a comment above the override — "CI asserts it never grows" — and
+   nothing checked it. CI ran `mypy` with the override in place, so adding a
+   fourth module would have been green. `tests/test_typing_backlog.py` is the
+   assertion the comment claimed. Note the shape: a plan stating an intention,
+   a comment restating it as fact, and no mechanism. Worth watching for
+   elsewhere in this document.
+
+2. **`ignore_missing_imports` for ObsPy and lmfit was the wrong answer**, and
+   it is what the snippet above proposes. It silences the import error and
+   makes every object from those libraries `Any`, so `st: Stream` and
+   `result: ModelResult` would have documented nothing and checked nothing —
+   in the two modules where almost every value comes from one of them.
+   Neither library ships `py.typed` and no stub package is published for
+   either, so `stubs/` holds hand-written ones covering the surface SpecMod
+   uses. See `stubs/README.md`.
+
+   That was not free, and it paid for itself immediately: wiring the stubs in
+   found four latent defects `Any` had hidden, including `2 * stderr` where
+   `stderr` is `None` under **the shipped default minimiser** — which meant
+   `FitSpectrum.quick_vis` titled every plot `NaN` under the default
+   configuration, inside a bare `except Exception` that hid it.
+
+   Stubs carry their own risk, and it is the one this document keeps finding:
+   mypy reads them *instead of* the library, so drift is invisible to it and a
+   stale stub is simply believed. `tests/test_stubs.py` loads the real
+   libraries and checks the declarations against them. It caught an error in
+   the stubs on its first run.
+
 **pre-commit** runs ruff (lint + format), mypy, `nbstripout` on the tutorial
 notebook, and `check-added-large-files` — the last one specifically to stop
 another 70 waveform files landing in git.

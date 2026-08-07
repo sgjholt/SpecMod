@@ -294,3 +294,79 @@ class TestPassFitting:
         table = _fit(_spectra(pnr_windows), fit={"method": "leastsq"}).table
         assert table["fc-stderr"].notna().all()
         assert 0 < (~table["pass_fitting"]).sum() < len(table)
+
+
+class TestWhatTypingTheModuleFound:
+    """Three defects that annotating ``fitting.py`` against the lmfit stubs
+    made visible. All three were reachable; none had a test."""
+
+    def test_an_unfitted_spectrum_says_so_rather_than_raising_attributeerror(
+        self, pnr_windows: Any
+    ) -> None:
+        """``self.result`` is ``None`` until ``fit_mod`` runs.
+
+        Every private reader went straight through it, so ``quick_vis`` on a
+        built-but-unfitted model raised ``AttributeError: 'NoneType' object has
+        no attribute 'best_fit'`` — from a line naming neither the station nor
+        the step that was skipped.
+        """
+        from specmod.fitting import FitSpectrum  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        id = spectra.ids()[0]
+        unfitted = FitSpectrum(spectra[id].for_fitting(id), llpsp=-7.0, fc=4.0, ts=0.02)
+
+        assert unfitted.result is None
+        with pytest.raises(RuntimeError, match="has not been fitted"):
+            unfitted.quick_vis()
+
+    def test_the_plot_title_survives_a_minimiser_without_uncertainties(
+        self, pnr_windows: Any
+    ) -> None:
+        """It used to read ``NaN`` under the shipped configuration.
+
+        ``__param_string`` computed ``2 * k.stderr`` unconditionally inside a
+        bare ``except Exception``. Powell reports no ``stderr``, so this raised
+        ``TypeError`` on *every* fit made with the default settings, swallowed
+        it, and titled the plot ``NaN``. A missing uncertainty is a property of
+        the method; the value is still worth printing.
+        """
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        fit = _fit(_spectra(pnr_windows))
+        model = next(iter(fit.models.values()))
+        assert all(p.stderr is None for p in model.result.params.values())
+
+        title = model.quick_vis().get_title()
+        plt.close("all")
+        assert title != "NaN"
+        for name in ("llpsp", "fc", "ts"):
+            assert name in title
+        # No uncertainty to show, so none is claimed.
+        assert "+/-" not in title
+
+    def test_the_title_shows_uncertainties_when_there_are_some(
+        self, pnr_windows: Any
+    ) -> None:
+        import matplotlib.pyplot as plt  # noqa: PLC0415
+
+        fit = _fit(_spectra(pnr_windows), fit={"method": "leastsq"})
+        title = next(iter(fit.models.values())).quick_vis().get_title()
+        plt.close("all")
+        assert "+/-" in title
+
+    def test_reset_finds_a_station_named_in_lower_case(self, pnr_windows: Any) -> None:
+        """The membership test upper-cased the name and the lookup did not.
+
+        Any id not already upper-case passed the ``in`` check and raised
+        ``KeyError`` on the next line. Station ids are upper-case in practice,
+        which is the only reason it never fired.
+        """
+        fit = _fit(_spectra(pnr_windows))
+        id = next(iter(fit.models))
+        model = fit.models[id]
+        model.set_bounds("fc", min=1.0, max=2.0)
+
+        fit.reset(id.lower())
+        assert model.params["fc"].min == -np.inf
+        assert model.params["fc"].max == np.inf

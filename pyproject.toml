@@ -111,12 +111,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Legacy modules awaiting decomposition; see docs/REFACTOR_PLAN.md phases 2-5.
-# E501 stays here because ruff format does not split long strings or comments,
-# and rewrapping legacy prose is decomposition work, not formatting.
-"src/specmod/fitting.py" = ["RUF012", "B", "SIM", "PLR", "PLW", "A002", "E501", "C4", "RUF", "E741"]
-"src/specmod/preprocess.py" = ["B006", "PLR", "SIM", "E501", "PLW2901", "PLW0602"]
-"src/specmod/utils.py" = ["RUF012", "B", "SIM", "PLR", "E501", "E741", "PLW2901", "E402", "UP", "C4", "RUF"]
+# `preprocess.py` is the last legacy module with any exemption at all, and it
+# is down from six rules to three. `fitting.py` and `utils.py` are off this
+# list entirely.
+#
+# Most of that fell out of annotating them rather than being aimed at: mutable
+# default arguments (B006) had to become `None` to be typed, the class-level
+# `None`/`{}` attributes that tripped RUF012 had to become declarations, and
+# the loop-variable rebinding behind PLW2901 was what made several functions
+# unannotatable in the first place.
+#
+# E501 stays for preprocess because ruff format does not split long strings or
+# comments, and rewrapping legacy prose is decomposition work, not formatting.
+"src/specmod/preprocess.py" = ["PLR", "SIM", "E501"]
 
 # Vendored third-party code. Its structure is kept close to upstream so the
 # diff stays reviewable; restructuring it to suit our lint rules would defeat
@@ -145,25 +152,25 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 files = ["src/specmod"]
+# Hand-written ObsPy stubs; see stubs/README.md. ObsPy ships no py.typed and
+# no stub package is published, so without these every Stream, Trace and
+# UTCDateTime is `Any`.
+mypy_path = "stubs"
 
 [[tool.mypy.overrides]]
 # None of these ship type stubs.
 module = [
-    "obspy.*", "lmfit.*", "mtspec.*", "multitaper.*",
+    "mtspec.*", "multitaper.*",
     "pooch.*", "matplotlib.*", "scipy.*",
     "h5py.*", "pyarrow.*", "pandas.*",
 ]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-# Migration backlog. Shrink this list each phase; target is an empty list.
-# CI asserts it never grows.
-module = [
-    "specmod.fitting",
-    "specmod.preprocess",
-    "specmod.utils",
-]
-ignore_errors = true
+# There is no `ignore_errors` override any more. There used to be one holding
+# fitting, preprocess and utils — 144 suppressed errors between them — and the
+# whole package is now checked under `strict`. tests/test_typing_backlog.py
+# fails if one is reintroduced, which is the only thing stopping the list
+# growing back: mypy reports "no issues found in 39 source files" either way.
 
 
 # ---------------------------------------------------------------- pytest

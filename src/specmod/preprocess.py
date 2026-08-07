@@ -1,4 +1,17 @@
+"""Geometry, picks and window cutting, on ObsPy streams.
+
+This module and :mod:`specmod.pipeline` are the only two that know what a
+``Trace`` is. ObsPy ships no type information and no stub package is
+published, so ``stubs/obspy`` in this repository declares the surface used
+here; see ``stubs/README.md``. ``Stats`` is deliberately open, so
+``tr.stats.delta`` is checked and ``tr.stats["p_time"]`` — one of the fields
+this module sets — is not.
+"""
+
+from __future__ import annotations
+
 import warnings
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,6 +19,13 @@ import obspy
 from scipy.integrate import cumulative_trapezoid
 
 from . import utils as ut
+
+if TYPE_CHECKING:  # pragma: no cover
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from os import PathLike
+
+    from numpy.typing import NDArray
+    from obspy import Inventory, Stream, Trace, UTCDateTime
 
 #: How station coordinates are supplied to :func:`set_stream_distance`.
 #: ``"none"`` is a deprecated alias for ``"list"``, kept because it is the
@@ -21,7 +41,7 @@ _RELATIVE = ("relative_time", "relative_ps")
 TIME_AFTER_METHODS = (_ABSOLUTE, *_RELATIVE)
 
 
-def _check_time_after(time_after):
+def _check_time_after(time_after: str) -> None:
     if time_after not in TIME_AFTER_METHODS:
         raise ValueError(
             f"time_after={time_after!r} is not recognised; "
@@ -29,22 +49,22 @@ def _check_time_after(time_after):
         )
 
 
-def set_origin_time(tr, ot):
+def set_origin_time(tr: Trace, ot: UTCDateTime) -> None:
     tr.stats["otime"] = ot
 
 
 def set_stream_distance(
-    st,
-    olat,
-    olon,
-    odep,
-    ot,
-    stlats=None,
-    stlons=None,
-    stelvs=None,
-    inventory=None,
-    dtype="sac",
-):
+    st: Stream,
+    olat: float,
+    olon: float,
+    odep: float,
+    ot: UTCDateTime,
+    stlats: Sequence[float] | None = None,
+    stlons: Sequence[float] | None = None,
+    stelvs: Sequence[float] | None = None,
+    inventory: Inventory | None = None,
+    dtype: str = "sac",
+) -> None:
     """
     Set the origin and source-receiver geometry on every trace in a stream.
 
@@ -93,8 +113,16 @@ def set_stream_distance(
                 tr.stats.sac.stel,
             )
         elif dtype == "mseed":
+            # Restating the guard above. Both guards raise `ValueError` with a
+            # message naming the missing argument; these asserts carry that
+            # conclusion the twenty lines to where it is used, which neither
+            # `and`-guard is a form a type checker can do on its own.
+            assert inventory is not None
             stlat, stlon, stelv = get_station_loc_from_inventory(tr, inventory)
         else:
+            assert stlats is not None
+            assert stlons is not None
+            assert stelvs is not None
             stlat, stlon, stelv = stlats[i], stlons[i], stelvs[i]
 
         tr.stats["slat"] = stlat
@@ -116,12 +144,16 @@ def set_stream_distance(
         tr.stats["rhyp"] = np.sqrt((odep + (stelv / 1000)) ** 2 + tr.stats["repi"] ** 2)
 
 
-def get_station_loc_from_inventory(tr, inv):
+def get_station_loc_from_inventory(
+    tr: Trace, inv: Inventory
+) -> tuple[float, float, float]:
     meta = inv.get_channel_metadata(tr.id)
     return meta["latitude"], meta["longitude"], meta["elevation"]
 
 
-def set_picks_from_pyrocko(st, pyrock_file, emergency_ratio=1.7):
+def set_picks_from_pyrocko(
+    st: Stream, pyrock_file: str | PathLike[str], emergency_ratio: float = 1.7
+) -> None:
     picks = ut.read_pyrocko(pyrock_file)
     for tr in st:
         id = ".".join([tr.stats.network, tr.stats.station])
@@ -150,7 +182,13 @@ def set_picks_from_pyrocko(st, pyrock_file, emergency_ratio=1.7):
             tr.stats["s_time"] = tr.stats["p_time"] + sdiff
 
 
-def basic_set_theoreticals(st, otime, p=5.9, s=2.9, dmetric="repi"):
+def basic_set_theoreticals(
+    st: Stream,
+    otime: UTCDateTime,
+    p: float = 5.9,
+    s: float = 2.9,
+    dmetric: str = "repi",
+) -> None:
     """
     basic_set_theoreticals uses average propagation velocities [km/s]
     to set the arrival times for P and S waves. This assumes epicentral and/or
@@ -166,7 +204,7 @@ def basic_set_theoreticals(st, otime, p=5.9, s=2.9, dmetric="repi"):
         tr.stats["otime"] = otime
 
 
-def rstfl(fnames, wild="*", ext="sac"):
+def rstfl(fnames: Iterable[str], wild: str = "*", ext: str = "sac") -> Stream:
     """
     rstfl reads create an obspy stream by reading each trace from an arbitrary
     list of paths.
@@ -179,7 +217,7 @@ def rstfl(fnames, wild="*", ext="sac"):
     return st
 
 
-def link_window_to_trace(tr, start, end):
+def link_window_to_trace(tr: Trace, start: UTCDateTime, end: UTCDateTime) -> None:
     """Record a window on a trace, as asked for *and* as delivered.
 
     Two pairs, because they are not the same thing. ``trim`` gives back
@@ -200,20 +238,24 @@ def link_window_to_trace(tr, start, end):
     tr.stats["wend"] = tr.stats.endtime
 
 
-def get_sta_shift(sta, sta_shift):
+def get_sta_shift(sta: str, sta_shift: Mapping[str, float] | None) -> float:
+    """The per-station timing correction for ``sta``, or zero.
+
+    ``sta_shift`` maps station name to a shift in seconds, e.g. ``{"STA": 0.5}``.
     """
-    sta_shift must be a dictionary containing the station name to be shifted
-    and the time shift in seconds e.g. {'STA':0.5}.
-    """
-    if sta in sta_shift.keys():
-        return sta_shift[sta]
-    else:
-        return 0
+    if sta_shift is None:
+        return 0.0
+    return sta_shift.get(sta, 0.0)
 
 
 def cut_p(
-    st, bf=0, tafp=0.8, time_after="relative_time", sta_shift={}, refine_window=False
-):
+    st: Stream,
+    bf: float = 0,
+    tafp: float = 0.8,
+    time_after: str = "relative_time",
+    sta_shift: Mapping[str, float] | None = None,
+    refine_window: bool = False,
+) -> None:
     """
     Function to cut a p wave window from an Obspy trace obeject
 
@@ -228,8 +270,6 @@ def cut_p(
     """
 
     _check_time_after(time_after)
-
-    stas = 0
 
     for tr in st:
         stas = get_sta_shift(tr.stats.station, sta_shift)
@@ -260,8 +300,13 @@ def cut_p(
 
 
 def cut_s(
-    st, rafp=0.8, tafs=20, time_after="absolute_time", sta_shift={}, refine_window=True
-):
+    st: Stream,
+    rafp: float = 0.8,
+    tafs: float = 20,
+    time_after: str = "absolute_time",
+    sta_shift: Mapping[str, float] | None = None,
+    refine_window: bool = True,
+) -> None:
     """
     Function to cut a s wave window from an Obspy trace obeject.
 
@@ -282,8 +327,6 @@ def cut_s(
     Modified by Pungky Suroyo.
     """
     _check_time_after(time_after)
-
-    stas = 0
 
     for tr in st:
         stas = get_sta_shift(tr.stats.station, sta_shift)
@@ -311,7 +354,9 @@ def cut_s(
         link_window_to_trace(tr, p_end, s_end)
 
 
-def signal_intensity(tr, pctls=[1, 99], plot=False):
+def signal_intensity(
+    tr: Trace, pctls: Sequence[float] = (1, 99), plot: bool = False
+) -> tuple[float, float]:
     delta = tr.stats.delta
     data = tr.data
 
@@ -330,7 +375,7 @@ def signal_intensity(tr, pctls=[1, 99], plot=False):
     return w_start, w_end
 
 
-def pad_traces(st, pad_len=1, pad_val=0):
+def pad_traces(st: Stream, pad_len: float = 1, pad_val: float = 0) -> None:
     """
     Util to pad waveforms with zeros before and after the start and endtime of trace.
     """
@@ -344,7 +389,13 @@ def pad_traces(st, pad_len=1, pad_val=0):
         )
 
 
-def cut_c(st, bf=2, raf=0.8, tafp=1.4, sta_shift={}):
+def cut_c(
+    st: Stream,
+    bf: float = 2,
+    raf: float = 0.8,
+    tafp: float = 1.4,
+    sta_shift: Mapping[str, float] | None = None,
+) -> None:
     """
 
     Function to cut a coda wave window from an Obspy trace object
@@ -352,8 +403,6 @@ def cut_c(st, bf=2, raf=0.8, tafp=1.4, sta_shift={}):
     Written by Pungky Suroyo.
 
     """
-
-    stas = 0
 
     for tr in st:
         stas = get_sta_shift(tr.stats.station, sta_shift)
@@ -374,18 +423,17 @@ def cut_c(st, bf=2, raf=0.8, tafp=1.4, sta_shift={}):
         link_window_to_trace(tr, c_start, c_end)
 
 
-def normalise(x, space=[0, 1]):
-
+def normalise(x: NDArray[np.floating[Any]], space: Sequence[float] = (0, 1)) -> Any:
     return np.interp(x, [x.min(), x.max()], space)
 
 
-def get_signal(st, func, **kwargs):
+def get_signal(st: Stream, func: Callable[..., None], **kwargs: Any) -> Stream:
     stc = st.copy()
     func(stc, **kwargs)
     return stc
 
 
-def get_noise_p(st, sig, bshift=0.2):
+def get_noise_p(st: Stream, sig: Stream, bshift: float = 0.2) -> Stream:
     stc = st.copy()
     # `strict=True`: the two streams are paired by position, so a signal
     # stream of a different length is not a shorter result but a wrong one.
@@ -402,7 +450,9 @@ def get_noise_p(st, sig, bshift=0.2):
     return stc
 
 
-def get_noise_s(st, bf=1, bshift=0.2, sig=None):
+def get_noise_s(
+    st: Stream, bf: float = 1, bshift: float = 0.2, sig: Stream | None = None
+) -> Stream:
     stc = st.copy()
     for i, tr in enumerate(stc):
         end = tr.stats["p_time"] - bshift
