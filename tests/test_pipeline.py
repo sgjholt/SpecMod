@@ -23,6 +23,7 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 from specmod.core import Spectrum, SpectrumPair, SpectrumSet  # noqa: E402
+from specmod.core.collection import log_bin  # noqa: E402
 from specmod.pipeline import (  # noqa: E402
     pair_from_traces,
     spectrum_from_trace,
@@ -72,6 +73,57 @@ class TestSpectrumFromTrace:
         signal, _ = pnr_windows()
         spectrum = spectrum_from_trace(signal[0])
         assert str(spectrum.kind) == "magnitude"
+
+    def test_a_keyword_the_estimator_does_not_take_is_an_error(
+        self, pnr_windows: Any
+    ) -> None:
+        """It used to be discarded, which made a whole class of mistake silent.
+
+        The configuration is filtered to what the selected estimator accepts,
+        and rightly so — ``[transform]`` holds every estimator's settings at
+        once, and a CWT parameter is not an error when the FFT is running. The
+        caller's own keywords were filtered by the same rule, so a typo simply
+        did nothing.
+        """
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError, match="does not accept nonexistent_knob"):
+            spectrum_from_trace(signal[0], estimator="fft", nonexistent_knob=1)
+
+    def test_a_compare_argument_passed_as_a_keyword_says_where_it_belongs(
+        self, pnr_windows: Any
+    ) -> None:
+        """The mistake that motivated this, and it is an easy one to make.
+
+        ``spectrum_set_from_streams(rotate_noise=False)`` reads as though it
+        disables the noise lift. It does not: bare keywords go to the
+        estimator, ``rotate_noise`` belongs to ``compare``, and it was dropped
+        — leaving the run silently using the configured value. Three
+        measurements were taken against what looked like a modified pipeline
+        and was not.
+        """
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError, match=r"compare=\{'rotate_noise'"):
+            spectrum_from_trace(signal[0], estimator="fft", rotate_noise=False)
+
+    def test_the_error_names_what_the_estimator_does_take(
+        self, pnr_windows: Any
+    ) -> None:
+        """A rejection that does not say what is valid moves the guessing
+        rather than ending it."""
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError) as raised:
+            spectrum_from_trace(signal[0], estimator="fft", tapr="hann")
+        assert "taper" in str(raised.value)
+
+    def test_a_keyword_the_estimator_does_take_still_works(
+        self, pnr_windows: Any
+    ) -> None:
+        """The passthrough is the point of the parameter; rejecting unknown
+        keys must not reject known ones."""
+        signal, _ = pnr_windows()
+        boxcar = spectrum_from_trace(signal[0], estimator="fft", taper="boxcar")
+        hann = spectrum_from_trace(signal[0], estimator="fft", taper="hann")
+        assert not np.allclose(boxcar.amp, hann.amp)
 
     def test_it_carries_the_trace_identity(self, pnr_windows: Any) -> None:
         signal, _ = pnr_windows()
@@ -192,6 +244,12 @@ class TestToMotion:
         bands on all 28**. The comparison itself could not be kept — one side
         of it is deleted — so this is its durable form, the same numbers held
         against a committed artefact.
+
+        ``amp``, ``noise_amp`` and ``bsnr`` are still those legacy values.
+        ``band`` has been regenerated once, for the resolution-floor
+        correction — see
+        :meth:`TestToMotion.test_the_band_of_a_converted_pair_respects_the_noise_floor`,
+        which keeps the superseded edges and pins what changed.
         """
         reference = json.loads(
             (Path(__file__).parent / "golden" / "motion_reference.json").read_text()
@@ -221,6 +279,79 @@ class TestToMotion:
             elif pair.band != pytest.approx(want["band"], rel=1e-9):
                 problems.append(f"{id} band: {want['band']} -> {pair.band}")
         assert not problems, "\n".join(problems)
+
+    def test_the_band_of_a_converted_pair_respects_the_noise_floor(
+        self, pnr_windows: Any
+    ) -> None:
+        """The one deliberate change to the recorded displacement bands.
+
+        ``compare`` derived the floor from ``noise.freq.min()``. That works
+        exactly once: the noise is interpolated onto the signal's axis before
+        binning, so afterwards its own lowest resolvable frequency is gone and
+        the expression returns the *signal's*. A converted pair therefore got
+        the longer signal window's floor in place of the shorter noise
+        window's, and its band could open below the frequency the noise can
+        resolve — where ``interpolate_onto`` is repeating an edge value rather
+        than reporting a measurement, so the ratio there has an invented
+        denominator.
+
+        The floor is now read from ``meta["resolution_floor"]``, which
+        ``spectrum_from_trace`` has recorded all along and nothing read.
+
+        Measured across all five estimators: the floor used to differ between a
+        pair and its own conversion on **28 of 28** stations, and now differs on
+        none. Bands of *unconverted* pairs do not move at all — 0 of 28 on every
+        estimator — so nothing computed without a domain change is affected.
+        Round-trip band stability goes from 3/28 (fft), 8/28 (multitaper),
+        27/28 (cwt), 7/28 (welch) and 8/28 (quadratic) to **0/28 everywhere**.
+
+        On the recorded displacement set the change touches 3 of 28 stations,
+        and only ever the lower edge, and only upward — toward the floor. That
+        direction is the physics rather than a coincidence: a floor that was
+        too low permitted an edge that was too low, so correcting it can raise
+        an edge and can never lower one.
+        """
+        reference = json.loads(
+            (Path(__file__).parent / "golden" / "motion_reference.json").read_text()
+        )["displacement"]
+
+        raised = 0
+        for id, want in reference.items():
+            assert "band_legacy" in want, (
+                f"{id}: band_legacy is missing. The legacy edges are the record "
+                "of what the published lineage produced; regenerating band "
+                "without keeping them discards it."
+            )
+            new, old = want["band"], want["band_legacy"]
+            if new is None or old is None:
+                assert new == old, f"{id}: a band appeared or vanished"
+                continue
+            assert new[1] == pytest.approx(old[1], rel=1e-12), (
+                f"{id}: the upper edge moved. The floor is a lower bound; "
+                "nothing about this correction can touch the top of a band."
+            )
+            assert new[0] >= old[0] - 1e-12, (
+                f"{id}: the lower edge moved DOWN, {old[0]} -> {new[0]}. "
+                "Correcting a floor that was too low can only raise an edge."
+            )
+            raised += new[0] > old[0] + 1e-12
+        assert raised == 3, f"expected 3 stations to move, got {raised}"
+
+    def test_a_conversion_does_not_change_the_resolution_floor(
+        self, pnr_windows: Any
+    ) -> None:
+        """The invariant behind the band correction, asserted on its own.
+
+        A domain change multiplies both spectra by a power of ``2*pi*f``. It
+        does not lengthen either window, so it cannot change what either one
+        can resolve.
+        """
+        direct = _direct("fft", pnr_windows)
+        displacement = direct.to_motion("displacement")
+        for id in direct.ids():
+            assert displacement[id].resolution_floor == pytest.approx(
+                direct[id].resolution_floor, rel=1e-12
+            ), id
 
     def test_the_original_is_untouched(self, pnr_windows: Any) -> None:
         """The property the legacy could not have. `Spectra.inte()` overwrote
@@ -273,32 +404,49 @@ class TestToMotion:
                 direct[id].noise.amp, rel=RTOL
             ), id
 
-    def test_the_binned_noise_does_not_round_trip(self, pnr_windows: Any) -> None:
-        """A pre-existing inconsistency, inherited rather than introduced.
+    def test_the_binned_noise_round_trips(self, pnr_windows: Any) -> None:
+        """It did not, and the reason was not the round trip.
 
-        The lift is applied to the binned noise directly but to the unbinned
-        noise by interpolating the factor onto the finer axis, so the two are
-        **not related by the binning operation**: re-binning the lifted
-        unbinned noise does not reproduce the lifted binned one. A domain
-        change re-bins, so the round trip restores the unbinned arrays exactly
-        and lands the binned noise 18.8% away at worst, moving 3 of 28 bands.
+        The lift used to be applied to the binned noise directly *and*,
+        separately, to the unbinned noise by interpolating the factor onto the
+        finer axis. Those two operations do not agree, so a stored pair's
+        `binned_noise` was not the binning of its own `noise` — by up to 18.8%
+        on these windows. **Every pair was born inconsistent.** A domain change
+        re-bins, so `to_motion` silently *repaired* the pair and looked like
+        the thing that broke it; this test asserted that appearance.
 
-        Measured identical to the legacy path — same percentage, same three
-        stations — so `to_motion` reproduces it rather than causing it. Fixing
-        it moves `snr`, and therefore bands, and therefore every fitted
-        parameter; that is a science decision. See REFACTOR_PLAN §4.6.
+        The lift is now applied to the unbinned noise and the binned noise
+        derived from it, so there is one source of truth and the round trip is
+        exact. See
+        `test_golden_reference.test_the_only_deliberate_divergence_from_legacy_is_the_binned_noise`
+        for what that cost against the legacy record.
         """
         direct = _direct("fft", pnr_windows)
         back = direct.to_motion("displacement").to_motion("velocity")
-        worst = max(
-            float(
-                np.max(
-                    np.abs(back[id].binned_noise.amp / direct[id].binned_noise.amp - 1)
-                )
-            )
-            for id in direct.ids()
-        )
-        assert 0.1 < worst < 0.5, worst
+        for id in direct.ids():
+            assert back[id].binned_noise.amp == pytest.approx(
+                direct[id].binned_noise.amp, rel=1e-12
+            ), id
 
-        moved = [id for id in direct.ids() if back[id].band != direct[id].band]
-        assert 0 < len(moved) < len(direct)
+    def test_a_pair_is_consistent_with_itself_when_built(
+        self, pnr_windows: Any
+    ) -> None:
+        """The property the round-trip test was really measuring.
+
+        `binned_noise` must be the binning of `noise`. Asserting it at
+        construction says so directly, rather than inferring it from what
+        survives a conversion — which is how the inconsistency stayed filed as
+        a `to_motion` problem.
+        """
+        direct = _direct("fft", pnr_windows)
+        for id in direct.ids():
+            pair = direct[id]
+            settings = pair.meta[SpectrumPair.SETTINGS_KEY]
+            rebinned = log_bin(
+                pair.noise.freq,
+                np.asarray(pair.noise.amp),
+                f_min=settings["f_min"],
+                f_max=settings["f_max"],
+                n_bins=settings["n_bins"],
+            )
+            assert rebinned.amp == pytest.approx(pair.binned_noise.amp, rel=1e-12), id
