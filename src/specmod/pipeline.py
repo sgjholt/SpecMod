@@ -100,7 +100,37 @@ def estimate_spectrum(
         for key, value in dataclasses.asdict(transform).items()
         if key in accepted
     }
-    settings.update({k: v for k, v in kwargs.items() if k in accepted})
+
+    # Filtering the *configuration* to what this estimator accepts is right:
+    # `[transform]` holds every estimator's settings at once, and a CWT
+    # parameter is not an error when the FFT is selected. Filtering the
+    # caller's own keywords the same way is not. It silently discarded
+    # anything the estimator did not recognise, so a typo, or an argument
+    # meant for a different stage, simply did nothing.
+    #
+    # This is not hypothetical: `spectrum_set_from_streams(rotate_noise=False)`
+    # looks exactly like it works. `rotate_noise` belongs to `compare`, not to
+    # an estimator, so it was dropped here and the run silently kept the
+    # configured value — which cost three wrong measurements before the
+    # recorded settings gave it away.
+    unknown = sorted(set(kwargs) - accepted)
+    if unknown:
+        compare_only = sorted(set(unknown) & set(_compare_settings()))
+        hint = ""
+        if compare_only:
+            verb = "configures" if len(compare_only) == 1 else "configure"
+            this = "it" if len(compare_only) == 1 else "them"
+            hint = (
+                f" {', '.join(compare_only)} {verb} the signal-to-noise "
+                f"comparison, not the transform — pass {this} as "
+                f"compare={{{', '.join(f'{k!r}: ...' for k in compare_only)}}}."
+            )
+        raise TypeError(
+            f"{name} does not accept {', '.join(unknown)}. It takes "
+            f"{', '.join(sorted(accepted - {'self'}))}.{hint}"
+        )
+
+    settings.update(kwargs)
     result: Spectrum = cls(**settings).estimate(data, delta, motion=motion)
     return result
 

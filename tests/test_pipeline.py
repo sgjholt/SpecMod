@@ -73,6 +73,57 @@ class TestSpectrumFromTrace:
         spectrum = spectrum_from_trace(signal[0])
         assert str(spectrum.kind) == "magnitude"
 
+    def test_a_keyword_the_estimator_does_not_take_is_an_error(
+        self, pnr_windows: Any
+    ) -> None:
+        """It used to be discarded, which made a whole class of mistake silent.
+
+        The configuration is filtered to what the selected estimator accepts,
+        and rightly so — ``[transform]`` holds every estimator's settings at
+        once, and a CWT parameter is not an error when the FFT is running. The
+        caller's own keywords were filtered by the same rule, so a typo simply
+        did nothing.
+        """
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError, match="does not accept nonexistent_knob"):
+            spectrum_from_trace(signal[0], estimator="fft", nonexistent_knob=1)
+
+    def test_a_compare_argument_passed_as_a_keyword_says_where_it_belongs(
+        self, pnr_windows: Any
+    ) -> None:
+        """The mistake that motivated this, and it is an easy one to make.
+
+        ``spectrum_set_from_streams(rotate_noise=False)`` reads as though it
+        disables the noise lift. It does not: bare keywords go to the
+        estimator, ``rotate_noise`` belongs to ``compare``, and it was dropped
+        — leaving the run silently using the configured value. Three
+        measurements were taken against what looked like a modified pipeline
+        and was not.
+        """
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError, match=r"compare=\{'rotate_noise'"):
+            spectrum_from_trace(signal[0], estimator="fft", rotate_noise=False)
+
+    def test_the_error_names_what_the_estimator_does_take(
+        self, pnr_windows: Any
+    ) -> None:
+        """A rejection that does not say what is valid moves the guessing
+        rather than ending it."""
+        signal, _ = pnr_windows()
+        with pytest.raises(TypeError) as raised:
+            spectrum_from_trace(signal[0], estimator="fft", tapr="hann")
+        assert "taper" in str(raised.value)
+
+    def test_a_keyword_the_estimator_does_take_still_works(
+        self, pnr_windows: Any
+    ) -> None:
+        """The passthrough is the point of the parameter; rejecting unknown
+        keys must not reject known ones."""
+        signal, _ = pnr_windows()
+        boxcar = spectrum_from_trace(signal[0], estimator="fft", taper="boxcar")
+        hann = spectrum_from_trace(signal[0], estimator="fft", taper="hann")
+        assert not np.allclose(boxcar.amp, hann.amp)
+
     def test_it_carries_the_trace_identity(self, pnr_windows: Any) -> None:
         signal, _ = pnr_windows()
         spectrum = spectrum_from_trace(signal[0])
