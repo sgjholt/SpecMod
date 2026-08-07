@@ -23,6 +23,7 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 from specmod.core import Spectrum, SpectrumPair, SpectrumSet  # noqa: E402
+from specmod.core.collection import log_bin  # noqa: E402
 from specmod.pipeline import (  # noqa: E402
     pair_from_traces,
     spectrum_from_trace,
@@ -324,32 +325,49 @@ class TestToMotion:
                 direct[id].noise.amp, rel=RTOL
             ), id
 
-    def test_the_binned_noise_does_not_round_trip(self, pnr_windows: Any) -> None:
-        """A pre-existing inconsistency, inherited rather than introduced.
+    def test_the_binned_noise_round_trips(self, pnr_windows: Any) -> None:
+        """It did not, and the reason was not the round trip.
 
-        The lift is applied to the binned noise directly but to the unbinned
-        noise by interpolating the factor onto the finer axis, so the two are
-        **not related by the binning operation**: re-binning the lifted
-        unbinned noise does not reproduce the lifted binned one. A domain
-        change re-bins, so the round trip restores the unbinned arrays exactly
-        and lands the binned noise 18.8% away at worst, moving 3 of 28 bands.
+        The lift used to be applied to the binned noise directly *and*,
+        separately, to the unbinned noise by interpolating the factor onto the
+        finer axis. Those two operations do not agree, so a stored pair's
+        `binned_noise` was not the binning of its own `noise` — by up to 18.8%
+        on these windows. **Every pair was born inconsistent.** A domain change
+        re-bins, so `to_motion` silently *repaired* the pair and looked like
+        the thing that broke it; this test asserted that appearance.
 
-        Measured identical to the legacy path — same percentage, same three
-        stations — so `to_motion` reproduces it rather than causing it. Fixing
-        it moves `snr`, and therefore bands, and therefore every fitted
-        parameter; that is a science decision. See REFACTOR_PLAN §4.6.
+        The lift is now applied to the unbinned noise and the binned noise
+        derived from it, so there is one source of truth and the round trip is
+        exact. See
+        `test_golden_reference.test_the_only_deliberate_divergence_from_legacy_is_the_binned_noise`
+        for what that cost against the legacy record.
         """
         direct = _direct("fft", pnr_windows)
         back = direct.to_motion("displacement").to_motion("velocity")
-        worst = max(
-            float(
-                np.max(
-                    np.abs(back[id].binned_noise.amp / direct[id].binned_noise.amp - 1)
-                )
-            )
-            for id in direct.ids()
-        )
-        assert 0.1 < worst < 0.5, worst
+        for id in direct.ids():
+            assert back[id].binned_noise.amp == pytest.approx(
+                direct[id].binned_noise.amp, rel=1e-12
+            ), id
 
-        moved = [id for id in direct.ids() if back[id].band != direct[id].band]
-        assert 0 < len(moved) < len(direct)
+    def test_a_pair_is_consistent_with_itself_when_built(
+        self, pnr_windows: Any
+    ) -> None:
+        """The property the round-trip test was really measuring.
+
+        `binned_noise` must be the binning of `noise`. Asserting it at
+        construction says so directly, rather than inferring it from what
+        survives a conversion — which is how the inconsistency stayed filed as
+        a `to_motion` problem.
+        """
+        direct = _direct("fft", pnr_windows)
+        for id in direct.ids():
+            pair = direct[id]
+            settings = pair.meta[SpectrumPair.SETTINGS_KEY]
+            rebinned = log_bin(
+                pair.noise.freq,
+                np.asarray(pair.noise.amp),
+                f_min=settings["f_min"],
+                f_max=settings["f_max"],
+                n_bins=settings["n_bins"],
+            )
+            assert rebinned.amp == pytest.approx(pair.binned_noise.amp, rel=1e-12), id

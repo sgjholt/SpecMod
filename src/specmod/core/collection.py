@@ -264,19 +264,31 @@ class SpectrumPair:
         )
 
         if rotate_noise:
-            # Derived on the binned axis and applied to both, rather than
-            # computed twice: the unbinned factor is the binned one
-            # interpolated up, which is what the legacy code does and what
-            # keeps the two representations of "the noise" consistent.
+            # The factor is derived on the binned axis — that is where the
+            # method is defined — and applied to the *unbinned* noise, which
+            # then becomes the single source the binned noise is derived from.
+            #
+            # The order matters and used to be the other way round: the lift
+            # multiplied the bins directly and, separately, the unbinned array
+            # by the factor interpolated up. Those two operations do not agree.
+            # A bin holds the geometric mean of `log10(amp)`, so binning the
+            # lifted noise gives `mean(log a) + mean(log f)` while lifting the
+            # bin gives `mean(log a) + log f(centre)` — equal only where the
+            # factor is flat across the bin.
+            #
+            # The result was that a stored pair's `binned_noise` was not the
+            # binning of its own `noise`, by up to 18.8% on the PNR windows.
+            # Every pair was born inconsistent; a domain change re-bins, so
+            # `to_motion` silently *repaired* it and looked like the culprit.
             model = _resolve_noise_model(noise_model, rotation_space)
             factor = model.factor(
                 binned_noise.freq, binned_noise.amp, binned_signal.amp
             )
-            binned_noise = BinnedSpectrum(
-                freq=binned_noise.freq, amp=binned_noise.amp * factor
-            )
             noise_amp = noise_amp * interpolate_onto(
                 signal.freq, binned_noise.freq, factor
+            )
+            binned_noise = log_bin(
+                signal.freq, noise_amp, f_min=f_min, f_max=f_max, n_bins=n_bins
             )
 
         snr = binned_signal.amp / binned_noise.amp

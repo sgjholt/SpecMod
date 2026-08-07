@@ -297,6 +297,11 @@ def test_the_noise_and_snr_are_exactly_unchanged(estimator: str) -> None:
     The noise passes through the Parseval rescale, the boost rotation and the
     interpolation onto the signal's axis. A rewrite of any of those can move
     ``bsnr`` while leaving the signal amplitudes untouched.
+
+    ``noise_amp`` here is still the legacy value and has never been
+    regenerated. ``bsnr`` has been, once — see
+    :func:`test_the_only_deliberate_divergence_from_legacy_is_the_binned_noise`,
+    which holds the old values and the size of the change.
     """
     expected = _reference()[estimator]
     problems: list[str] = []
@@ -309,6 +314,70 @@ def test_the_noise_and_snr_are_exactly_unchanged(estimator: str) -> None:
         problems += _compare(_summary(pair.snr), want["bsnr"], f"{name} bsnr", rtol)
     assert not problems, "\n".join(
         [f"{len(problems)} difference(s) under {estimator!r}:", *problems]
+    )
+
+
+@pytest.mark.parametrize("estimator", ESTIMATORS)
+def test_the_only_deliberate_divergence_from_legacy_is_the_binned_noise(
+    estimator: str,
+) -> None:
+    """One correction, bounded, with the superseded numbers kept beside it.
+
+    The legacy code derived the binned noise and the unbinned noise by two
+    different routes: it multiplied the *bins* by the boost factor, and
+    separately multiplied the unbinned array by that factor interpolated up.
+    Those disagree. A bin holds the geometric mean of ``log10(amp)``, so
+    binning the lifted noise gives ``mean(log a) + mean(log f)`` while lifting
+    the bin gives ``mean(log a) + log f(centre)`` — equal only where the factor
+    is flat across the bin. Every stored pair's ``binned_noise`` was therefore
+    not the binning of its own ``noise``, by up to 18.8%.
+
+    The lift is now applied to the unbinned noise, and the binned noise
+    derived from it. That changes ``bsnr`` and nothing else, so ``bsnr`` was
+    regenerated and the superseded values kept as ``bsnr_legacy``.
+
+    **What the change is, measured on the 28 fft windows.** No bin gains or
+    loses a sample: the bin centres, the bin counts and the binned *signal* are
+    bit-identical. Only the value representing each bin moves, because the lift
+    is now averaged across the bin along with the amplitude rather than applied
+    once at the centre. The result is close to symmetric — 987 bins down, 1064
+    up, median ratio 1.000000 — with a slight net rise in noise (geometric mean
+    1.00068) and therefore a slight net fall in signal-to-noise (0.99932).
+
+    Median |change| is 0.08% to 0.37% per decade. The large excursions are
+    rare and live at the extremes: 11.7% around 1-5 Hz, where a bin holds one
+    or two samples and the interpolated factor at the sample is not the factor
+    at the bin centre, and 18.8% above 60 Hz, where a bin spans enough absolute
+    frequency for the factor to vary appreciably across it. Both regions sit
+    outside every selected band, which is why no band and no fitted parameter
+    moves.
+
+    This test exists so that "one deliberate correction" cannot quietly become
+    two. It pins the divergence rather than forgiving it.
+    """
+    expected = _reference()[estimator]
+    ratios: list[float] = []
+    for name in sorted(expected):
+        want = expected[name]
+        assert "bsnr_legacy" in want, (
+            f"{name}: bsnr_legacy is missing. The legacy values are the record "
+            "of what the published lineage produced; regenerating bsnr without "
+            "keeping them discards it."
+        )
+        for key in ("median", "max", "sum"):
+            ratios.append(abs(want["bsnr"][key] / want["bsnr_legacy"][key] - 1))
+        assert want["bsnr"]["n"] == want["bsnr_legacy"]["n"], (
+            f"{name}: the bin count changed ({want['bsnr_legacy']['n']} -> "
+            f"{want['bsnr']['n']}). The correction changes the value in each "
+            "bin, not which samples are in it — a length change is a different "
+            "bug."
+        )
+
+    worst = max(ratios)
+    assert worst < 0.05, (
+        f"{estimator}: bsnr now differs from the legacy record by {worst:.3g}, "
+        "more than the 5% the binned-noise correction accounts for. Something "
+        "else has moved."
     )
 
 
