@@ -51,6 +51,8 @@ class Model:
         nan_policy: str | None = ...,
         calc_covar: bool = ...,
         max_nfev: int | None = ...,
-        coerce_farray: bool = ...,
+        # `coerce_farray` exists on lmfit 1.3 and NOT on 1.2.0, which is this
+        # project's declared floor. Left out rather than declared: a stub must
+        # be true across the supported range, and nothing here passes it.
         **kwargs: Any,
     ) -> ModelResult: ...
