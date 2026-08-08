@@ -1488,10 +1488,29 @@ end to end distinguishes them.
 
 *Sourced from Holt (2019), "Addressing Uncertainty in Earthquake Magnitudes
 Commonly Used in Modern Seismic Hazard Assessment", University of Liverpool —
-Ch. 1 §1.4 and Ch. 2 Eq. 2.7-2.8 and Table 2.1. The equations themselves are
-embedded objects that do not survive text extraction, so the symbols above are
-read from the surrounding prose; the equation images should be checked against
-this table before any of it is implemented.*
+Ch. 1 §1.4 and Ch. 2 Eq. 2.6-2.8 and Table 2.1.*
+
+**Verification status, checked rather than assumed.** The equations are
+embedded objects and **none of the 33 survives text extraction** — every one
+is an empty table cell, and no Greek letter, `4*pi`, `rho` or `Omega` appears
+anywhere in the extracted document. Even the symbol names are stripped from
+the prose, which reads "where, is the long period spectral displacement
+plateau at the source". The source file is 44 MB, over the download limit
+available here, so **the algebraic form of Eq. 1.12, 1.13, 2.7 and 2.8 is
+unverified**. The table above is read entirely from surrounding prose and
+should be checked against the equation images before implementation. A PDF
+export of Chapters 1-2 under 10 MB would settle it.
+
+Two claims in this section *are* independently confirmed by that prose, and
+were inferences before:
+
+- **The spreading model's distance is in kilometres.** Eq. 2.6's description
+  states it outright — "is a geometrical spreading model and is distance
+  (km)" — rather than it being read off the units of Table 2.1.
+- **The measurement is on the horizontal component of the Sg phase**, "referred
+  to as SgH". That is the pairing this section infers from `Theta-lambda-Phi`
+  being the SH average: the phase, the component and the radiation-pattern
+  constant are one choice, made once, in the published method.
 
 Two other things that must be true before the number means anything, both
 from §4.7 above: `Omega` should be the combined horizontal rather than one
