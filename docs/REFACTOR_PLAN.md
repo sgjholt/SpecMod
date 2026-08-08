@@ -1592,6 +1592,72 @@ velocity going unnoticed — the whole point of §4.7's units discussion.
   the way it now demonstrates both minimisers: showing that the choice moves
   the answer is what stops it being invisible.
 
+#### The published processing recipe, and the four defaults it sources
+
+The equations did not survive the export, but Ch. 2 §2.2 describes the
+*processing* in prose, and that survived intact. It is the most directly
+useful thing the chapters give this repository, because it is a published
+specification for choices §4.4 and §4.5 currently justify on internal
+measurement alone. In order, for each record:
+
+1. Broadband stations (`HH` and `BH`) within 400 km; instrument response
+   deconvolved; horizontals rotated to the **transverse** component to isolate
+   SgH.
+2. Pg and Sg velocities of 5.9 and 3.3 km/s predict the arrivals; a **20 s
+   window** starts at **80% of the predicted Pg-Sg interval**, the 20% margin
+   being deliberate slack for pick uncertainty.
+3. Transform: **zero-pad to 2^N**, de-mean, **five 3-pi prolate tapers**
+   (Lees and Park, 1995), FFT, **multiply by the sampling period**.
+4. Noise window: record start to **75% of the interval between start and the
+   predicted Pg**; same transform; normalised by the ratio of signal and noise
+   window lengths, **excluding the zero-padding**.
+5. Fit only where spectral **SNR >= 3**, by Powell minimisation, with a common
+   source corner frequency taken from the station of smallest misfit.
+6. Event `Mw` is the mean of station estimates after rejecting beyond
+   **2.5 sigma**, and requires **at least 3 stations**.
+
+Four of those land on defaults this repository already has, which is worth
+recording because in each case the justification here was internal:
+
+- **`MultitaperEstimator` defaults to `time_bandwidth=3.0, n_tapers=5`** —
+  exactly "five 3-pi prolate tapers", `NW = 3` giving `2NW - 1 = 5`. §4.4
+  could previously only say the 3 was "the literal 3 passed positionally to
+  `mtspec`, with no way to configure it". It now has a published source, and
+  the pair is a considered choice rather than an inherited constant.
+- **"Multiply by the sampling period" is `one_sided_fas`'s `|spec| * dt`**,
+  arrived at there from the requirement that padding change only the frequency
+  sampling. Same normalisation, reached from the other end.
+- **The zero-padding exclusion agrees with that too.** The recipe is careful
+  that the signal/noise length ratio uses unpadded lengths — padding must not
+  move an amplitude. That is the same rule as `one_sided_fas`'s refusal to
+  rescale for padding, and `SnrConfig.scale_parseval`'s
+  `sqrt(len(signal)/len(noise))` is its amplitude-domain form. Worth checking
+  when the noise path is next touched that the ratio there is taken on the
+  cut lengths and not on `n_fft`.
+- **SNR >= 3 matches `SnrConfig.tolerance = 3.0`** — though *applied
+  differently*, and the difference is exactly the distinction the config
+  already draws. The thesis gates the **fit band** per spectrum: fit where the
+  ratio holds. The Magna paper gates **spectrum selection**: keep spectra
+  above 3 in three fixed bands, which is `assert_bandwidths` with `bands`.
+  Same threshold, two different jobs, and the code can express both.
+
+One divergence, and it is a knowing one. The recipe pads to `2^N` where
+`resolve_n_fft` defaults to `"fast"`, the next 5-smooth length. That is a
+speed choice measured in §4.4 — `pow2` overshoots a 65537-sample record to
+131072 where 65610 will do — and it is safe precisely because of the point
+above: with normalisation keyed to `dt`, padding changes the frequency grid
+and nothing else, so `"fast"` and `"pow2"` differ in sampling, not amplitude.
+**`n_fft="pow2"` remains available and is what reproduces the published
+workflow exactly**, which is the setting a study file should pin when
+reproduction is the goal.
+
+The remaining steps — the 20 s window at 80% of the Pg-Sg interval, the noise
+window at 75%, the 2.5-sigma station rejection and the 3-station minimum —
+are event-level aggregation this package does not do yet, and they belong with
+the `magnitude` module above rather than with the estimators. They are
+recorded here so the module has a specification to build to instead of
+inventing thresholds.
+
 ### 4.8 Configuration: semantic groups, layered overrides, recorded provenance
 
 Scientific parameters are currently scattered across three places with no
