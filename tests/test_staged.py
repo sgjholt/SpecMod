@@ -20,6 +20,12 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 from specmod.config import load_config  # noqa: E402
+from specmod.distance import (  # noqa: E402
+    Epicentral,
+    Hypocentral,
+    get_distance_measure,
+    resolve_distance_measure,
+)
 from specmod.fitting import FitSpectra  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
 from specmod.staged import (  # noqa: E402
@@ -60,8 +66,10 @@ class TestTheDefaultPath:
             stage1 = FitSpectra(spectra)
             stage1.fit_spectra()
         table = stage1.table.set_index("id")
+        # `repi`, because that is what `[windows] distance_metric` says and the
+        # weighting now reads it. It used to hardcode `rhyp`.
         weights = np.array(
-            [1.0 / float(spectra[id].signal.meta["rhyp"]) for id in table.index]
+            [1.0 / float(spectra[id].signal.meta["repi"]) for id in table.index]
         )
         by_hand = float((table["fc"].to_numpy() * weights).sum() / weights.sum())
 
@@ -91,7 +99,7 @@ class TestTheDefaultPath:
     def test_it_reads_the_configured_parameter_and_weighting(self) -> None:
         fitting = load_config().config.fitting
         assert fitting.event_parameter == "fc"
-        assert fitting.event_weighting == "inverse_hypocentral_distance"
+        assert fitting.event_weighting == "inverse_distance"
         assert fitting.include == ()
         assert fitting.exclude == ()
         assert fitting.require_pass is True
@@ -277,6 +285,7 @@ class TestWhenNobodyVotes:
 class TestWeighting:
     def test_the_registry_resolves_and_rejects_by_name(self) -> None:
         assert isinstance(get_weight_model("uniform"), Uniform)
+        assert isinstance(get_weight_model("inverse_distance"), InverseDistance)
         assert isinstance(
             get_weight_model("inverse_hypocentral_distance"), InverseDistance
         )
@@ -333,6 +342,53 @@ class TestWeighting:
         spectra = {"XX.A..HHZ": Pair(signal=Signal(meta={}))}
         with pytest.raises(ValueError, match="set_stream_distance"):
             InverseDistance().weights(None, spectra, ["XX.A..HHZ"])
+
+    def test_the_configured_distance_measure_is_what_gets_used(
+        self, pnr_windows: Any
+    ) -> None:
+        """`[windows] distance_metric` had no reader before this.
+
+        It matters at short range. Hypocentral and epicentral converge far from
+        the source and diverge near it — on these windows the nearest station
+        is 0.89 km epicentral against 2.30 km hypocentral — and since this
+        weighting is by *inverse* distance the disagreement lands hardest on
+        the station carrying the most weight.
+        """
+        spectra = _spectra(pnr_windows)
+        assert load_config().config.windows.distance_metric == "repi"
+
+        configured = fit_event(spectra).value
+        epicentral = fit_event(spectra, weighting="inverse_epicentral_distance").value
+        hypocentral = fit_event(spectra, weighting="inverse_hypocentral_distance").value
+
+        assert configured == pytest.approx(epicentral, rel=1e-12)
+        assert abs(hypocentral / epicentral - 1) > 0.05, (
+            "the two distance measures now agree; if the geometry has changed "
+            "so that this no longer matters, say so here instead"
+        )
+
+
+class TestDistanceMeasures:
+    def test_the_registry_resolves_and_rejects(self) -> None:
+        assert isinstance(get_distance_measure("repi"), Epicentral)
+        assert isinstance(get_distance_measure("rhyp"), Hypocentral)
+        with pytest.raises(ValueError, match="Unknown distance measure"):
+            get_distance_measure("nope")
+
+    @pytest.mark.parametrize("name", ["rrup", "rjb"])
+    def test_finite_fault_measures_refuse_rather_than_degenerate(
+        self, name: str
+    ) -> None:
+        """For a point source these reduce exactly to hypocentral and
+        epicentral, so a silent fallback would give plausible numbers that are
+        wrong for any event large enough to justify asking for them."""
+        with pytest.raises(NotImplementedError, match="rupture surface"):
+            get_distance_measure(name).distances(None, ["XX.A..HHZ"])
+
+    def test_resolve_takes_a_name_an_instance_or_the_configuration(self) -> None:
+        assert resolve_distance_measure("rhyp").name == "hypocentral"
+        assert resolve_distance_measure(Epicentral()).name == "epicentral"
+        assert resolve_distance_measure().name == "epicentral"  # configured
 
 
 class TestReporting:
