@@ -239,7 +239,7 @@ class FittingConfig:
     #: How stations are weighted into the event value. The published choice is
     #: inverse hypocentral distance: the nearer station has less path, so less
     #: of its falloff can be attenuation. See ``specmod.staged.WEIGHT_MODELS``.
-    event_weighting: str = "inverse_hypocentral_distance"
+    event_weighting: str = "inverse_distance"
 
     #: Which channels contribute to the event value, as shell globs matched
     #: against the trace id and each of its SEED components — so ``"AQ07"``

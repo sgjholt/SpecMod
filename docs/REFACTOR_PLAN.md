@@ -2040,13 +2040,30 @@ channel. Every exclusion is recorded with a reason naming the level it matched
 at, because "excluded" is not actionable and "matched exclude='AQ04' at
 station" is.
 
-That this matters is measured, not assumed. Under inverse hypocentral distance
-weighting the nearest two channels carry 22.8% of the weight and the nearest
-four carry 36.1%, so dropping the single nearest station moves the event
-corner from 12.751 Hz to 14.774 Hz — 16%, which is 1.56x in stress drop. The
-choice of weighting moves it too: 12.751 (inverse hypocentral), 11.585
-(inverse epicentral), 11.048 (uniform). Both are therefore registry choices
-with the published one as the default, not constants.
+That this matters is measured, not assumed. Under the configured weighting —
+inverse *epicentral* distance — the nearest two channels carry **41.4%** of the
+weight and the nearest four 52.5%, so dropping the single nearest station moves
+the event corner from 11.585 Hz to 15.602 Hz: **35%, which is 2.44x in stress
+drop**. The choice of weighting moves it too: 11.585 (epicentral), 12.751
+(hypocentral), 11.048 (uniform).
+
+**Which distance is itself configured, and `specmod.distance` is the registry
+for it.** `[windows] distance_metric` existed from the start and was read by
+nothing; it is read now. That is not bookkeeping at these ranges: the nearest
+PNR station is **0.89 km epicentral against 2.30 km hypocentral**, a factor of
+2.57, while the farthest agree to 1.00 — so the two measures disagree most
+exactly where the inverse-distance weight is largest. Epicentral is the honest
+default here because `rhyp` is built from the source depth and the station
+*elevation*, assuming every sensor sits at the surface; where sensor depths are
+unknown, as they are for this deployment, that assumption is unverifiable and
+the inventory's placeholder channel `depth` of `123456.0` is the tell.
+
+`rrup` and `rjb` are registered and **raise**. Both need a rupture surface,
+and for a point source they degenerate exactly to hypocentral and epicentral —
+so a silent fallback would produce plausible numbers that are wrong for any
+event large enough to justify asking for them. The error names what they would
+need, which puts the requirement where whoever adds finite-fault support will
+read it.
 
 **One trap, found while testing and now pinned.** `require_pass` drops a
 station whose stage-1 fit ended against a bound. `pass_fitting` asks whether
