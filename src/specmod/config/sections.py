@@ -227,6 +227,38 @@ class FittingConfig:
     t_star_min: float = 1e-4
     corner_frequency_min: float = 0.0
 
+    #: The two-stage event fit; see :mod:`specmod.staged`.
+    #:
+    #: One spectrum cannot separate the source corner from the path
+    #: attenuation — they trade off on the falling limb — so the corner is
+    #: determined by the ensemble and then held fixed while each station
+    #: refits the rest. ``event_parameter`` is what the ensemble decides.
+    #: ``"fc"`` because that is the term belonging to the source; ``"ts"`` is
+    #: the meaningful alternative for a study with an independent handle on Q.
+    event_parameter: str = "fc"
+    #: How stations are weighted into the event value. The published choice is
+    #: inverse hypocentral distance: the nearer station has less path, so less
+    #: of its falloff can be attenuation. See ``specmod.staged.WEIGHT_MODELS``.
+    event_weighting: str = "inverse_hypocentral_distance"
+
+    #: Which channels contribute to the event value, as shell globs matched
+    #: against the trace id and each of its SEED components — so ``"AQ07"``
+    #: means the station, ``"HHE"`` means the component, ``"UR"`` means the
+    #: network. Empty ``include`` means "everything not excluded".
+    #:
+    #: These exist to be edited *after* looking at a first pass. Quality
+    #: control is a judgement — a clipped record, a bad response, a pick on
+    #: the wrong phase — and a station that is confidently wrong moves the
+    #: event value for every other station. Putting the decision in the study
+    #: file is what makes it part of the record rather than something done in
+    #: a notebook and forgotten.
+    include: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    #: Drop a station whose stage-1 fit ended with a parameter pinned against
+    #: one of its bounds. The value reported there is the bound rather than a
+    #: measurement, so averaging it in is averaging in a constant.
+    require_pass: bool = True
+
 
 @dataclass(frozen=True, slots=True)
 class VizConfig:

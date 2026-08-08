@@ -250,7 +250,7 @@ regenerated with the 1.0 code, or the discrepancy understood.
 ```
 src/specmod/
   __init__.py              # public API + __version__
-  config/                  # one module per semantic group (§4.7)
+  config/                  # one module per semantic group (§4.8)
     layers.py              # defaults -> specmod.toml -> *.local.toml -> env -> kwargs
     provenance.py          # resolved config + hash + version, stamped into outputs
   core/
@@ -951,7 +951,7 @@ queryable with DuckDB or polars **without loading it** — which matters at
 11,226 rows and matters more at catalogue scale. CSV stays as an *export*, since
 journal supplements want it.
 
-**Provenance → both.** The §4.7 record goes into HDF5 attributes *and* a JSON
+**Provenance → both.** The §4.8 record goes into HDF5 attributes *and* a JSON
 sidecar, because the sidecar is greppable and diffable without opening the
 container.
 
@@ -983,7 +983,7 @@ name time-dependent power spectral densities as an auxiliary-data use case.
 It is still the wrong **primary**, for two reasons. ASDF is waveform-centric —
 derived spectra live in the loose `auxiliary_data` bucket, so we would be
 fitting our data to a schema built for something else. And SEIS-PROV models
-*processing* provenance, not the *configuration* provenance of §4.7, so it does
+*processing* provenance, not the *configuration* provenance of §4.8, so it does
 not remove the need for our own record.
 
 So: HDF5 with our own schema as primary, and `specmod export --format asdf`
@@ -1121,7 +1121,239 @@ preserved — a CSV column carrying one `None` comes back as object-dtype
 strings, so `pass_fitting` stops being boolean and a downstream `.sum()`
 counts the wrong thing.
 
-### 4.7 Configuration: semantic groups, layered overrides, recorded provenance
+### 4.7 Components, phases, and what the source model assumes about them
+
+**Not built. This is the largest remaining gap between what the code does and
+what the published method does**, and unlike everything else in §4 it is not a
+refactor — it is missing capability.
+
+#### What is there now
+
+`preprocess.set_stream_distance` computes and stores `azimuth` and
+`back_azimuth` on every trace. Nothing reads either. That is the same shape as
+the resolution floor before it was fixed: a value tracked from the start with
+no reader, and it is the value component rotation needs.
+
+Everything downstream treats each channel as an independent measurement. On
+the PNR event that gives **28 "channels" for 14 stations**, with `HHE` and
+`HHN` entering the fit, the flat file and now the event ensemble as if they
+were separate observations. They are not; they are two components of one
+horizontal motion.
+
+That has a concrete consequence for §5.2.5's two-stage fit, which is built and
+merged. Its ensemble weighting reports that "the nearest two channels carry
+22.8% of the weight" — those two channels are one station's two components, so
+each station is being counted twice, and a station whose components disagree
+contributes that disagreement as if it were between-station scatter. The
+weighting is doing what it says; what it is averaging over is wrong.
+
+#### Combining the horizontals
+
+The source model is fitted with an average radiation-pattern coefficient, so
+what it expects to be given is the **full horizontal S-wave amplitude**, not
+one arbitrary component of it. Fitting `HHE` alone underestimates it by an
+azimuth-dependent factor, and fitting both independently produces two
+different `Omega` for one station.
+
+The published work combines the two as a geometric mean, `sqrt(A_E * A_N)`,
+which is worth noting is *exactly the operation the binner already performs*
+in frequency — a bin holds the geometric mean of `log10(amp)` — so the same
+convention would apply in two places and should be named once.
+
+One honest caveat to record now rather than discover later: the geometric mean
+of two horizontals is **not** rotation-invariant. It depends on how the
+instrument happened to be oriented, which is why ground-motion work moved to
+rotation-invariant measures such as RotD50. Whether that matters at the
+precision SpecMod reports is a question for measurement, not assertion, and
+the answer belongs beside the implementation.
+
+#### Rotating to transverse
+
+The alternative, and the other thing to demonstrate: rotate `N`/`E` to
+radial/transverse using the stored back-azimuth, and take the S-wave on the
+**transverse** component, where the SH energy is.
+
+These two are not the same choice and should not be presented as
+interchangeable. The transverse component isolates SH; the geometric mean
+recovers total horizontal motion. Which one is right depends on which
+radiation-pattern coefficient the source model was given, and that coupling is
+the thing to make explicit — it is currently implicit in a constant.
+
+#### P-wave source parameters
+
+Also used in the published work, and needing a **different set of assumptions**
+rather than the same model pointed at a different window. At minimum, and each
+of these is currently either absent or a hardcoded S-wave value:
+
+| | S | P |
+|---|---|---|
+| phase velocity in `M0 = 4*pi*rho*c^3*R*Omega / (R_c * F)` | `beta` | `alpha` |
+| average radiation pattern `R_c` | ~0.63 | ~0.52 |
+| corner frequency to source radius | `k_S` | `k_P` |
+| component the measurement is read on | transverse / horizontal | vertical, or L after LQT |
+
+`(alpha/beta)^3` is about 5.2 for a Poisson solid, so using the S velocity on
+a P measurement is not a small error — it is a factor of five in seismic
+moment, which is more than a magnitude unit.
+
+**The constants above are the standard textbook values and are written here to
+show the shape of the problem, not to be adopted.** The Magna work pins
+`F = 2` and `Theta-lambda-Phi = 0.55` (§5.2.5), and this project's own
+published choices are what the implementation should take — read off the
+papers, recorded in `studies/*.toml`, and never defaulted silently.
+
+**On whether the difference from the textbook 0.63 is a unit conversion.** It
+cannot be, at least not in that coefficient: the radiation pattern term is
+dimensionless, and a change of units cannot move a dimensionless number.
+0.63 is the RMS average of the S-wave radiation pattern over the focal sphere
+and other averages of it are also in the literature, so the likelier
+explanation is which average was taken — but that is a question for the paper,
+not for this document to settle.
+
+Units are a real hazard here all the same, just in the other terms, and the
+exposure is far larger than a factor of 0.87:
+
+| term | metric | CGS | factor |
+|---|---|---|---|
+| density | kg/m^3 | g/cm^3 | 10^3 |
+| velocity, **cubed** in the moment formula | m/s | km/s | 10^9 |
+| distance | m | km | 10^3 |
+| the moment itself | N m | dyne cm | 10^7 |
+
+`r_0 = 1000 m` sitting among the recorded parameters is exactly the shape of a
+constant that bridges kilometres and metres, which is worth checking rather
+than assuming either way.
+
+There is a cheap arithmetic check that settles it without reading any code.
+`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw 1.6**
+used throughout this repository should come out near **3e11 N m** — or 3e18 if
+the pipeline is working in dyne-centimetres. Anything else is a unit error,
+and a factor of 10^9 from a kilometre-per-second velocity is not subtle.
+
+The general point is that this is ambiguous *now* because the constants live
+as bare floats in prose with no units attached — which is the same failure
+this document keeps finding, applied to the number the package exists to
+produce. §4.2 gave `Motion` and `AmplitudeKind` to spectra so a conversion
+could not be applied twice or in the wrong direction. The moment calculation
+needs the same discipline: units on the inputs, a declared output unit, and a
+test asserting the Mw of a known event. Then the question answers itself
+instead of being reasoned about.
+
+#### Station and channel identity should be a type, following FDSN/SEED
+
+Everything above is hard to say clearly because the code has no notion of a
+station. A trace id is a string, and every question about it is asked by
+splitting on dots at the point of use. That is already happening in three
+places, all written independently in the last week:
+
+- `staged._levels` splits `NET.STA.LOC.CHA` to let a selection pattern match
+  at the station or channel level,
+- the tutorial does `ids[order[0]].split(".")[1]` to name a station,
+- `preprocess.set_picks_from_pyrocko` does
+  `".".join([tr.stats.network, tr.stats.station])` to build a lookup key.
+
+Three spellings of one idea, none of which can be given a type. And the bug in
+§4.7's opening — components counted as independent stations — is invisible
+precisely because nothing distinguishes "a channel" from "a station": both are
+`str`, so summing over channels when you meant stations type-checks perfectly.
+
+**The conventions already exist and should be followed rather than invented.**
+FDSN/SEED defines the hierarchy and the semantics of every field, and each
+level carries things SpecMod currently either ignores or re-derives:
+
+| Level | Code | Carries |
+|---|---|---|
+| Network | 1–2 chars, FDSN-assigned | operator, and an epoch — temporary network codes are reused, so network alone is not unique in time |
+| Station | ≤5 chars | the **site**: latitude, longitude, elevation, and its own epochs |
+| Location | 2 chars | which co-located sensor package — surface against borehole, or two instruments at one site |
+| Channel | 3 chars | band, instrument, orientation — plus azimuth, dip, sample rate, sensor depth and **the response**, per epoch |
+
+Four points where that structure matters and the current code does not have it.
+
+**The channel code is three separate fields.** Band (`H` = high broadband,
+`B` = broadband, `E`/`S` = short period, `L` = long period), instrument
+(`H` = high-gain seismometer, `N` = accelerometer, `L` = low-gain), and
+orientation. Matching `"HHE"` as an opaque string, which
+`staged.ChannelSelection` currently does, cannot express "every high-gain
+seismometer regardless of band" or "every accelerometer", both of which are
+ordinary requests.
+
+**`N`/`E` versus `1`/`2` is a correctness trap, not a spelling.** The FDSN
+convention is that `1`/`2` are used precisely when the horizontals are *not*
+aligned to north and east. So code that globs for `HHE`/`HHN` — which this
+repository's own tutorial does when reading waveforms — silently finds nothing
+on such a network, and code that rotates to radial/transverse by assuming
+`N` is 0° is simply wrong there. Rotation needs the channel's own azimuth and
+dip from the inventory.
+
+Worth noting what that means for §4.7's rotation work on the committed data:
+**the PNR inventory has `azimuth=None` and `dip=None` on every channel.** The
+orientation is not recorded, so rotating this dataset means assuming
+`HHN` = 0° and `HHE` = 90° — defensible for channels named `N`/`E`, but an
+assumption the code should state rather than bury. Two other things that same
+check turned up, both worth fixing whenever the inventory is next touched:
+`depth` is `123456.0`, a placeholder rather than a measurement, and the
+inventory mixes location codes `''` and `'00'` — which under SEED are
+*different* locations, not synonyms.
+
+**Response and coordinates are epoch-scoped.** An instrument swap creates a
+new channel epoch with a different response, and the correct one depends on
+the time of the record being corrected. `Inventory.get_response(seed_id,
+datetime)` takes the time for that reason. Any station type SpecMod grows has
+to keep the epoch rather than flattening to "the response", or it will
+silently apply the wrong one across a swap.
+
+**`azimuth` already means two different things.** `preprocess` writes
+`tr.stats["azimuth"]` and `tr.stats["back_azimuth"]` as the *source-receiver*
+geometry. `Channel.azimuth` in StationXML is the *component orientation*.
+These are unrelated quantities one letter apart in the same namespace, and
+rotation needs both at once — which is the moment the collision becomes a bug
+rather than a confusion.
+
+**What ObsPy gives and does not.** `Inventory`/`Network`/`Station`/`Channel`
+model the hierarchy well and `get_channel_metadata` resolves an epoch, so the
+metadata side is largely solved and should be used rather than reimplemented.
+What is missing is on the *identifier*: `Trace.id` builds the string,
+`Stream.select` filters with wildcards, and that is all. There is no value
+type, no equality at the station level, no grouping by station, and no
+structured access to the band/instrument/orientation split. Which is why every
+project writes `split(".")` again, including this one, three times.
+
+So the piece to add is small and specific, in the spirit of the
+`Motion`/`AmplitudeKind` enums of §4.2:
+
+- `ChannelId`, parsed once from a trace id, exposing `network`, `station`,
+  `location`, `band`, `instrument`, `orientation`, and a `station_id` that
+  compares equal across an instrument's components. Hashable, and printing
+  back to the SEED string unchanged so it can be a dict key and a table value.
+- Grouping a set of channels by station, which horizontal combination and the
+  two-stage ensemble both need and both currently lack.
+- Matching as a method on the type, so `staged._levels` becomes one
+  implementation rather than the first of several.
+- The FDSN Source Identifier spelling
+  (`FDSN:NET_STA_LOC_BAND_SOURCE_SUBSOURCE`) is where the standard is going
+  and separates those fields explicitly; worth parsing to, even while the
+  dotted SEED form stays what is printed.
+
+This is a prerequisite for §4.7 rather than a parallel nicety: "combine the
+horizontals of each station" cannot be written honestly until "the horizontals
+of each station" is something the code can express, and "rotate to transverse"
+cannot be written correctly until the code can ask a channel which way it
+points.
+
+#### Suggested shape
+
+- `preprocess.rotate_to_rt(st)` reading the stored back-azimuth, and a
+  horizontal-combination step producing one spectrum per station.
+- `phase` as a first-class attribute alongside `motion` and `kind`, so a
+  spectrum knows whether it is P or S and the model can refuse a mismatch —
+  the same enum discipline §4.2 applied to units, applied to phases.
+- Phase-dependent constants in `[model]`, with the study file supplying them.
+- The tutorial demonstrating both horizontal treatments on the same event, in
+  the way it now demonstrates both minimisers: showing that the choice moves
+  the answer is what stops it being invisible.
+
+### 4.8 Configuration: semantic groups, layered overrides, recorded provenance
 
 Scientific parameters are currently scattered across three places with no
 coherent story: a `config.py` of three flat dicts, function defaults in
@@ -1534,7 +1766,7 @@ tuned for studies after the paper, so this is drift rather than a defect — but
 is a trap for step 2 of §5.2.6, because running the current code with stock
 settings will **not** reproduce the paper.
 
-The fix is §4.7: keep the current values as defaults, and pin the published run
+The fix is §4.8: keep the current values as defaults, and pin the published run
 in `studies/magna_2020_paper.toml`. Each later study gets its own file alongside
 it, so "which settings produced this" stops being a question anyone has to
 reconstruct.
@@ -1604,7 +1836,7 @@ SpecMod computes.
 
 The two-stage fit is, separately, a good candidate for the new API: it is the
 workflow the science actually uses, and it currently has to be rebuilt by hand
-by every user.
+by every user. **Built** — `specmod.staged.fit_event`; see below.
 
 The tutorial now does exactly that rebuilding-by-hand, deliberately, because it
 is the clearest available demonstration of *why* the second stage exists. On
@@ -1623,6 +1855,43 @@ problem is well conditioned once the corner is pinned, which is the premise the
 second stage rests on. Fifteen lines of notebook is the right amount of code
 for that to cost, and it is the argument for putting those fifteen lines behind
 an API rather than leaving each user to write them again.
+
+#### 5.2.5b The two-stage fit, as built
+
+`specmod.staged.fit_event(spectra)` is the published workflow with every
+argument defaulted from `[fitting]`. It reproduces the by-hand weighted mean
+exactly, and both stages are returned rather than only the second — the
+stage-1 spread is the evidence for how well constrained the event value is,
+and returning one number without it would be reporting a measurement with no
+error on it.
+
+**Selection is the part that could not be defaulted away.** Quality control is
+a judgement, and a station that is confidently wrong — bad response, clipped
+record, pick on the wrong phase — moves the event value for every other
+station. `ChannelSelection` reads `include`/`exclude` globs from the study
+file and matches them at whichever level they are written: `"AQ04"` is the
+station, `"HHE"` the component, `"UR"` the network, `"UR.AQ04.00.HHE"` the one
+channel. Every exclusion is recorded with a reason naming the level it matched
+at, because "excluded" is not actionable and "matched exclude='AQ04' at
+station" is.
+
+That this matters is measured, not assumed. Under inverse hypocentral distance
+weighting the nearest two channels carry 22.8% of the weight and the nearest
+four carry 36.1%, so dropping the single nearest station moves the event
+corner from 12.751 Hz to 14.774 Hz — 16%, which is 1.56x in stress drop. The
+choice of weighting moves it too: 12.751 (inverse hypocentral), 11.585
+(inverse epicentral), 11.048 (uniform). Both are therefore registry choices
+with the published one as the default, not constants.
+
+**One trap, found while testing and now pinned.** `require_pass` drops a
+station whose stage-1 fit ended against a bound. `pass_fitting` asks whether
+`value +/- stderr` reaches one — and Powell, the shipped minimiser, estimates
+no covariance matrix, so the spread is zero and the test almost never fires.
+It drops **0** stations under Powell and **6** under `leastsq`. Changing the
+minimiser therefore changes *which stations vote*, not just how each is
+fitted, and the naive cross-minimiser comparison gives 144% where the
+like-for-like one gives 0.6%. The flag is doing the right thing when it fires;
+the asymmetry is what needed writing down.
 
 #### 5.2.6 The three-way comparison
 
@@ -1958,6 +2227,31 @@ existing only in the config file.
 - `intersphinx` to numpy, scipy, obspy, lmfit, matplotlib.
 - `sphinx.ext.doctest` — the units/normalisation examples in §4.2 and §4.4 are
   exactly the kind of thing that should be executable in the docs.
+**The equations in `docs/` do not render today, and building this is the fix.**
+`processing.md` and `choosing_a_transform.md` are written in LaTeX with
+`$...$` and `$$...$$`, which is what MyST's `dollarmath` extension reads — and
+that extension does not exist yet, because neither does the Sphinx build. The
+only renderer these files currently meet is GitHub's, whose math support is
+both newer and weaker, so the equations that state the Parseval contract and
+the window refinement are being read as literal dollar signs and backslashes.
+
+Two things to do when this section is built rather than before, since neither
+is verifiable without a renderer to check against:
+
+- Turn on `myst_enable_extensions = ["dollarmath", "amsmath"]`. Without
+  `dollarmath` MyST does not read `$...$` at all, so adding Sphinx without it
+  would change nothing.
+- Fix the syntax that is wrong independently of the renderer. A scan finds one
+  display block in `processing.md` without a blank line before it and one
+  spanning multiple lines, both of which break under MyST as well as GitHub.
+  The 26 inline expressions containing underscores are the other risk: on
+  GitHub the emphasis parser can reach them before the math parser does.
+
+Worth stating the general point, because it is the same shape as §6.6. Prose
+that has never been rendered is prose that has never been checked. These files
+have been edited a dozen times in this refactor against a renderer nobody has
+run.
+
 - `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference fails
   the build. **Not** an undocumented public symbol, which is what this line
   used to claim — `-W` promotes warnings that Sphinx already emits, and
@@ -2205,7 +2499,7 @@ Each phase ends green on CI and is independently mergeable.
 |---|---|---|---|
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
-| **2. De-globalise** | `config/` package per §4.7 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
+| **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
@@ -2255,7 +2549,7 @@ end-to-end proves the pipeline while the stakes are zero.
   export (§4.6).
 - **Configuration** — semantic groups, layered overrides with local files
   gitignored by default, resolved config and version stamped into every output
-  (§4.7). Current behaviour stays the default.
+  (§4.8). Current behaviour stays the default.
 - **Tooling** — ruff for lint and format, mypy staged to strict, Sphinx for docs,
   automated versioning and publishing for both docs and package (§6).
 - **Branch layout** — `master` frozen as the pre-refactor record, `main` as the new trunk (§6.7). One of the three
