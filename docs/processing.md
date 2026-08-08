@@ -6,7 +6,7 @@ each one applies and a pointer to the code that applies it.
 This exists because a pipeline described only in prose is a pipeline nobody
 can check. Writing the noise rotation down as an equation rather than a loop
 is what revealed that it was solving for a quantity it could compute directly —
-and that the search it used instead was both biased and irreproducible
+and that the search it used instead was both biased and not reproducible
 ([§6](#6-noise-rescaling-and-rotation)). The rest of this document is the same exercise
 applied to every other stage.
 
@@ -20,7 +20,7 @@ $X(f)$.
 ## Pipeline at a glance
 
 | # | Stage | Code |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Instrument correction and detrending | `preprocess` |
 | 2 | Window selection and refinement | `preprocess.cut_s`, `signal_intensity` |
 | 3 | Spectral estimation | `transforms/` |
@@ -79,6 +79,8 @@ The resulting resolution difference is what
 spectra share a frequency axis. `tests/test_preprocess.py` pins this so that a
 change which quietly started delivering full-length noise windows would move
 every noise spectrum in the reference visibly rather than silently.
+
+<a id="3-spectral-estimation"></a>
 
 ## 3. Spectral estimation
 
@@ -159,7 +161,7 @@ the CWT's usable band opens higher than multitaper's on the same record.
 Two conventions are in play and the factor between them is exactly 2.
 
 | Kind | Definition | Energy relation |
-|---|---|---|
+| --- | --- | --- |
 | `FAS` | $2\lvert X(f)\rvert$, folded | $E = \int A^2/2 \,\mathrm{d}f$ |
 | `MAGNITUDE` | $\lvert X(f)\rvert = \lvert\mathrm{rfft}(x)\rvert\,\Delta t$, unfolded | $E = 2\int \lvert X\rvert^2\,\mathrm{d}f$ |
 

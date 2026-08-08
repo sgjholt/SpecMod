@@ -100,9 +100,14 @@ def pytest_configure(config: pytest.Config) -> None:
 
 #: The Preston New Road event the tutorial is built around.
 _ROOT = Path(__file__).resolve().parent.parent
-_DATA = _ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
-_INVENTORY = _ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml"
-_ORIGIN = "2019-08-26T07:49:24.2"
+
+_ORIGIN = "2019-08-26T07:49:24.200000Z"
+_DATA = _ROOT / "tutorial" / "data" / "events" / _ORIGIN
+_INVENTORY = (
+    _ROOT / "tutorial" / "data" / "events" / _ORIGIN / "stations" / "inventory.xml"
+)
+_WAVEFORMS = _DATA / "waveforms"
+_PICKS = _DATA / "picks"
 _LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
 
 
@@ -131,7 +136,7 @@ def pnr_stream():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(_INVENTORY))
-        stream = obspy.read(os.path.join(str(_DATA), "*HH[EN]*"))
+        stream = obspy.read(os.path.join(str(_WAVEFORMS), "*HH[EN]*"))
         pre.set_stream_distance(
             stream,
             _LATITUDE,
@@ -142,7 +147,7 @@ def pnr_stream():
             dtype="mseed",
         )
         pre.set_picks_from_pyrocko(
-            stream, glob.glob(os.path.join(str(_DATA), "*.picks"))[0]
+            stream, glob.glob(os.path.join(str(_PICKS), "*.picks"))[0]
         )
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")

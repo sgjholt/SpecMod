@@ -72,16 +72,24 @@ obspy = pytest.importorskip("obspy")
 import specmod.preprocess as pre  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
-INVENTORY = ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml"
-REFERENCE = ROOT / "tests" / "golden" / "pipeline_reference.json"
+# TODO: Pin these to the conftest.py variables, rather than duplicating them here.
 
-ORIGIN = "2019-08-26T07:49:24.2"
-LATITUDE, LONGITUDE, DEPTH_KM = 53.784, -2.967, 2.1
+_ROOT = Path(__file__).resolve().parent.parent
+
+_REFERENCE = _ROOT / "tests" / "golden" / "pipeline_reference.json"
+
+
+_ORIGIN = "2019-08-26T07:49:24.200000Z"
+_DATA = _ROOT / "tutorial" / "data" / "events" / _ORIGIN
+_INVENTORY = (
+    _ROOT / "tutorial" / "data" / "events" / _ORIGIN / "stations" / "inventory.xml"
+)
+_WAVEFORMS = _DATA / "waveforms"
+_PICKS = _DATA / "picks"
+_LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
 
 pytestmark = pytest.mark.skipif(
-    not DATA.is_dir() or not INVENTORY.is_file() or not REFERENCE.is_file(),
+    not _DATA.is_dir() or not _INVENTORY.is_file() or not _REFERENCE.is_file(),
     reason="tutorial waveforms or the golden reference are not present",
 )
 
@@ -132,7 +140,7 @@ def _summary(a: np.ndarray) -> dict[str, Any]:
     return {
         "n": int(a.size),
         "median": float(np.median(a)),
-        "max": float(a.max()),
+        "max": float(np.max(a)),
         "sum": float(a.sum()),
         "quantiles": [float(q) for q in np.quantile(a, QUANTILES)],
     }
@@ -163,19 +171,19 @@ def _compare(
 def _build_windows() -> tuple[Any, Any]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        inventory = obspy.read_inventory(str(INVENTORY))
-        stream = obspy.read(os.path.join(str(DATA), "*HH[EN]*"))
+        inventory = obspy.read_inventory(str(_INVENTORY))
+        stream = obspy.read(os.path.join(str(_WAVEFORMS), "*HH[EN]*"))
         pre.set_stream_distance(
             stream,
-            LATITUDE,
-            LONGITUDE,
-            DEPTH_KM,
-            obspy.UTCDateTime(ORIGIN),
+            _LATITUDE,
+            _LONGITUDE,
+            _DEPTH_KM,
+            obspy.UTCDateTime(_ORIGIN),
             inventory=inventory,
             dtype="mseed",
         )
         pre.set_picks_from_pyrocko(
-            stream, glob.glob(os.path.join(str(DATA), "*.picks"))[0]
+            stream, glob.glob(os.path.join(str(_PICKS), "*.picks"))[0]
         )
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
@@ -195,7 +203,7 @@ def _build_windows() -> tuple[Any, Any]:
 
 @functools.cache
 def _reference() -> dict[str, Any]:
-    return json.loads(REFERENCE.read_text())
+    return json.loads(_REFERENCE.read_text())
 
 
 @functools.cache

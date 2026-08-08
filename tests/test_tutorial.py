@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-NOTEBOOK = Path(__file__).resolve().parent.parent / "Tutorial" / "SpecModTutorial.ipynb"
+NOTEBOOK = Path(__file__).resolve().parent.parent / "tutorial" / "SpecModTutorial.ipynb"
 
 
 def _code() -> str:
