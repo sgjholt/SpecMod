@@ -1370,39 +1370,70 @@ kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 applied twice; `1/r` lands within reach of the constants. **The exponent is
 settled by this; the absolute calibration is not.**
 
-**And the unit of `R` cannot be settled by argument, which is the useful
-lesson.** With `rho` in kg/m^3, `c` in m/s and `Omega` in m s, dimensional
-consistency forces `R` into **metres** — `kg/m^3 * m^3/s^3 * m * m s` is
-`kg m^2 s^-2`, newton-metres. But most of the classic literature writes the
-same formula in CGS-lineage units, `rho` in g/cm^3, `c` in km/s, `R` in **km**
-and `Omega` in cm s, giving dyne-centimetres. Both are right; they are
-different formulations, and "R is in km" is a statement about which one is in
-use rather than about the physics.
+**The constants and the units are settled — from Holt (2019), the author's
+doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
+Edwards et al. (2010) spectral method this package implements. Read directly
+rather than inferred:
 
-That matters because the two differ by 10^3 in `R` alone — two magnitude units
-— and mixing them is the single easiest way to be quietly wrong. Measured, with
-the same fits:
+| symbol | value | what it is |
+|---|---|---|
+| `rho` | 2600 kg/m^3 (Utah); 2800 generic | density **at the source** |
+| `beta` | 3500 m/s generic | S velocity **at the source** |
+| `R_0` | **1000 m** | *reference source distance* — the distance at which the source spectrum is defined |
+| `F` | 2 | free surface, for **vertically incident SH** |
+| `Theta-lambda-Phi` | **0.55** | average radiation pattern **of SH propagation** over the focal sphere (Boatwright, 1978) |
+| partition factor | (Boore, 2003) | splits energy between vertical and horizontal ground motion |
 
-| rho kg/m^3 | beta m/s | R in | median M0 (N m) | median Mw |
-|---|---|---|---|---|
-| 2500 | 2500 | m | 1.67e13 | +2.75 |
-| 2500 | 2500 | km | 1.67e10 | +0.75 |
-| 2500 | 1600 | m | 4.37e12 | +2.36 |
-| 2700 | 3500 | km | 4.94e10 | +1.06 |
+Two things this corrects in earlier drafts of this section.
 
-The catalogue Mw 1.6 sits *between* the metre and kilometre answers, so the
-unit choice alone does not reconcile it and neither does any single constant:
-landing on 1.6 with `R` in metres and `rho = 2500` would need
-`beta = 667` m/s, which is not a shale S velocity. Something else is also
-off — the likeliest candidates being that `Omega` here is one horizontal
-component rather than the combined horizontal (§4.7), and that the round
-numbers for the medium are not this event's.
+**`0.55` is not a different average of the same quantity — it is a different
+quantity.** It is the **SH** radiation pattern, which pairs with `F = 2` for
+vertically incident SH. The textbook 0.63 is the RMS over total S. So the
+coefficient is not "not the textbook value", it is the right value for the
+phase and component actually being measured — and that couples straight back
+to the rotation question above: a formulation using the SH radiation pattern
+wants the transverse component, not an arbitrary horizontal.
 
-So the calibration is the deliverable, not the derivation. Pin the study's own
-`rho` and `c`, state the unit of every input, and assert the Mw of a known
-event in a test. Two people can both be certain about the unit of `R` and both
-be right about different formulations; only the calibration tells you which
-one the code is in.
+**`R_0 = 1000 m` is a reference distance, not a unit bridge.** An earlier
+draft of this document guessed it might be bridging kilometres and metres. It
+is not; it is where the source spectrum is defined, and the spreading model
+carries the observation from there to the site.
+
+**And that is why both answers about the unit of `R` are right.** There are two
+distances. `R_0` in the moment expression is in **metres**, alongside `rho` in
+kg/m^3 and `beta` in m/s, giving `M0` in newton-metres. The *geometric
+spreading* model `S(R)` is a separate term in Eq. 1.14, and its `R` is in
+**kilometres** — the thesis tabulates it piecewise that way, e.g. Holt et al.
+[O] for Utah:
+
+    0.88 +/- 0.02    1 < R <= 40 km
+    2.93 +/- 0.28   40 < R <= 63 km
+    0.50 +/- 0.33   63 < R <= 100 km
+    1.36 +/- 0.07  100 < R <= 400 km
+
+Worth noting the first segment independently supports the exponent argument
+above: the inverted near-field decay is **0.88**, close to the theoretical
+body-wave 1, and nowhere near 2.
+
+It also shows the spreading is not a single power law but a piecewise
+empirical function, inverted per region. So `S(R)` should be a registered
+model in its own right — theoretical `1/R` as the default a study can start
+from, with region-specific piecewise tables as the thing an operator supplies,
+in the same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
+
+The calibration is still the deliverable rather than the derivation. Pin the
+study's own `rho` and `c`, state the unit of every input, and assert the Mw of
+a known event in a test. This section is the case for it: two people can each
+be certain about "the unit of R" and both be right, because there are two
+different `R`s in the same workflow, and only a test that runs the numbers
+end to end distinguishes them.
+
+*Sourced from Holt (2019), "Addressing Uncertainty in Earthquake Magnitudes
+Commonly Used in Modern Seismic Hazard Assessment", University of Liverpool —
+Ch. 1 §1.4 and Ch. 2 Eq. 2.7-2.8 and Table 2.1. The equations themselves are
+embedded objects that do not survive text extraction, so the symbols above are
+read from the surrounding prose; the equation images should be checked against
+this table before any of it is implemented.*
 
 Two other things that must be true before the number means anything, both
 from §4.7 above: `Omega` should be the combined horizontal rather than one
