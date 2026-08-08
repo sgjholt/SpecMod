@@ -92,6 +92,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import numpy as np
 
 from .config import load_config
+from .distance import DistanceMeasure, resolve_distance_measure
 from .fitting import FitSpectra
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -134,35 +135,24 @@ class InverseDistance:
     modelling choice rather than a derivation, which is why this is a registry
     and not a hardcoded expression.
 
-    ``metric`` names a trace stat — ``rhyp`` for hypocentral, ``repi`` for
-    epicentral. A station missing it is a hard error rather than a silent
-    weight of zero: a geometry that was never set is a broken run, not a
-    station that should quietly stop contributing.
+    **Which distance is itself a choice**, and at short range not a small one:
+    see :mod:`specmod.distance`. ``measure=None`` takes the project-wide
+    setting, so a study that has decided on epicentral does not have to say so
+    again here.
     """
 
-    metric: str = "rhyp"
+    #: ``None`` means "whatever the configuration says". Distance is needed by
+    #: geometric spreading as well as by weighting, so the choice belongs in
+    #: one place rather than being restated per consumer.
+    measure: str | DistanceMeasure | None = None
     name: str = "inverse_distance"
 
     def weights(
         self, table: Any, spectra: Any, ids: Sequence[str]
     ) -> NDArray[np.float64]:
-        out = np.empty(len(ids), dtype=np.float64)
-        for i, id in enumerate(ids):
-            meta = spectra[id].signal.meta
-            if self.metric not in meta:
-                raise ValueError(
-                    f"{id} has no {self.metric!r}, so it cannot be weighted by "
-                    f"distance. Set the geometry with "
-                    f"specmod.preprocess.set_stream_distance, or choose a "
-                    f"weighting that does not need it."
-                )
-            distance = float(meta[self.metric])
-            if distance <= 0:
-                raise ValueError(
-                    f"{id} has {self.metric}={distance}, which is not a distance"
-                )
-            out[i] = 1.0 / distance
-        return out
+        distances = resolve_distance_measure(self.measure).distances(spectra, ids)
+        weights: NDArray[np.float64] = 1.0 / distances
+        return weights
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,8 +206,13 @@ class InverseVariance:
 
 #: Registered weightings, resolved by name from ``[fitting] event_weighting``.
 WEIGHT_MODELS: dict[str, Any] = {
-    "inverse_hypocentral_distance": lambda: InverseDistance(metric="rhyp"),
-    "inverse_epicentral_distance": lambda: InverseDistance(metric="repi"),
+    # Follows the configured distance measure, so a project-wide choice is
+    # honoured in one place. The shipped default.
+    "inverse_distance": InverseDistance,
+    # And explicit spellings, for a study that wants to say which it used
+    # regardless of what the rest of the configuration says.
+    "inverse_hypocentral_distance": lambda: InverseDistance(measure="rhyp"),
+    "inverse_epicentral_distance": lambda: InverseDistance(measure="repi"),
     "uniform": Uniform,
     "inverse_variance": InverseVariance,
 }

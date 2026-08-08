@@ -47,7 +47,6 @@ remove_response = false
 # Group velocities from Pechmann et al. (2007).
 p_velocity = 5.9
 s_velocity = 3.4
-distance_metric = "rhyp"
 # 20 s window opening at 80% of the elapsed Pg-Sg time, on the transverse.
 s_start_ratio = 0.8
 s_length = 20.0
@@ -129,3 +128,9 @@ motion = "velocity"
 [fitting]
 # "We use Powell's minimization technique (Powell, 1964; Press et al., 1997)."
 method = "powell"
+
+[geometry]
+# The published run used hypocentral distance. Kept as it was: this is the
+# record of what was done, not a recommendation. `repi` is the shipped default
+# because it does not assume sensor depths that are often unknown.
+distance_measure = "rhyp"

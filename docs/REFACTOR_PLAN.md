@@ -1341,6 +1341,245 @@ of each station" is something the code can express, and "rotate to transverse"
 cannot be written correctly until the code can ask a channel which way it
 points.
 
+#### A basic Mw, and the spreading exponent
+
+Worth building, and nearly free once the constants have units: everything it
+needs is already produced. `llpsp` from the fit is `log10(Omega)` on
+**displacement** — `sources.motion_scaling` converts the displacement model to
+whatever motion was recorded, so the fitted plateau is `Omega` directly rather
+than a velocity plateau needing correction — and `rhyp` is on every trace.
+
+    M0 = 4 * pi * rho * c**3 * r**n * Omega / (R_c * F)
+    Mw = (2/3) * (log10(M0) - 9.1)
+
+**The exponent `n` is 1, not 2, and this is worth stating because it is easy
+to say the other one.** Body-wave *amplitude* from a point source decays as
+`1/r` in a homogeneous whole space; `1/r**2` is how *energy* decays. The
+moment formula corrects an amplitude, so it multiplies by `r`.
+
+Measured on the 28 PNR windows through the two-stage fit, with `rho = 2500`
+kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
+
+| spreading | median M0 | median Mw |
+|---|---|---|
+| `1/r` | 1.67e13 N m | **+2.75** |
+| `1/r**2` | 1.55e17 N m | **+5.39** |
+| catalogue Mw 1.6 | 3.16e11 N m | +1.60 |
+
+`1/r**2` is nearly four magnitude units out, which is the distance term
+applied twice; `1/r` lands within reach of the constants. **The exponent is
+settled by this; the absolute calibration is not.**
+
+**The constants and the units are settled — from Holt (2019), the author's
+doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
+Edwards et al. (2010) spectral method this package implements. Read directly
+rather than inferred:
+
+| symbol | value | what it is | stated in |
+|---|---|---|---|
+| `rho` | 2600 kg/m^3 (Utah); 2800 generic | density **at the source** | Ch. 2 §2.2; Ch. 1 §1.4 |
+| `beta` | 3500 m/s generic; 3520 m/s for the Utah normalisation | S velocity **at the source** | Ch. 1 §1.4; Ch. 2 §2.3 |
+| `R_0` | **1000 m** | *reference source distance* — the distance at which the source spectrum is defined | Ch. 2 §2.2 |
+| `F` | 2 | free surface, for **vertically incident SH** | Ch. 2 §2.2; the SH qualifier is Ch. 1 §1.4 |
+| `Theta-lambda-Phi` | **0.55** | average radiation pattern **of SH propagation** over the focal sphere | Ch. 2 §2.2; Boatwright (1978) is cited in Ch. 1 §1.4 |
+| partition factor | (Boore, 2003) | splits energy between vertical and horizontal ground motion | **Ch. 1 §1.4 only — not among the constants Ch. 2 enumerates for Eq. 2.7** |
+
+Every row above was read from the chapters directly, and the last one is the
+correction. Ch. 1 describes the generic constant `C` and lists a partition
+factor among its parts; Ch. 2, defining the Utah calculation this package
+follows, enumerates the constants of Eq. 2.7 as `Omega_0`, `beta` at the
+source, `rho`, `R_0`, `F` and the radiation pattern — and **no partition
+factor**. So the implementation should not carry one by default. If a study
+wants one it is a `[model]` entry it has to set, not a constant folded into
+the formula.
+
+`beta = 3520 m/s` is worth recording alongside the generic 3500 because it is
+where the Utah numbers actually come from: Ch. 2 §2.3 normalises the observed
+plateaus to a theoretical Mw 3.5 source at `VS = 3520 m/s`, the value nearest
+3500 in the Herrmann et al. (2011) WUS model at source depth. A cube of a
+velocity is in the moment expression, so a 0.6% difference in `beta` is a 1.7%
+difference in `M0` — negligible against everything else here, and worth
+knowing is negligible rather than assuming so.
+
+Two things this corrects in earlier drafts of this section.
+
+**`0.55` is not a different average of the same quantity — it is a different
+quantity.** It is the **SH** radiation pattern, which pairs with `F = 2` for
+vertically incident SH. The textbook 0.63 is the RMS over total S. So the
+coefficient is not "not the textbook value", it is the right value for the
+phase and component actually being measured — and that couples straight back
+to the rotation question above: a formulation using the SH radiation pattern
+wants the transverse component, not an arbitrary horizontal.
+
+**`R_0 = 1000 m` is a reference distance, not a unit bridge.** An earlier
+draft of this document guessed it might be bridging kilometres and metres. It
+is not; it is where the source spectrum is defined, and the spreading model
+carries the observation from there to the site.
+
+**And that is why both answers about the unit of `R` are right.** There are two
+distances. `R_0` in the moment expression is in **metres**, alongside `rho` in
+kg/m^3 and `beta` in m/s, giving `M0` in newton-metres. The *geometric
+spreading* model `S(R)` is a separate term in Eq. 1.14, and its `R` is in
+**kilometres** — Table 2.1's caption says so outright, "R in all cells is
+hypocentral distance in kilometres", and tabulates the exponent piecewise.
+Both of the thesis's own models, read from the table:
+
+    Holt et al. [O] — original
+    0.88 +/- 0.02    1 < R <=  40 km
+    2.93 +/- 0.28   40 < R <=  63 km
+    0.50 +/- 0.33   63 < R <= 100 km
+    1.36 +/- 0.07  100 < R <= 400 km
+
+    Holt et al. [R] — refined, and the one the thesis recommends
+    0.90 +/- 0.01    1 < R <=  43 km
+    2.57 +/- 0.07   43 < R <=  76 km
+    0.44 +/- 0.08   76 < R <= 136 km
+    1.54 +/- 0.04  136 < R <= 400 km
+
+The column heading is `-alpha`, so these are decay exponents: amplitude goes
+as `R**-alpha`. **`[R]` is the preferred model**, and §2.7 gives the grounds —
+lower uncertainty on every slope, more events resolved (218 against 201), and
+the `Mw`-`Mc` relation moving closer to `Mw`-`ML`, which it should. An earlier
+draft of this section quoted `[O]` alone; if a Utah spreading table is ever
+shipped as study data, `[R]` is the one to ship.
+
+Worth noting the first segment independently supports the exponent argument
+above, and slightly more strongly in the preferred model: the inverted
+near-field decay is **0.88** and **0.90**, close to the theoretical body-wave
+1, and nowhere near 2.
+
+It also shows the spreading is not a single power law but a piecewise
+empirical function, inverted per region. So `S(R)` should be a registered
+model in its own right — theoretical `1/R` as the default a study can start
+from, with region-specific spreading as the thing an operator supplies, in the
+same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
+
+**Bilinear, and why the microseismic regime is not the regional one.** Every
+spreading model in the thesis breaks at 40-50 km. The PNR data used throughout
+this repository spans **2.3 to 22.9 km** — entirely inside the first segment of
+all of them — so the regional tables offer no guidance at these distances, and
+a shape fitted for 1-400 km should not be assumed to extend downward. A
+bilinear form with a break inside the microseismic range is the right thing to
+allow.
+
+It is not something a single event can determine, though, and it is worth
+recording why rather than fitting one and believing it. Measured on the 28 PNR
+channels, regressing `log10(Omega)` on `log10(R)` — which for one event is
+exactly the spreading, since `Omega_source` is a constant:
+
+| model | exponents | rms residual |
+|---|---|---|
+| single segment | 0.73 | 0.265 log10 |
+| bilinear, break searched | 0.41 then 1.89, break 13.5 km | 0.253 log10 |
+
+The bilinear fit buys **5%** in rms for two extra parameters, across **one
+decade** of distance. That is not evidence of a break; it is a hinge finding
+scatter. And the scatter is the point: 0.265 log10 units is a factor of 1.8,
+which for a single event is site response and radiation pattern, neither of
+which is separable from spreading when every station contributes exactly one
+distance.
+
+That is the argument for the non-parametric inversion rather than against
+bilinear. Spreading becomes separable from site only across a dataset where
+each station sees many distances and each distance is sampled by many
+stations. One event cannot do it, and the apparent 0.73 here should not be
+read as a measurement of anything.
+
+So: allow bilinear and tabulated forms, **default to theoretical `1/R`**, and
+resist fitting a spreading exponent to a single event — the default is
+defensible precisely because it is not fitted.
+
+**The calibration anchor stays Magna, not the thesis's Utah catalogue.** Utah
+is tempting — it is a published catalogue of >200 `Mw` with regional constants
+and bilinear `Mw`-`ML` relationships attached, which is more validation
+material than Magna offers. It is not the right anchor anyway, because the
+spreading estimate is the weaker half of it: Utah's `S(R)` is the piecewise
+parametric table above, with segment boundaries chosen and an exponent fitted
+per segment, while Magna used the **non-parametric G(R) inversion** already
+noted in §5.2.5 — no imposed functional form and no chosen breakpoints.
+
+That ordering matters more than the size of the catalogue, because `S(R)` is
+the term this section is least able to check by other means. `rho`, `beta` and
+the radiation pattern are all bounded by physics and by the literature; a
+spreading function is bounded by the inversion that produced it. Validating
+against the dataset with the better-constrained `S(R)` tests the part of the
+formula that most needs testing.
+
+The consequence for scope is worth stating plainly: the non-parametric
+inversion is not in this repository (§5.2.5), so `S(R)` for the Magna
+comparison has to come in as **data** — a tabulated `G(R)` in
+`studies/magna_2020.toml` — rather than being recomputed. A spreading registry
+that can be fed a table, not only a functional form, is therefore a
+requirement rather than a nicety.
+
+The calibration is still the deliverable rather than the derivation. Pin the
+study's own `rho` and `c`, state the unit of every input, and assert the Mw of
+a known event in a test. This section is the case for it: two people can each
+be certain about "the unit of R" and both be right, because there are two
+different `R`s in the same workflow, and only a test that runs the numbers
+end to end distinguishes them.
+
+*Sourced from Holt (2019), "Addressing Uncertainty in Earthquake Magnitudes
+Commonly Used in Modern Seismic Hazard Assessment", University of Liverpool —
+Ch. 1 §1.4, Ch. 2 §2.2 (method and constants), §2.3 and Table 2.1 (spreading),
+and §2.7 (which spreading model is preferred).*
+
+**Verification status, checked rather than assumed.** Chapters 1 and 2 have
+since been read directly, as separate PDF exports (2.0 MB and 5.5 MB, both
+well under the limit that blocked the 44 MB original). An earlier draft of
+this section expected that to settle the algebraic forms. **It does not, and
+the reason has changed: the equations are not in the file at all.**
+
+This was checked rather than inferred from a failed extraction. The pages
+carrying Eq. 1.12, 1.13, 1.14, 2.6, 2.7 and 2.8 declare **only Times New
+Roman fonts and no image XObject** — no math font, no vector drawing, nothing
+an extractor could be failing to decode. Rendering those pages produces the
+equation *numbers* against blank space. The Word-to-PDF export dropped the
+embedded equation objects, and inline math went with them, which is why the
+prose reads "where, is the long period spectral displacement plateau at the
+source". **So the algebraic form of Eq. 1.12, 1.13, 2.7 and 2.8 remains
+unverified, and no re-export of the PDF will fix it** — that closes off the
+route this section previously suggested. Settling it needs the original
+document, or Edwards et al. (2010), which is the published method anyway.
+
+What the chapters *do* settle is every constant in the table above, each now
+read from the prose of the section that defines it rather than inferred, plus
+Table 2.1 in full — it survives as real text and matches the exponents quoted
+above exactly. The one substantive correction is the partition factor, noted
+under the table.
+
+`Mw` itself is a near miss. Ch. 1's footnote 10 confirms the thesis quotes
+Hanks and Kanamori in **SI**, "the equivalent relation in SI units of Newton
+meters (N·m) where 1 N·m = 1x10^7 dyne·cm" — so `M0` in N·m is the right
+input and the formula is the SI one. The numeric constant is inside the
+dropped equation, so **the 9.1 in `Mw = (2/3)(log10(M0) - 9.1)` is still
+unverified from this source**, even though the unit convention around it now
+is.
+
+Two claims in this section *are* independently confirmed by that prose, and
+were inferences before:
+
+- **The spreading model's distance is in kilometres.** Eq. 2.6's description
+  states it outright — "is a geometrical spreading model and is distance
+  (km)" — rather than it being read off the units of Table 2.1.
+- **The measurement is on the horizontal component of the Sg phase**, "referred
+  to as SgH". That is the pairing this section infers from `Theta-lambda-Phi`
+  being the SH average: the phase, the component and the radiation-pattern
+  constant are one choice, made once, in the published method.
+
+Two other things that must be true before the number means anything, both
+from §4.7 above: `Omega` should be the combined horizontal rather than one
+component, and the phase constants must match the phase actually measured.
+
+So the shape is a `magnitude` module taking a `StagedFit` and a small typed
+set of medium constants — density, velocity, radiation pattern, free-surface
+factor, spreading exponent — with the exponent **configurable and defaulting
+to 1.0**, since a study fitting an empirical spreading term is a legitimate
+thing to want and should have to say so. `[model]` holds them, `studies/*.toml`
+pins them, and the output carries its unit. A test asserting the Mw of the PNR
+event to within a stated tolerance is what stops a factor of 10^9 from a km/s
+velocity going unnoticed — the whole point of §4.7's units discussion.
+
 #### Suggested shape
 
 - `preprocess.rotate_to_rt(st)` reading the stored back-azimuth, and a
@@ -1352,6 +1591,72 @@ points.
 - The tutorial demonstrating both horizontal treatments on the same event, in
   the way it now demonstrates both minimisers: showing that the choice moves
   the answer is what stops it being invisible.
+
+#### The published processing recipe, and the four defaults it sources
+
+The equations did not survive the export, but Ch. 2 §2.2 describes the
+*processing* in prose, and that survived intact. It is the most directly
+useful thing the chapters give this repository, because it is a published
+specification for choices §4.4 and §4.5 currently justify on internal
+measurement alone. In order, for each record:
+
+1. Broadband stations (`HH` and `BH`) within 400 km; instrument response
+   deconvolved; horizontals rotated to the **transverse** component to isolate
+   SgH.
+2. Pg and Sg velocities of 5.9 and 3.3 km/s predict the arrivals; a **20 s
+   window** starts at **80% of the predicted Pg-Sg interval**, the 20% margin
+   being deliberate slack for pick uncertainty.
+3. Transform: **zero-pad to 2^N**, de-mean, **five 3-pi prolate tapers**
+   (Lees and Park, 1995), FFT, **multiply by the sampling period**.
+4. Noise window: record start to **75% of the interval between start and the
+   predicted Pg**; same transform; normalised by the ratio of signal and noise
+   window lengths, **excluding the zero-padding**.
+5. Fit only where spectral **SNR >= 3**, by Powell minimisation, with a common
+   source corner frequency taken from the station of smallest misfit.
+6. Event `Mw` is the mean of station estimates after rejecting beyond
+   **2.5 sigma**, and requires **at least 3 stations**.
+
+Four of those land on defaults this repository already has, which is worth
+recording because in each case the justification here was internal:
+
+- **`MultitaperEstimator` defaults to `time_bandwidth=3.0, n_tapers=5`** —
+  exactly "five 3-pi prolate tapers", `NW = 3` giving `2NW - 1 = 5`. §4.4
+  could previously only say the 3 was "the literal 3 passed positionally to
+  `mtspec`, with no way to configure it". It now has a published source, and
+  the pair is a considered choice rather than an inherited constant.
+- **"Multiply by the sampling period" is `one_sided_fas`'s `|spec| * dt`**,
+  arrived at there from the requirement that padding change only the frequency
+  sampling. Same normalisation, reached from the other end.
+- **The zero-padding exclusion agrees with that too.** The recipe is careful
+  that the signal/noise length ratio uses unpadded lengths — padding must not
+  move an amplitude. That is the same rule as `one_sided_fas`'s refusal to
+  rescale for padding, and `SnrConfig.scale_parseval`'s
+  `sqrt(len(signal)/len(noise))` is its amplitude-domain form. Worth checking
+  when the noise path is next touched that the ratio there is taken on the
+  cut lengths and not on `n_fft`.
+- **SNR >= 3 matches `SnrConfig.tolerance = 3.0`** — though *applied
+  differently*, and the difference is exactly the distinction the config
+  already draws. The thesis gates the **fit band** per spectrum: fit where the
+  ratio holds. The Magna paper gates **spectrum selection**: keep spectra
+  above 3 in three fixed bands, which is `assert_bandwidths` with `bands`.
+  Same threshold, two different jobs, and the code can express both.
+
+One divergence, and it is a knowing one. The recipe pads to `2^N` where
+`resolve_n_fft` defaults to `"fast"`, the next 5-smooth length. That is a
+speed choice measured in §4.4 — `pow2` overshoots a 65537-sample record to
+131072 where 65610 will do — and it is safe precisely because of the point
+above: with normalisation keyed to `dt`, padding changes the frequency grid
+and nothing else, so `"fast"` and `"pow2"` differ in sampling, not amplitude.
+**`n_fft="pow2"` remains available and is what reproduces the published
+workflow exactly**, which is the setting a study file should pin when
+reproduction is the goal.
+
+The remaining steps — the 20 s window at 80% of the Pg-Sg interval, the noise
+window at 75%, the 2.5-sigma station rejection and the 3-station minimum —
+are event-level aggregation this package does not do yet, and they belong with
+the `magnitude` module above rather than with the estimators. They are
+recorded here so the module has a specification to build to instead of
+inventing thresholds.
 
 ### 4.8 Configuration: semantic groups, layered overrides, recorded provenance
 
@@ -1875,13 +2180,31 @@ channel. Every exclusion is recorded with a reason naming the level it matched
 at, because "excluded" is not actionable and "matched exclude='AQ04' at
 station" is.
 
-That this matters is measured, not assumed. Under inverse hypocentral distance
-weighting the nearest two channels carry 22.8% of the weight and the nearest
-four carry 36.1%, so dropping the single nearest station moves the event
-corner from 12.751 Hz to 14.774 Hz — 16%, which is 1.56x in stress drop. The
-choice of weighting moves it too: 12.751 (inverse hypocentral), 11.585
-(inverse epicentral), 11.048 (uniform). Both are therefore registry choices
-with the published one as the default, not constants.
+That this matters is measured, not assumed. Under the configured weighting —
+inverse *epicentral* distance — the nearest two channels carry **41.4%** of the
+weight and the nearest four 52.5%, so dropping the single nearest station moves
+the event corner from 11.585 Hz to 15.602 Hz: **35%, which is 2.44x in stress
+drop**. The choice of weighting moves it too: 11.585 (epicentral), 12.751
+(hypocentral), 11.048 (uniform).
+
+**Which distance is itself configured, and `specmod.distance` is the registry
+for it.** `[geometry] distance_measure` is read now; it existed from the start as
+`[windows] distance_metric` and was read by nothing, in the wrong section —
+cutting a window does not depend on how distance is measured. That is not bookkeeping at these ranges: the nearest
+PNR station is **0.89 km epicentral against 2.30 km hypocentral**, a factor of
+2.57, while the farthest agree to 1.00 — so the two measures disagree most
+exactly where the inverse-distance weight is largest. Epicentral is the honest
+default here because `rhyp` is built from the source depth and the station
+*elevation*, assuming every sensor sits at the surface; where sensor depths are
+unknown, as they are for this deployment, that assumption is unverifiable and
+the inventory's placeholder channel `depth` of `123456.0` is the tell.
+
+`rrup` and `rjb` are registered and **raise**. Both need a rupture surface,
+and for a point source they degenerate exactly to hypocentral and epicentral —
+so a silent fallback would produce plausible numbers that are wrong for any
+event large enough to justify asking for them. The error names what they would
+need, which puts the requirement where whoever adds finite-fault support will
+read it.
 
 **One trap, found while testing and now pinned.** `require_pass` drops a
 station whose stage-1 fit ended against a bound. `pass_fitting` asks whether
