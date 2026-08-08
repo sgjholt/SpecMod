@@ -1367,12 +1367,42 @@ kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 | catalogue Mw 1.6 | 3.16e11 N m | +1.60 |
 
 `1/r**2` is nearly four magnitude units out, which is the distance term
-applied twice; `1/r` lands close enough that the remainder sits inside the
-constants. Note what the remainder is worth: `M0` goes as `rho * c**3`, so
-taking `beta` from 2500 to 1600 m/s — entirely plausible for shallow Bowland
-shale — is a factor of 3.8 on its own, about 0.4 magnitude units. **The
-exponent is settled by this; the absolute calibration is not, and needs the
-study's own velocity model** rather than the round numbers used here.
+applied twice; `1/r` lands within reach of the constants. **The exponent is
+settled by this; the absolute calibration is not.**
+
+**And the unit of `R` cannot be settled by argument, which is the useful
+lesson.** With `rho` in kg/m^3, `c` in m/s and `Omega` in m s, dimensional
+consistency forces `R` into **metres** — `kg/m^3 * m^3/s^3 * m * m s` is
+`kg m^2 s^-2`, newton-metres. But most of the classic literature writes the
+same formula in CGS-lineage units, `rho` in g/cm^3, `c` in km/s, `R` in **km**
+and `Omega` in cm s, giving dyne-centimetres. Both are right; they are
+different formulations, and "R is in km" is a statement about which one is in
+use rather than about the physics.
+
+That matters because the two differ by 10^3 in `R` alone — two magnitude units
+— and mixing them is the single easiest way to be quietly wrong. Measured, with
+the same fits:
+
+| rho kg/m^3 | beta m/s | R in | median M0 (N m) | median Mw |
+|---|---|---|---|---|
+| 2500 | 2500 | m | 1.67e13 | +2.75 |
+| 2500 | 2500 | km | 1.67e10 | +0.75 |
+| 2500 | 1600 | m | 4.37e12 | +2.36 |
+| 2700 | 3500 | km | 4.94e10 | +1.06 |
+
+The catalogue Mw 1.6 sits *between* the metre and kilometre answers, so the
+unit choice alone does not reconcile it and neither does any single constant:
+landing on 1.6 with `R` in metres and `rho = 2500` would need
+`beta = 667` m/s, which is not a shale S velocity. Something else is also
+off — the likeliest candidates being that `Omega` here is one horizontal
+component rather than the combined horizontal (§4.7), and that the round
+numbers for the medium are not this event's.
+
+So the calibration is the deliverable, not the derivation. Pin the study's own
+`rho` and `c`, state the unit of every input, and assert the Mw of a known
+event in a test. Two people can both be certain about the unit of `R` and both
+be right about different formulations; only the calibration tells you which
+one the code is in.
 
 Two other things that must be true before the number means anything, both
 from §4.7 above: `Omega` should be the combined horizontal rather than one
