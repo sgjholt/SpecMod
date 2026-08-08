@@ -1375,14 +1375,31 @@ doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
 Edwards et al. (2010) spectral method this package implements. Read directly
 rather than inferred:
 
-| symbol | value | what it is |
-|---|---|---|
-| `rho` | 2600 kg/m^3 (Utah); 2800 generic | density **at the source** |
-| `beta` | 3500 m/s generic | S velocity **at the source** |
-| `R_0` | **1000 m** | *reference source distance* — the distance at which the source spectrum is defined |
-| `F` | 2 | free surface, for **vertically incident SH** |
-| `Theta-lambda-Phi` | **0.55** | average radiation pattern **of SH propagation** over the focal sphere (Boatwright, 1978) |
-| partition factor | (Boore, 2003) | splits energy between vertical and horizontal ground motion |
+| symbol | value | what it is | stated in |
+|---|---|---|---|
+| `rho` | 2600 kg/m^3 (Utah); 2800 generic | density **at the source** | Ch. 2 §2.2; Ch. 1 §1.4 |
+| `beta` | 3500 m/s generic; 3520 m/s for the Utah normalisation | S velocity **at the source** | Ch. 1 §1.4; Ch. 2 §2.3 |
+| `R_0` | **1000 m** | *reference source distance* — the distance at which the source spectrum is defined | Ch. 2 §2.2 |
+| `F` | 2 | free surface, for **vertically incident SH** | Ch. 2 §2.2; the SH qualifier is Ch. 1 §1.4 |
+| `Theta-lambda-Phi` | **0.55** | average radiation pattern **of SH propagation** over the focal sphere | Ch. 2 §2.2; Boatwright (1978) is cited in Ch. 1 §1.4 |
+| partition factor | (Boore, 2003) | splits energy between vertical and horizontal ground motion | **Ch. 1 §1.4 only — not among the constants Ch. 2 enumerates for Eq. 2.7** |
+
+Every row above was read from the chapters directly, and the last one is the
+correction. Ch. 1 describes the generic constant `C` and lists a partition
+factor among its parts; Ch. 2, defining the Utah calculation this package
+follows, enumerates the constants of Eq. 2.7 as `Omega_0`, `beta` at the
+source, `rho`, `R_0`, `F` and the radiation pattern — and **no partition
+factor**. So the implementation should not carry one by default. If a study
+wants one it is a `[model]` entry it has to set, not a constant folded into
+the formula.
+
+`beta = 3520 m/s` is worth recording alongside the generic 3500 because it is
+where the Utah numbers actually come from: Ch. 2 §2.3 normalises the observed
+plateaus to a theoretical Mw 3.5 source at `VS = 3520 m/s`, the value nearest
+3500 in the Herrmann et al. (2011) WUS model at source depth. A cube of a
+velocity is in the moment expression, so a 0.6% difference in `beta` is a 1.7%
+difference in `M0` — negligible against everything else here, and worth
+knowing is negligible rather than assuming so.
 
 Two things this corrects in earlier drafts of this section.
 
@@ -1403,17 +1420,33 @@ carries the observation from there to the site.
 distances. `R_0` in the moment expression is in **metres**, alongside `rho` in
 kg/m^3 and `beta` in m/s, giving `M0` in newton-metres. The *geometric
 spreading* model `S(R)` is a separate term in Eq. 1.14, and its `R` is in
-**kilometres** — the thesis tabulates it piecewise that way, e.g. Holt et al.
-[O] for Utah:
+**kilometres** — Table 2.1's caption says so outright, "R in all cells is
+hypocentral distance in kilometres", and tabulates the exponent piecewise.
+Both of the thesis's own models, read from the table:
 
-    0.88 +/- 0.02    1 < R <= 40 km
-    2.93 +/- 0.28   40 < R <= 63 km
+    Holt et al. [O] — original
+    0.88 +/- 0.02    1 < R <=  40 km
+    2.93 +/- 0.28   40 < R <=  63 km
     0.50 +/- 0.33   63 < R <= 100 km
     1.36 +/- 0.07  100 < R <= 400 km
 
+    Holt et al. [R] — refined, and the one the thesis recommends
+    0.90 +/- 0.01    1 < R <=  43 km
+    2.57 +/- 0.07   43 < R <=  76 km
+    0.44 +/- 0.08   76 < R <= 136 km
+    1.54 +/- 0.04  136 < R <= 400 km
+
+The column heading is `-alpha`, so these are decay exponents: amplitude goes
+as `R**-alpha`. **`[R]` is the preferred model**, and §2.7 gives the grounds —
+lower uncertainty on every slope, more events resolved (218 against 201), and
+the `Mw`-`Mc` relation moving closer to `Mw`-`ML`, which it should. An earlier
+draft of this section quoted `[O]` alone; if a Utah spreading table is ever
+shipped as study data, `[R]` is the one to ship.
+
 Worth noting the first segment independently supports the exponent argument
-above: the inverted near-field decay is **0.88**, close to the theoretical
-body-wave 1, and nowhere near 2.
+above, and slightly more strongly in the preferred model: the inverted
+near-field decay is **0.88** and **0.90**, close to the theoretical body-wave
+1, and nowhere near 2.
 
 It also shows the spreading is not a single power law but a piecewise
 empirical function, inverted per region. So `S(R)` should be a registered
@@ -1488,10 +1521,51 @@ end to end distinguishes them.
 
 *Sourced from Holt (2019), "Addressing Uncertainty in Earthquake Magnitudes
 Commonly Used in Modern Seismic Hazard Assessment", University of Liverpool —
-Ch. 1 §1.4 and Ch. 2 Eq. 2.7-2.8 and Table 2.1. The equations themselves are
-embedded objects that do not survive text extraction, so the symbols above are
-read from the surrounding prose; the equation images should be checked against
-this table before any of it is implemented.*
+Ch. 1 §1.4, Ch. 2 §2.2 (method and constants), §2.3 and Table 2.1 (spreading),
+and §2.7 (which spreading model is preferred).*
+
+**Verification status, checked rather than assumed.** Chapters 1 and 2 have
+since been read directly, as separate PDF exports (2.0 MB and 5.5 MB, both
+well under the limit that blocked the 44 MB original). An earlier draft of
+this section expected that to settle the algebraic forms. **It does not, and
+the reason has changed: the equations are not in the file at all.**
+
+This was checked rather than inferred from a failed extraction. The pages
+carrying Eq. 1.12, 1.13, 1.14, 2.6, 2.7 and 2.8 declare **only Times New
+Roman fonts and no image XObject** — no math font, no vector drawing, nothing
+an extractor could be failing to decode. Rendering those pages produces the
+equation *numbers* against blank space. The Word-to-PDF export dropped the
+embedded equation objects, and inline math went with them, which is why the
+prose reads "where, is the long period spectral displacement plateau at the
+source". **So the algebraic form of Eq. 1.12, 1.13, 2.7 and 2.8 remains
+unverified, and no re-export of the PDF will fix it** — that closes off the
+route this section previously suggested. Settling it needs the original
+document, or Edwards et al. (2010), which is the published method anyway.
+
+What the chapters *do* settle is every constant in the table above, each now
+read from the prose of the section that defines it rather than inferred, plus
+Table 2.1 in full — it survives as real text and matches the exponents quoted
+above exactly. The one substantive correction is the partition factor, noted
+under the table.
+
+`Mw` itself is a near miss. Ch. 1's footnote 10 confirms the thesis quotes
+Hanks and Kanamori in **SI**, "the equivalent relation in SI units of Newton
+meters (N·m) where 1 N·m = 1x10^7 dyne·cm" — so `M0` in N·m is the right
+input and the formula is the SI one. The numeric constant is inside the
+dropped equation, so **the 9.1 in `Mw = (2/3)(log10(M0) - 9.1)` is still
+unverified from this source**, even though the unit convention around it now
+is.
+
+Two claims in this section *are* independently confirmed by that prose, and
+were inferences before:
+
+- **The spreading model's distance is in kilometres.** Eq. 2.6's description
+  states it outright — "is a geometrical spreading model and is distance
+  (km)" — rather than it being read off the units of Table 2.1.
+- **The measurement is on the horizontal component of the Sg phase**, "referred
+  to as SgH". That is the pairing this section infers from `Theta-lambda-Phi`
+  being the SH average: the phase, the component and the radiation-pattern
+  constant are one choice, made once, in the published method.
 
 Two other things that must be true before the number means anything, both
 from §4.7 above: `Omega` should be the combined horizontal rather than one
