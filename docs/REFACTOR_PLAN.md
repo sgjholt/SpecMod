@@ -2048,8 +2048,9 @@ drop**. The choice of weighting moves it too: 11.585 (epicentral), 12.751
 (hypocentral), 11.048 (uniform).
 
 **Which distance is itself configured, and `specmod.distance` is the registry
-for it.** `[windows] distance_metric` existed from the start and was read by
-nothing; it is read now. That is not bookkeeping at these ranges: the nearest
+for it.** `[geometry] distance_measure` is read now; it existed from the start as
+`[windows] distance_metric` and was read by nothing, in the wrong section —
+cutting a window does not depend on how distance is measured. That is not bookkeeping at these ranges: the nearest
 PNR station is **0.89 km epicentral against 2.30 km hypocentral**, a factor of
 2.57, while the farthest agree to 1.00 — so the two measures disagree most
 exactly where the inverse-distance weight is largest. Epicentral is the honest

@@ -66,7 +66,6 @@ class WindowsConfig:
     #: run used s=3.4; 2.9 is the shipped default and is kept as such.
     p_velocity: float = 5.9
     s_velocity: float = 2.9
-    distance_metric: Literal["repi", "rhyp"] = "repi"
 
     #: Used when an S pick is missing: s_time = p_time + emergency_ratio * (p - o).
     emergency_ratio: float = 1.7
@@ -272,11 +271,44 @@ class VizConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class GeometryConfig:
+    """Source-to-site geometry.
+
+    Its own section because more than one stage needs it. Distance feeds the
+    ensemble weighting of the two-stage fit (:mod:`specmod.staged`) and the
+    geometric spreading a moment calculation corrects for, and a setting two
+    consumers each keep their own copy of is how the two come to disagree.
+
+    It lived in ``[windows]`` until there was a second reader, which was the
+    wrong home even then: cutting a window does not depend on how distance is
+    measured.
+    """
+
+    #: Which distance, resolved through :data:`specmod.distance.DISTANCE_MEASURES`.
+    #:
+    #: ``repi`` is the default and is the honest one wherever sensor depths are
+    #: not known. ``rhyp`` is built from the source depth and the station
+    #: *elevation*, so it assumes every sensor sits at the surface — for a
+    #: borehole deployment that is wrong by the burial depth, and nothing in
+    #: the metadata says so.
+    #:
+    #: The choice is not a detail at short range: on the PNR data the nearest
+    #: station is 0.89 km epicentral against 2.30 km hypocentral, a factor of
+    #: 2.57, while the farthest agree to 1.00 — so anything weighted by inverse
+    #: distance is most sensitive to it exactly where it matters most.
+    #:
+    #: ``rrup`` and ``rjb`` are registered and raise: both need a rupture
+    #: surface, and for a point source they degenerate to ``rhyp`` and ``repi``.
+    distance_measure: str = "repi"
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     """The whole resolved configuration."""
 
     acquire: AcquireConfig = field(default_factory=AcquireConfig)
     windows: WindowsConfig = field(default_factory=WindowsConfig)
+    geometry: GeometryConfig = field(default_factory=GeometryConfig)
     transform: TransformConfig = field(default_factory=TransformConfig)
     smoothing: SmoothingConfig = field(default_factory=SmoothingConfig)
     snr: SnrConfig = field(default_factory=SnrConfig)

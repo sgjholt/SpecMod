@@ -66,8 +66,8 @@ class TestTheDefaultPath:
             stage1 = FitSpectra(spectra)
             stage1.fit_spectra()
         table = stage1.table.set_index("id")
-        # `repi`, because that is what `[windows] distance_metric` says and the
-        # weighting now reads it. It used to hardcode `rhyp`.
+        # `repi`, because that is what `[geometry] distance_measure` says and
+        # the weighting now reads it. It used to hardcode `rhyp`.
         weights = np.array(
             [1.0 / float(spectra[id].signal.meta["repi"]) for id in table.index]
         )
@@ -346,7 +346,7 @@ class TestWeighting:
     def test_the_configured_distance_measure_is_what_gets_used(
         self, pnr_windows: Any
     ) -> None:
-        """`[windows] distance_metric` had no reader before this.
+        """`[geometry] distance_measure` had no reader before this.
 
         It matters at short range. Hypocentral and epicentral converge far from
         the source and diverge near it — on these windows the nearest station
@@ -355,7 +355,7 @@ class TestWeighting:
         the station carrying the most weight.
         """
         spectra = _spectra(pnr_windows)
-        assert load_config().config.windows.distance_metric == "repi"
+        assert load_config().config.geometry.distance_measure == "repi"
 
         configured = fit_event(spectra).value
         epicentral = fit_event(spectra, weighting="inverse_epicentral_distance").value

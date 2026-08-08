@@ -179,11 +179,12 @@ def resolve_distance_measure(
 ) -> DistanceMeasure:
     """A measure from a name, an instance, or the configuration.
 
-    ``None`` takes ``[windows] distance_metric``, which is the project-wide
-    choice and had no reader at all before this.
+    ``None`` takes ``[geometry] distance_measure``, which is the project-wide
+    choice. It lived in ``[windows]`` and had no reader at all until this
+    module; cutting a window does not depend on how distance is measured.
     """
     if measure is None:
-        measure = str(load_config().config.windows.distance_metric)
+        measure = str(load_config().config.geometry.distance_measure)
     if isinstance(measure, str):
         return get_distance_measure(measure)
     return measure
