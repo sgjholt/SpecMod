@@ -1604,7 +1604,7 @@ SpecMod computes.
 
 The two-stage fit is, separately, a good candidate for the new API: it is the
 workflow the science actually uses, and it currently has to be rebuilt by hand
-by every user.
+by every user. **Built** — `specmod.staged.fit_event`; see below.
 
 The tutorial now does exactly that rebuilding-by-hand, deliberately, because it
 is the clearest available demonstration of *why* the second stage exists. On
@@ -1623,6 +1623,43 @@ problem is well conditioned once the corner is pinned, which is the premise the
 second stage rests on. Fifteen lines of notebook is the right amount of code
 for that to cost, and it is the argument for putting those fifteen lines behind
 an API rather than leaving each user to write them again.
+
+#### 5.2.5b The two-stage fit, as built
+
+`specmod.staged.fit_event(spectra)` is the published workflow with every
+argument defaulted from `[fitting]`. It reproduces the by-hand weighted mean
+exactly, and both stages are returned rather than only the second — the
+stage-1 spread is the evidence for how well constrained the event value is,
+and returning one number without it would be reporting a measurement with no
+error on it.
+
+**Selection is the part that could not be defaulted away.** Quality control is
+a judgement, and a station that is confidently wrong — bad response, clipped
+record, pick on the wrong phase — moves the event value for every other
+station. `ChannelSelection` reads `include`/`exclude` globs from the study
+file and matches them at whichever level they are written: `"AQ04"` is the
+station, `"HHE"` the component, `"UR"` the network, `"UR.AQ04.00.HHE"` the one
+channel. Every exclusion is recorded with a reason naming the level it matched
+at, because "excluded" is not actionable and "matched exclude='AQ04' at
+station" is.
+
+That this matters is measured, not assumed. Under inverse hypocentral distance
+weighting the nearest two channels carry 22.8% of the weight and the nearest
+four carry 36.1%, so dropping the single nearest station moves the event
+corner from 12.751 Hz to 14.774 Hz — 16%, which is 1.56x in stress drop. The
+choice of weighting moves it too: 12.751 (inverse hypocentral), 11.585
+(inverse epicentral), 11.048 (uniform). Both are therefore registry choices
+with the published one as the default, not constants.
+
+**One trap, found while testing and now pinned.** `require_pass` drops a
+station whose stage-1 fit ended against a bound. `pass_fitting` asks whether
+`value +/- stderr` reaches one — and Powell, the shipped minimiser, estimates
+no covariance matrix, so the spread is zero and the test almost never fires.
+It drops **0** stations under Powell and **6** under `leastsq`. Changing the
+minimiser therefore changes *which stations vote*, not just how each is
+fitted, and the naive cross-minimiser comparison gives 144% where the
+like-for-like one gives 0.6%. The flag is doing the right thing when it fires;
+the asymmetry is what needed writing down.
 
 #### 5.2.6 The three-way comparison
 
