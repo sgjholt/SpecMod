@@ -1206,7 +1206,7 @@ moment without saying which phase and which constants produced it is the
 defect class this whole document is about, applied to the number the package
 exists to produce.
 
-#### Station and channel identity should be a type
+#### Station and channel identity should be a type, following FDSN/SEED
 
 Everything above is hard to say clearly because the code has no notion of a
 station. A trace id is a string, and every question about it is asked by
@@ -1221,35 +1221,92 @@ places, all written independently in the last week:
 
 Three spellings of one idea, none of which can be given a type. And the bug in
 §4.7's opening — components counted as independent stations — is invisible
-precisely because nothing in the type system distinguishes "a channel" from
-"a station": both are `str`, so summing over channels when you meant stations
-type-checks perfectly.
+precisely because nothing distinguishes "a channel" from "a station": both are
+`str`, so summing over channels when you meant stations type-checks perfectly.
 
-ObsPy has some of this. `Trace.id` builds the string and `Stream.select`
-filters on components, but there is no value type for an identifier, no way to
-ask whether two ids are the same station, and no grouping by station. Which is
-why every project writes the `split(".")` again.
+**The conventions already exist and should be followed rather than invented.**
+FDSN/SEED defines the hierarchy and the semantics of every field, and each
+level carries things SpecMod currently either ignores or re-derives:
 
-What would help, in the same spirit as the `Motion`/`AmplitudeKind` enums of
-§4.2 — small, frozen, and doing one thing:
+| Level | Code | Carries |
+|---|---|---|
+| Network | 1–2 chars, FDSN-assigned | operator, and an epoch — temporary network codes are reused, so network alone is not unique in time |
+| Station | ≤5 chars | the **site**: latitude, longitude, elevation, and its own epochs |
+| Location | 2 chars | which co-located sensor package — surface against borehole, or two instruments at one site |
+| Channel | 3 chars | band, instrument, orientation — plus azimuth, dip, sample rate, sensor depth and **the response**, per epoch |
 
-- `ChannelId`, parsed once from a trace id, with `network`, `station`,
-  `location`, `channel` and a `station_id` that compares equal across an
-  instrument's components. Comparable, hashable, and printing back to the
-  SEED string so it can be a dict key and a column value unchanged.
-- Grouping over a set of channels by station, which is what horizontal
-  combination and the two-stage ensemble both need and both currently lack.
-- Pattern matching as a method on the type rather than a free function taking
-  strings, so `staged._levels` becomes one implementation instead of the
-  first of several.
-- The band/instrument code (`HH`, `EH`, `BH`) and the component letter (`Z`,
-  `N`, `E`, `1`, `2`) separated, since the `1`/`2` spelling for
-  non-oriented horizontals is common in real inventories and is exactly the
-  case string matching on `"HHE"` silently misses.
+Four points where that structure matters and the current code does not have it.
+
+**The channel code is three separate fields.** Band (`H` = high broadband,
+`B` = broadband, `E`/`S` = short period, `L` = long period), instrument
+(`H` = high-gain seismometer, `N` = accelerometer, `L` = low-gain), and
+orientation. Matching `"HHE"` as an opaque string, which
+`staged.ChannelSelection` currently does, cannot express "every high-gain
+seismometer regardless of band" or "every accelerometer", both of which are
+ordinary requests.
+
+**`N`/`E` versus `1`/`2` is a correctness trap, not a spelling.** The FDSN
+convention is that `1`/`2` are used precisely when the horizontals are *not*
+aligned to north and east. So code that globs for `HHE`/`HHN` — which this
+repository's own tutorial does when reading waveforms — silently finds nothing
+on such a network, and code that rotates to radial/transverse by assuming
+`N` is 0° is simply wrong there. Rotation needs the channel's own azimuth and
+dip from the inventory.
+
+Worth noting what that means for §4.7's rotation work on the committed data:
+**the PNR inventory has `azimuth=None` and `dip=None` on every channel.** The
+orientation is not recorded, so rotating this dataset means assuming
+`HHN` = 0° and `HHE` = 90° — defensible for channels named `N`/`E`, but an
+assumption the code should state rather than bury. Two other things that same
+check turned up, both worth fixing whenever the inventory is next touched:
+`depth` is `123456.0`, a placeholder rather than a measurement, and the
+inventory mixes location codes `''` and `'00'` — which under SEED are
+*different* locations, not synonyms.
+
+**Response and coordinates are epoch-scoped.** An instrument swap creates a
+new channel epoch with a different response, and the correct one depends on
+the time of the record being corrected. `Inventory.get_response(seed_id,
+datetime)` takes the time for that reason. Any station type SpecMod grows has
+to keep the epoch rather than flattening to "the response", or it will
+silently apply the wrong one across a swap.
+
+**`azimuth` already means two different things.** `preprocess` writes
+`tr.stats["azimuth"]` and `tr.stats["back_azimuth"]` as the *source-receiver*
+geometry. `Channel.azimuth` in StationXML is the *component orientation*.
+These are unrelated quantities one letter apart in the same namespace, and
+rotation needs both at once — which is the moment the collision becomes a bug
+rather than a confusion.
+
+**What ObsPy gives and does not.** `Inventory`/`Network`/`Station`/`Channel`
+model the hierarchy well and `get_channel_metadata` resolves an epoch, so the
+metadata side is largely solved and should be used rather than reimplemented.
+What is missing is on the *identifier*: `Trace.id` builds the string,
+`Stream.select` filters with wildcards, and that is all. There is no value
+type, no equality at the station level, no grouping by station, and no
+structured access to the band/instrument/orientation split. Which is why every
+project writes `split(".")` again, including this one, three times.
+
+So the piece to add is small and specific, in the spirit of the
+`Motion`/`AmplitudeKind` enums of §4.2:
+
+- `ChannelId`, parsed once from a trace id, exposing `network`, `station`,
+  `location`, `band`, `instrument`, `orientation`, and a `station_id` that
+  compares equal across an instrument's components. Hashable, and printing
+  back to the SEED string unchanged so it can be a dict key and a table value.
+- Grouping a set of channels by station, which horizontal combination and the
+  two-stage ensemble both need and both currently lack.
+- Matching as a method on the type, so `staged._levels` becomes one
+  implementation rather than the first of several.
+- The FDSN Source Identifier spelling
+  (`FDSN:NET_STA_LOC_BAND_SOURCE_SUBSOURCE`) is where the standard is going
+  and separates those fields explicitly; worth parsing to, even while the
+  dotted SEED form stays what is printed.
 
 This is a prerequisite for §4.7 rather than a parallel nicety: "combine the
 horizontals of each station" cannot be written honestly until "the horizontals
-of each station" is something the code can express.
+of each station" is something the code can express, and "rotate to transverse"
+cannot be written correctly until the code can ask a channel which way it
+points.
 
 #### Suggested shape
 
