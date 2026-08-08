@@ -1198,13 +1198,46 @@ moment, which is more than a magnitude unit.
 
 **The constants above are the standard textbook values and are written here to
 show the shape of the problem, not to be adopted.** The Magna work pins
-`F = 2` and `Theta-lambda-Phi = 0.55` (§5.2.5), which is already not the
-textbook 0.63, so this project's own published choices are what the
-implementation should take — read off the papers, recorded in
-`studies/*.toml`, and never defaulted silently. A source model that reports a
-moment without saying which phase and which constants produced it is the
-defect class this whole document is about, applied to the number the package
-exists to produce.
+`F = 2` and `Theta-lambda-Phi = 0.55` (§5.2.5), and this project's own
+published choices are what the implementation should take — read off the
+papers, recorded in `studies/*.toml`, and never defaulted silently.
+
+**On whether the difference from the textbook 0.63 is a unit conversion.** It
+cannot be, at least not in that coefficient: the radiation pattern term is
+dimensionless, and a change of units cannot move a dimensionless number.
+0.63 is the RMS average of the S-wave radiation pattern over the focal sphere
+and other averages of it are also in the literature, so the likelier
+explanation is which average was taken — but that is a question for the paper,
+not for this document to settle.
+
+Units are a real hazard here all the same, just in the other terms, and the
+exposure is far larger than a factor of 0.87:
+
+| term | metric | CGS | factor |
+|---|---|---|---|
+| density | kg/m^3 | g/cm^3 | 10^3 |
+| velocity, **cubed** in the moment formula | m/s | km/s | 10^9 |
+| distance | m | km | 10^3 |
+| the moment itself | N m | dyne cm | 10^7 |
+
+`r_0 = 1000 m` sitting among the recorded parameters is exactly the shape of a
+constant that bridges kilometres and metres, which is worth checking rather
+than assuming either way.
+
+There is a cheap arithmetic check that settles it without reading any code.
+`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw 1.6**
+used throughout this repository should come out near **3e11 N m** — or 3e18 if
+the pipeline is working in dyne-centimetres. Anything else is a unit error,
+and a factor of 10^9 from a kilometre-per-second velocity is not subtle.
+
+The general point is that this is ambiguous *now* because the constants live
+as bare floats in prose with no units attached — which is the same failure
+this document keeps finding, applied to the number the package exists to
+produce. §4.2 gave `Motion` and `AmplitudeKind` to spectra so a conversion
+could not be applied twice or in the wrong direction. The moment calculation
+needs the same discipline: units on the inputs, a declared output unit, and a
+test asserting the Mw of a known event. Then the question answers itself
+instead of being reasoned about.
 
 #### Station and channel identity should be a type, following FDSN/SEED
 
