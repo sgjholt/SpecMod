@@ -1341,6 +1341,52 @@ of each station" is something the code can express, and "rotate to transverse"
 cannot be written correctly until the code can ask a channel which way it
 points.
 
+#### A basic Mw, and the spreading exponent
+
+Worth building, and nearly free once the constants have units: everything it
+needs is already produced. `llpsp` from the fit is `log10(Omega)` on
+**displacement** — `sources.motion_scaling` converts the displacement model to
+whatever motion was recorded, so the fitted plateau is `Omega` directly rather
+than a velocity plateau needing correction — and `rhyp` is on every trace.
+
+    M0 = 4 * pi * rho * c**3 * r**n * Omega / (R_c * F)
+    Mw = (2/3) * (log10(M0) - 9.1)
+
+**The exponent `n` is 1, not 2, and this is worth stating because it is easy
+to say the other one.** Body-wave *amplitude* from a point source decays as
+`1/r` in a homogeneous whole space; `1/r**2` is how *energy* decays. The
+moment formula corrects an amplitude, so it multiplies by `r`.
+
+Measured on the 28 PNR windows through the two-stage fit, with `rho = 2500`
+kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
+
+| spreading | median M0 | median Mw |
+|---|---|---|
+| `1/r` | 1.67e13 N m | **+2.75** |
+| `1/r**2` | 1.55e17 N m | **+5.39** |
+| catalogue Mw 1.6 | 3.16e11 N m | +1.60 |
+
+`1/r**2` is nearly four magnitude units out, which is the distance term
+applied twice; `1/r` lands close enough that the remainder sits inside the
+constants. Note what the remainder is worth: `M0` goes as `rho * c**3`, so
+taking `beta` from 2500 to 1600 m/s — entirely plausible for shallow Bowland
+shale — is a factor of 3.8 on its own, about 0.4 magnitude units. **The
+exponent is settled by this; the absolute calibration is not, and needs the
+study's own velocity model** rather than the round numbers used here.
+
+Two other things that must be true before the number means anything, both
+from §4.7 above: `Omega` should be the combined horizontal rather than one
+component, and the phase constants must match the phase actually measured.
+
+So the shape is a `magnitude` module taking a `StagedFit` and a small typed
+set of medium constants — density, velocity, radiation pattern, free-surface
+factor, spreading exponent — with the exponent **configurable and defaulting
+to 1.0**, since a study fitting an empirical spreading term is a legitimate
+thing to want and should have to say so. `[model]` holds them, `studies/*.toml`
+pins them, and the output carries its unit. A test asserting the Mw of the PNR
+event to within a stated tolerance is what stops a factor of 10^9 from a km/s
+velocity going unnoticed — the whole point of §4.7's units discussion.
+
 #### Suggested shape
 
 - `preprocess.rotate_to_rt(st)` reading the stored back-azimuth, and a
