@@ -1418,8 +1418,31 @@ body-wave 1, and nowhere near 2.
 It also shows the spreading is not a single power law but a piecewise
 empirical function, inverted per region. So `S(R)` should be a registered
 model in its own right — theoretical `1/R` as the default a study can start
-from, with region-specific piecewise tables as the thing an operator supplies,
-in the same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
+from, with region-specific spreading as the thing an operator supplies, in the
+same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
+
+**The calibration anchor stays Magna, not the thesis's Utah catalogue.** Utah
+is tempting — it is a published catalogue of >200 `Mw` with regional constants
+and bilinear `Mw`-`ML` relationships attached, which is more validation
+material than Magna offers. It is not the right anchor anyway, because the
+spreading estimate is the weaker half of it: Utah's `S(R)` is the piecewise
+parametric table above, with segment boundaries chosen and an exponent fitted
+per segment, while Magna used the **non-parametric G(R) inversion** already
+noted in §5.2.5 — no imposed functional form and no chosen breakpoints.
+
+That ordering matters more than the size of the catalogue, because `S(R)` is
+the term this section is least able to check by other means. `rho`, `beta` and
+the radiation pattern are all bounded by physics and by the literature; a
+spreading function is bounded by the inversion that produced it. Validating
+against the dataset with the better-constrained `S(R)` tests the part of the
+formula that most needs testing.
+
+The consequence for scope is worth stating plainly: the non-parametric
+inversion is not in this repository (§5.2.5), so `S(R)` for the Magna
+comparison has to come in as **data** — a tabulated `G(R)` in
+`studies/magna_2020.toml` — rather than being recomputed. A spreading registry
+that can be fed a table, not only a functional form, is therefore a
+requirement rather than a nicety.
 
 The calibration is still the deliverable rather than the derivation. Pin the
 study's own `rho` and `c`, state the unit of every input, and assert the Mw of
