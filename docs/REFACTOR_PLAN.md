@@ -1421,6 +1421,41 @@ model in its own right — theoretical `1/R` as the default a study can start
 from, with region-specific spreading as the thing an operator supplies, in the
 same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
 
+**Bilinear, and why the microseismic regime is not the regional one.** Every
+spreading model in the thesis breaks at 40-50 km. The PNR data used throughout
+this repository spans **2.3 to 22.9 km** — entirely inside the first segment of
+all of them — so the regional tables offer no guidance at these distances, and
+a shape fitted for 1-400 km should not be assumed to extend downward. A
+bilinear form with a break inside the microseismic range is the right thing to
+allow.
+
+It is not something a single event can determine, though, and it is worth
+recording why rather than fitting one and believing it. Measured on the 28 PNR
+channels, regressing `log10(Omega)` on `log10(R)` — which for one event is
+exactly the spreading, since `Omega_source` is a constant:
+
+| model | exponents | rms residual |
+|---|---|---|
+| single segment | 0.73 | 0.265 log10 |
+| bilinear, break searched | 0.41 then 1.89, break 13.5 km | 0.253 log10 |
+
+The bilinear fit buys **5%** in rms for two extra parameters, across **one
+decade** of distance. That is not evidence of a break; it is a hinge finding
+scatter. And the scatter is the point: 0.265 log10 units is a factor of 1.8,
+which for a single event is site response and radiation pattern, neither of
+which is separable from spreading when every station contributes exactly one
+distance.
+
+That is the argument for the non-parametric inversion rather than against
+bilinear. Spreading becomes separable from site only across a dataset where
+each station sees many distances and each distance is sampled by many
+stations. One event cannot do it, and the apparent 0.73 here should not be
+read as a measurement of anything.
+
+So: allow bilinear and tabulated forms, **default to theoretical `1/R`**, and
+resist fitting a spreading exponent to a single event — the default is
+defensible precisely because it is not fitted.
+
 **The calibration anchor stays Magna, not the thesis's Utah catalogue.** Utah
 is tempting — it is a published catalogue of >200 `Mw` with regional constants
 and bilinear `Mw`-`ML` relationships attached, which is more validation
