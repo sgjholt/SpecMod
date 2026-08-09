@@ -5,9 +5,10 @@ and ``stations/`` beneath a per-event directory. This adds the three things a
 spectral workflow needs alongside them::
 
     tutorial/data/events/<origin>/
+        event.xml                  # QuakeML: origin, magnitudes, uncertainties
         waveforms/                 # one miniSEED file per channel
         stations/inventory.xml     # StationXML for those channels
-        picks/*.picks              # Pyrocko/Snuffler markers
+        picks/*.xml                # QuakeML picks (*.picks: Snuffler markers)
         spectra/*.h5               # computed spectra
         spectra/flatfiles/*.csv    # and their tabular export
 
@@ -85,15 +86,25 @@ class EventDirectory:
         """A glob over :attr:`waveforms`, as a string for ``obspy.read``."""
         return str(self.waveforms / pattern)
 
-    def picks_file(self) -> Path:
-        """The single pick file for this event.
+    @property
+    def quakeml(self) -> Path:
+        """The event's QuakeML: origin, magnitudes and their uncertainties."""
+        return self.root / "event.xml"
 
-        Raises :class:`FileNotFoundError` when there is none.
+    def picks_file(self) -> Path:
+        """The pick file for this event, QuakeML for preference.
+
+        QuakeML is the standard and carries what a marker file cannot —
+        polarity, uncertainty, evaluation status, the full SEED id. Snuffler
+        markers are still read where that is all there is.
+
+        Raises :class:`FileNotFoundError` when neither is present.
         """
-        found = sorted(glob.glob(str(self.picks / "*.picks")))
-        if not found:
-            raise FileNotFoundError(f"no *.picks file under {self.picks}")
-        return Path(found[0])
+        for pattern in ("*.xml", "*.picks"):
+            found = sorted(glob.glob(str(self.picks / pattern)))
+            if found:
+                return Path(found[0])
+        raise FileNotFoundError(f"no *.xml or *.picks file under {self.picks}")
 
     def is_present(self) -> bool:
         """Whether the waveforms and station metadata are both present.
@@ -221,6 +232,23 @@ class Dataset:
         import obspy  # noqa: PLC0415
 
         return obspy.read_inventory(str(self.paths.inventory))
+
+    def catalog(self) -> Any:
+        """Read the event's QuakeML.
+
+        Everything the catalogue said, rather than the four numbers
+        :class:`Event` keeps: origin uncertainties, every magnitude rather than
+        the preferred one, agency and evaluation status.
+        """
+        import obspy  # noqa: PLC0415
+
+        if not self.paths.quakeml.is_file():
+            raise FileNotFoundError(
+                f"no QuakeML at {self.paths.quakeml}. It is written by "
+                f"specmod.acquire when an event is resolved from a catalogue; "
+                f"an event declared explicitly in a config has none."
+            )
+        return obspy.read_events(str(self.paths.quakeml))
 
 
 def _repository_root() -> Path:

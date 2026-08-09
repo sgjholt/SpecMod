@@ -190,10 +190,15 @@ def _default_client(data_centre: str) -> Any:
 
 def _resolve_event(
     config: AcquisitionConfig, client: Any, event_client: Any = None
-) -> EventSpec:
-    """Fill in the hypocentre from the catalogue when only an id was given."""
+) -> tuple[EventSpec, Any]:
+    """Fill in the hypocentre from the catalogue when only an id was given.
+
+    Returns the resolved spec **and the catalogue it came from**, so the caller
+    can write the QuakeML rather than keeping only the handful of numbers this
+    reads off it.
+    """
     if config.event.eventid is None:
-        return config.event
+        return config.event, None
 
     if event_client is None:
         event_client = (
@@ -213,7 +218,7 @@ def _resolve_event(
     if magnitude is None and magnitudes:
         magnitude = magnitudes[0]
 
-    return replace(
+    resolved = replace(
         config.event,
         origin=str(origin.time),
         latitude=float(origin.latitude),
@@ -224,6 +229,7 @@ def _resolve_event(
             None if magnitude is None else str(magnitude.magnitude_type)
         ),
     )
+    return resolved, catalogue
 
 
 def fetch(
@@ -247,7 +253,7 @@ def fetch(
     if client is None:
         client = _default_client(config.data_centre)
 
-    spec = _resolve_event(config, client, event_client)
+    spec, catalogue = _resolve_event(config, client, event_client)
     event = spec.resolved()
     origin_time = obspy.UTCDateTime(event.origin)
     start = origin_time - config.window.before_origin_s
@@ -296,6 +302,13 @@ def fetch(
     inventory.write(str(paths.inventory), format="STATIONXML")
     written[str(paths.inventory.relative_to(Path(out)))] = _sha256(paths.inventory)
 
+    # The catalogue in full, not just the six numbers read off it above.
+    # Origin uncertainties, every magnitude rather than the preferred one,
+    # agency and evaluation status are all in here and nowhere else.
+    if catalogue is not None:
+        catalogue.write(str(paths.quakeml), format="QUAKEML")
+        written[str(paths.quakeml.relative_to(Path(out)))] = _sha256(paths.quakeml)
+
     manifest = {
         "name": config.name,
         "fetched_at": datetime.now(UTC).isoformat(),
@@ -304,6 +317,7 @@ def fetch(
         "specmod_version": __version__,
         "obspy_version": obspy.__version__,
         "config": config.source_toml,
+        "quakeml": catalogue is not None,
         "resolved": {
             "origin": event.origin,
             "latitude": event.latitude,

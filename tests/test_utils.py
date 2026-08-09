@@ -23,6 +23,13 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from obspy.core.event import (  # noqa: E402
+    Catalog,
+    Event,
+    Pick,
+    WaveformStreamID,
+)
+
 import specmod.utils as ut  # noqa: E402
 from specmod.datasets import PNR_2019  # noqa: E402
 
@@ -60,25 +67,9 @@ class TestReadPyrocko:
                 ],
             )
         )
-        assert set(got) == {"XX.TEST"}
-        assert got["XX.TEST"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:10")
-        assert got["XX.TEST"]["S"] == obspy.UTCDateTime("2020-01-01T00:00:20")
-
-    def test_the_key_is_network_and_station_only(self, tmp_path: Path) -> None:
-        """Location and channel are dropped, so picks on different channels of
-        the same station collapse together. That is deliberate — a P arrival is
-        a property of the station, not of the component it was picked on."""
-        got = ut.read_pyrocko(
-            _picks(
-                tmp_path,
-                [
-                    {"time": "00:00:10.0", "phase": "P", "sid": "XX.TEST..HHZ"},
-                    {"time": "00:00:20.0", "phase": "S", "sid": "XX.TEST.00.HHN"},
-                ],
-            )
-        )
-        assert set(got) == {"XX.TEST"}
-        assert set(got["XX.TEST"]) == {"P", "S"}
+        assert set(got) == {"XX.TEST.--"}
+        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:10")
+        assert got["XX.TEST.--"]["S"] == obspy.UTCDateTime("2020-01-01T00:00:20")
 
     @pytest.mark.parametrize("marker", ["^", "v", "P"])
     def test_all_three_p_markers_read_as_p(self, tmp_path: Path, marker: str) -> None:
@@ -87,7 +78,7 @@ class TestReadPyrocko:
         got = ut.read_pyrocko(
             _picks(tmp_path, [{"time": "00:00:10.0", "phase": marker}])
         )
-        assert set(got["XX.TEST"]) == {"P"}
+        assert set(got["XX.TEST.--"]) == {"P"}
 
     def test_the_first_line_is_treated_as_a_header_whatever_it_says(
         self, tmp_path: Path
@@ -113,7 +104,7 @@ class TestReadPyrocko:
             )
         )
         got = ut.read_pyrocko(str(path))
-        assert set(got["XX.TEST"]) == {"S"}, "the P pick was eaten as a header"
+        assert set(got["XX.TEST.--"]) == {"S"}, "the P pick was eaten as a header"
 
     def test_weights_above_three_are_dropped(self, tmp_path: Path) -> None:
         got = ut.read_pyrocko(
@@ -125,7 +116,7 @@ class TestReadPyrocko:
                 ],
             )
         )
-        assert set(got["XX.TEST"]) == {"P"}
+        assert set(got["XX.TEST.--"]) == {"P"}
 
     def test_a_repeated_phase_keeps_the_last_one_read(self, tmp_path: Path) -> None:
         # DEFECT, pinned: two P picks for one station — easy to produce by
@@ -141,7 +132,7 @@ class TestReadPyrocko:
                 ],
             )
         )
-        assert got["XX.TEST"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:11")
+        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:11")
 
     def test_an_unknown_marker_raises(self, tmp_path: Path) -> None:
         # A `KeyError` on the marker character rather than a message. Pinned
@@ -155,7 +146,8 @@ class TestReadPyrocko:
     )
     def test_the_tutorial_picks_are_unchanged(self) -> None:
         """The 15 stations every window in both golden references is cut from."""
-        got = ut.read_pyrocko(str(PATHS.picks_file()))
+        marker = next(iter(PATHS.picks.glob("*.picks")))
+        got = ut.read_pyrocko(str(marker))
         assert len(got) == 15
         assert all(set(v) == {"P", "S"} for v in got.values())
         assert all(v["S"] > v["P"] for v in got.values())
@@ -220,3 +212,122 @@ class TestStreamDistanceSort:
         )
         got = ut.stream_distance_sort(st)
         assert [tr.stats.station for tr in got] == ["B", "A"]
+
+
+class TestPicksAreKeyedPerSensor:
+    """The key is ``NET.STA.LOC``: collapse channels, keep location codes.
+
+    An arrival is one sensor's observation, shared across its components — on
+    the shipped PNR file every station has P on ``HHZ`` and S on ``HHN``, so
+    keying by full SEED id would leave the horizontals with no S. But a
+    borehole and a surface instrument differ only by location code and do not
+    see the same arrival, so that much must survive.
+    """
+
+    def test_channels_of_one_sensor_collapse(self, tmp_path: Path) -> None:
+        got = ut.read_pyrocko(
+            _picks(
+                tmp_path,
+                [
+                    {"time": "00:00:10.0", "phase": "P", "sid": "XX.TEST.00.HHZ"},
+                    {"time": "00:00:20.0", "phase": "S", "sid": "XX.TEST.00.HHN"},
+                ],
+            )
+        )
+        assert set(got) == {"XX.TEST.00"}
+        assert set(got["XX.TEST.00"]) == {"P", "S"}
+
+    def test_two_sensors_at_one_site_stay_apart(self, tmp_path: Path) -> None:
+        """Surface and borehole: same station name, different arrivals."""
+        got = ut.read_pyrocko(
+            _picks(
+                tmp_path,
+                [
+                    {"time": "00:00:10.0", "phase": "P", "sid": "XX.TEST.00.HHZ"},
+                    {"time": "00:00:12.0", "phase": "P", "sid": "XX.TEST.10.HHZ"},
+                ],
+            )
+        )
+        assert set(got) == {"XX.TEST.00", "XX.TEST.10"}
+        assert got["XX.TEST.00"]["P"] != got["XX.TEST.10"]["P"]
+
+
+class TestTheQuakeMLConversionIsLossless:
+    """The shipped picks exist in both formats, and must agree.
+
+    QuakeML is what the pipeline now reads; the Snuffler markers are the
+    original and stay as the provenance record. If the two ever diverge, every
+    window in both golden references moves — so this is the cheapest place to
+    catch it.
+    """
+
+    @pytest.mark.skipif(
+        not PATHS.picks.is_dir(), reason="tutorial waveforms not present"
+    )
+    def test_both_formats_give_the_same_picks(self) -> None:
+        marker = next(iter(PATHS.picks.glob("*.picks")))
+        quakeml = next(iter(PATHS.picks.glob("*.xml")))
+        assert ut.read_quakeml_picks(str(quakeml)) == ut.read_pyrocko(str(marker))
+
+    @pytest.mark.skipif(
+        not PATHS.picks.is_dir(), reason="tutorial waveforms not present"
+    )
+    def test_quakeml_is_what_gets_picked_up(self) -> None:
+        """`picks_file` prefers the standard format over the marker file."""
+        assert PATHS.picks_file().suffix == ".xml"
+
+    def test_a_round_trip_through_quakeml_preserves_the_mapping(
+        self, tmp_path: Path
+    ) -> None:
+        picks = ut.read_pyrocko(
+            _picks(
+                tmp_path,
+                [
+                    {"time": "00:00:10.0", "phase": "P", "sid": "XX.TEST.00.HHZ"},
+                    {"time": "00:00:20.0", "phase": "S", "sid": "XX.TEST.00.HHN"},
+                    {"time": "00:00:11.0", "phase": "P", "sid": "YY.OTHER..HHZ"},
+                ],
+            )
+        )
+        target = tmp_path / "picks.xml"
+        ut.picks_to_quakeml(picks).write(str(target), format="QUAKEML")
+        assert ut.read_quakeml_picks(str(target)) == picks
+
+    def test_a_rejected_pick_is_dropped(self, tmp_path: Path) -> None:
+        """QuakeML says so explicitly, where a marker file has only weights."""
+        wid = WaveformStreamID(
+            network_code="XX", station_code="TEST", location_code="00"
+        )
+        event = Event()
+        event.picks = [
+            Pick(
+                time=obspy.UTCDateTime("2020-01-01T00:00:10"),
+                phase_hint="P",
+                waveform_id=wid,
+            ),
+            Pick(
+                time=obspy.UTCDateTime("2020-01-01T00:00:20"),
+                phase_hint="S",
+                waveform_id=wid,
+                evaluation_status="rejected",
+            ),
+        ]
+        target = tmp_path / "picks.xml"
+        Catalog(events=[event]).write(str(target), format="QUAKEML")
+        assert set(ut.read_quakeml_picks(str(target))["XX.TEST.00"]) == {"P"}
+
+    def test_phase_branches_fold_onto_p_and_s(self, tmp_path: Path) -> None:
+        """``Pg``/``Pn`` are branches of the same arrival for this workflow."""
+        event = Event()
+        event.picks = [
+            Pick(
+                time=obspy.UTCDateTime("2020-01-01T00:00:10"),
+                phase_hint="Pg",
+                waveform_id=WaveformStreamID(
+                    network_code="XX", station_code="TEST", location_code="00"
+                ),
+            )
+        ]
+        target = tmp_path / "picks.xml"
+        Catalog(events=[event]).write(str(target), format="QUAKEML")
+        assert set(ut.read_quakeml_picks(str(target))["XX.TEST.00"]) == {"P"}

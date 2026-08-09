@@ -237,6 +237,22 @@ class _Magnitude:
         self.mag, self.magnitude_type = mag, kind
 
 
+class _Catalogue(list):  # type: ignore[type-arg]
+    """A catalogue that can be written, as ObsPy's can.
+
+    `fetch` now saves the QuakeML rather than reading six numbers off it and
+    dropping the rest, so the double has to be writable.
+    """
+
+    def __init__(self, events: list[Any]) -> None:
+        super().__init__(events)
+        self.written: list[str] = []
+
+    def write(self, filename: str, format: str = "QUAKEML", **kwargs: Any) -> None:
+        self.written.append(filename)
+        Path(filename).write_text("<q:quakeml/>")
+
+
 class _CatalogueEvent:
     def __init__(self, origin: _Origin, magnitude: _Magnitude | None) -> None:
         self.origins = [origin]
@@ -256,9 +272,9 @@ class TestResolvingAnEventId:
     source of truth that can disagree silently."""
 
     @staticmethod
-    def _catalogue(n: int = 1, magnitude: _Magnitude | None = None) -> list[Any]:
+    def _catalogue(n: int = 1, magnitude: _Magnitude | None = None) -> _Catalogue:
         origin = _Origin("2020-03-18T13:09:31.0", 40.751, -112.078, 9200.0)
-        return [_CatalogueEvent(origin, magnitude) for _ in range(n)]
+        return _Catalogue([_CatalogueEvent(origin, magnitude) for _ in range(n)])
 
     def test_it_fills_the_hypocentre_from_the_catalogue(self, tmp_path: Path) -> None:
         client = FakeClient(
@@ -347,11 +363,13 @@ class TestSeparateCatalogueAndArchive:
         assert "get_waveforms" in client.calls
 
 
-def _magna_catalogue() -> list[Any]:
+def _magna_catalogue() -> _Catalogue:
     """The epicentre USGS gives for uu60363602, per its KML."""
-    return [
-        _CatalogueEvent(
-            _Origin("2020-03-18T13:09:31.0", 40.751, -112.0783333, 9200.0),
-            _Magnitude(5.7, "mww"),
-        )
-    ]
+    return _Catalogue(
+        [
+            _CatalogueEvent(
+                _Origin("2020-03-18T13:09:31.0", 40.751, -112.0783333, 9200.0),
+                _Magnitude(5.7, "mww"),
+            )
+        ]
+    )

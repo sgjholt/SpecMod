@@ -151,12 +151,39 @@ def get_station_loc_from_inventory(
     return meta["latitude"], meta["longitude"], meta["elevation"]
 
 
+def sensor_id(tr: Trace) -> str:
+    """``NET.STA.LOC`` — the sensor a pick belongs to.
+
+    Not the channel: an arrival is one sensor's observation and is shared by
+    its components. Not the bare station either: a borehole and a surface
+    instrument differ only by location code, and they do not see the same
+    arrival.
+
+    An empty location code is written ``--``, matching how Snuffler marker
+    files spell it.
+    """
+    return ".".join([tr.stats.network, tr.stats.station, tr.stats.location or "--"])
+
+
+def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
+    """Read picks from QuakeML or from a Snuffler marker file.
+
+    Dispatches on the suffix, so a caller holding a path from
+    :meth:`~specmod.datasets.EventDirectory.picks_file` does not have to know
+    which format it got. Both return the same ``{"NET.STA.LOC": {...}}``
+    mapping.
+    """
+    if str(source).endswith((".xml", ".quakeml")):
+        return ut.read_quakeml_picks(source)
+    return ut.read_pyrocko(source)
+
+
 def set_picks_from_pyrocko(
     st: Stream, pyrock_file: str | PathLike[str], emergency_ratio: float = 1.7
 ) -> None:
-    picks = ut.read_pyrocko(pyrock_file)
+    picks = read_picks(pyrock_file)
     for tr in st:
-        id = ".".join([tr.stats.network, tr.stats.station])
+        id = sensor_id(tr)
         try:
             tr.stats["p_time"] = picks[id]["P"]
         except KeyError:

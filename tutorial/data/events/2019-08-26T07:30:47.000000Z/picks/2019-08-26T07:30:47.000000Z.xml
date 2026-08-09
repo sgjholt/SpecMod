@@ -1,0 +1,217 @@
+<?xml version='1.0' encoding='utf-8'?>
+<q:quakeml xmlns="http://quakeml.org/xmlns/bed/1.2" xmlns:q="http://quakeml.org/xmlns/quakeml/1.2">
+  <eventParameters publicID="smi:local/91a7b187-96d5-4497-80e5-43af5c739c25">
+    <event publicID="smi:local/1eb0b846-de78-4cdc-9db5-cb0e331f79cb">
+      <pick publicID="smi:local/3596e168-91dc-4f74-8ffd-3f250650cac3">
+        <time>
+          <value>2019-08-26T07:30:48.729390Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L001" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/40f33555-8bc2-4d1a-8e80-de87604b4183">
+        <time>
+          <value>2019-08-26T07:30:49.784790Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L001" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/185d13b2-3042-4904-9e29-9d90e25d3c6e">
+        <time>
+          <value>2019-08-26T07:30:49.758130Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L002" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/348474d8-99a7-4444-aa55-935e420a0fd4">
+        <time>
+          <value>2019-08-26T07:30:51.613070Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L002" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/b2791d07-887b-4cdd-9e02-70e0697c000d">
+        <time>
+          <value>2019-08-26T07:30:50.118250Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L006" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/b28a094b-8cc2-4a0c-8c77-a5b0c4a4c034">
+        <time>
+          <value>2019-08-26T07:30:52.749640Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L006" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/1ddbcf20-cc78-4a6a-ac6b-1c2eef9162e3">
+        <time>
+          <value>2019-08-26T07:30:51.091660Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L007" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/68e49f51-04f9-429b-8d4a-52daef6b6a56">
+        <time>
+          <value>2019-08-26T07:30:53.963650Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L007" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/1987ffa9-1794-4bfe-bc59-97d8e17b9d90">
+        <time>
+          <value>2019-08-26T07:30:51.848220Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L008" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/ca53e4b9-49b6-41aa-bbac-1b7990c83de5">
+        <time>
+          <value>2019-08-26T07:30:55.724340Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L008" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/53dc3425-c2a3-497e-8596-fb010af04f9f">
+        <time>
+          <value>2019-08-26T07:30:48.709670Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L009" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/932489d6-4fbe-4ef8-b744-c25c58953617">
+        <time>
+          <value>2019-08-26T07:30:50.609210Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="L009" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/2237ad48-6af5-4be3-be1b-85c0d5f71dad">
+        <time>
+          <value>2019-08-26T07:30:50.174670Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="LD06" locationCode=""></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/1b447c42-b29b-42bc-a409-c087a4df07cb">
+        <time>
+          <value>2019-08-26T07:30:50.567020Z</value>
+        </time>
+        <waveformID networkCode="LV" stationCode="LD06" locationCode=""></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/550a34fe-2b6c-45ea-9398-d5c7e6b6125a">
+        <time>
+          <value>2019-08-26T07:30:52.229430Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ01" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/d6fe031d-c46d-48c9-be21-37b41cc899b7">
+        <time>
+          <value>2019-08-26T07:30:55.987870Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ01" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/bc6cbc5a-cd2b-4636-9644-c1f24aa87bf1">
+        <time>
+          <value>2019-08-26T07:30:49.039290Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ03" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/6c0a6554-1784-411a-808f-365a25eddddd">
+        <time>
+          <value>2019-08-26T07:30:50.246440Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ03" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/76318c04-2b02-4ff9-b48f-aa5095d85b11">
+        <time>
+          <value>2019-08-26T07:30:48.111050Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ04" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/2822693d-e249-46a3-b808-7c904eba9f29">
+        <time>
+          <value>2019-08-26T07:30:48.675880Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ04" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/da814a5a-f8bb-48b8-b4b0-d6fc2580161d">
+        <time>
+          <value>2019-08-26T07:30:48.479510Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ05" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/4113beef-994c-412c-9314-79ef4f3ddd51">
+        <time>
+          <value>2019-08-26T07:30:49.310430Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ05" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/1ef8c38e-4f49-45d1-8f0a-e4bdab56f43b">
+        <time>
+          <value>2019-08-26T07:30:48.921950Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ06" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/50e963cc-45a9-4c22-b1ba-d86f6a56487b">
+        <time>
+          <value>2019-08-26T07:30:50.092790Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ06" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/dc7df195-6b7d-4a8f-80aa-b3364f4cb4ef">
+        <time>
+          <value>2019-08-26T07:30:51.609210Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ07" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/cd9fd341-bcf5-47bc-afef-ca1dd0f01bfe">
+        <time>
+          <value>2019-08-26T07:30:55.188500Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ07" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/ba87a6ff-e176-49af-bc0d-92f99eee2710">
+        <time>
+          <value>2019-08-26T07:30:50.106250Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ09" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/9a771fbb-0c90-4a63-921c-c7761a1f6975">
+        <time>
+          <value>2019-08-26T07:30:52.076530Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ09" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+      <pick publicID="smi:local/38cda02d-66f0-4fe9-978c-aad6eceb5e82">
+        <time>
+          <value>2019-08-26T07:30:51.019630Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ10" locationCode="00"></waveformID>
+        <phaseHint>P</phaseHint>
+      </pick>
+      <pick publicID="smi:local/89eb5882-de51-4eff-8fdb-2300d2119c12">
+        <time>
+          <value>2019-08-26T07:30:53.981570Z</value>
+        </time>
+        <waveformID networkCode="UR" stationCode="AQ10" locationCode="00"></waveformID>
+        <phaseHint>S</phaseHint>
+      </pick>
+    </event>
+  </eventParameters>
+</q:quakeml>

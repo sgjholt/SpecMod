@@ -2127,6 +2127,34 @@ single `data_centre` could not express the Magna fetch at all. `[event]
 catalogue` names the service to resolve the id against, defaults to the
 waveform centre, and the manifest records both.
 
+**ObsPy's catalogue machinery, audited and now used.** The inventory side was
+always right — `read_inventory` for StationXML and `inv.get_channel_metadata`
+for coordinates, which is channel-level and epoch-aware rather than scraping
+station attributes. The **event** side was not used at all: `acquire` fetched a
+`Catalog`, read six floats off the preferred origin and magnitude, and dropped
+it. Origin uncertainties, non-preferred magnitudes, agency and evaluation
+status existed for one function call and were then unrecoverable.
+
+`acquire` now writes the catalogue as `event.xml` beside the data, and
+`Dataset.catalog()` reads it. `Event` stays as the typed four-value summary
+that `set_stream_distance` needs, but is no longer the only surviving record.
+
+**Picks moved to QuakeML**, with the Snuffler reader kept as an importer and
+the marker file kept as the provenance record. Two things came out of doing it:
+
+*The key is `NET.STA.LOC`, not the full SEED id.* An arrival is one sensor's
+observation and is shared across its components — on the shipped PNR file
+**all 15 stations** have P on `HHZ` and S on `HHN`, so keying by channel would
+leave every horizontal with no S. But the location code must survive, because
+that is what separates a borehole instrument from a surface one at the same
+site, and they do not see the same arrival. The previous `NET.STA` keying
+collapsed both; only the channel half of that was correct.
+
+*The conversion is lossless, and proven so rather than assumed.* The QuakeML
+round-trips to the same mapping as the marker file, a test asserts the two
+committed formats still agree, and every window in both golden references is
+unchanged — which is the real check, since the references are pick-derived.
+
 **Built: the consume half too.** `datasets.load_pnr_2019()` returns the event
 committed to this repository with no download and no network, because it is in
 the checkout — reaching for a URL to fetch data that is already present would
