@@ -1360,15 +1360,34 @@ moment formula corrects an amplitude, so it multiplies by `r`.
 Measured on the 28 PNR windows through the two-stage fit, with `rho = 2500`
 kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 
-| spreading | median M0 | median Mw |
+| spreading | event Mw | |
 |---|---|---|
-| `1/r` | 1.67e13 N m | **+2.75** |
-| `1/r**2` | 1.55e17 N m | **+5.39** |
-| catalogue Mw 1.6 | 3.16e11 N m | +1.60 |
+| `1/r` | **+2.75** | reproduced exactly by `specmod.magnitude` |
+| `1/r**2` | **+3.42** | corrected; see below |
+| catalogue Mw | +1.60 | |
 
-`1/r**2` is nearly four magnitude units out, which is the distance term
-applied twice; `1/r` lands within reach of the constants. **The exponent is
-settled by this; the absolute calibration is not.**
+**One figure in an earlier draft of this table was wrong, and building the
+module found it.** `1/r**2` was recorded as +5.39, and the text read that
+`1/r**2` is "nearly four magnitude units out". It is not — it is **0.68**
+magnitude units out. The +5.39 came from evaluating `r**n` with `r` in metres,
+which is dimensionally consistent only at `n = 1`: for any other exponent it
+multiplies in an extra reference distance. The discrepancy is exactly
+`(2/3) * log10(1000) = 2.0` magnitude units, and
+`tests/test_magnitude.py` pins that identity so the arithmetic cannot come
+back.
+
+`specmod.spreading` avoids the trap by construction. Every model returns the
+**dimensionless ratio** `(R_0/R)**n` rather than a raw `R**-n`, so the
+reference distance is explicit and cancels only where it genuinely does — at
+`n = 1`, which is why the short form circulates and works.
+
+**The conclusion is unchanged; its evidence is weaker than claimed.** The
+exponent is still 1, but that now rests on theory — amplitude decays as `1/r`,
+energy as `1/r**2`, and a moment expression corrects an amplitude — plus the
+thesis's own inverted near-field values of 0.88 and 0.90. It does *not* rest
+on a dramatic mismatch, because a chunk of that mismatch was an arithmetic
+artefact rather than physics. **The absolute calibration remains unsettled**
+either way: 2.75 against a catalogue 1.6.
 
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
