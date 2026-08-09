@@ -119,15 +119,14 @@ class Event:
 #: <https://www2.bgs.ac.uk/nationalgeosciencedatacentre/citedData/catalogue/709cbc2f-af5c-4d09-a4ea-6deb5aa8c5d8.html>`_),
 #: which gives ``surface_ML``, ``surface_Mw`` and ``corrected_Mw`` all as 2.9.
 #:
-#: The hypocentre is the one the published results were computed with. The
-#: catalogue puts the event 60 m shallower, at 2.04 km; adopting that would
-#: move every distance and so every golden reference, which is a change to make
-#: deliberately rather than in passing.
+#: The hypocentre is the catalogue's, converted from its British National Grid
+#: easting/northing (336135.0, 432515.0; EPSG:27700) to WGS84. The catalogue
+#: gives depth as an elevation of -2040 m.
 PNR_2019 = Event(
     origin="2019-08-26T07:30:47.000000Z",
-    latitude=53.784,
-    longitude=-2.967,
-    depth_km=2.1,
+    latitude=53.785021,
+    longitude=-2.970780,
+    depth_km=2.04,
     catalogue_magnitude=2.9,
     catalogue_magnitude_type="Mw",
 )

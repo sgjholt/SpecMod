@@ -1363,7 +1363,7 @@ kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 
 | spreading | event Mw | |
 |---|---|---|
-| `1/r` | **+2.75** | reproduced exactly by `specmod.magnitude` |
+| `1/r` | **+2.74** | reproduced by `specmod.magnitude` |
 | `1/r**2` | **+3.42** | corrected; see below |
 | catalogue `Mw` | **2.90** | NGDC PNR-2 catalogue — see §4.7.1 |
 
@@ -1435,7 +1435,7 @@ hydraulic-fracturing-induced event on record.
 | | Mw |
 |---|---|
 | computed, §4.7 constants (`rho` 2500, `beta` 2500, `R_c` 0.63) | **2.74** |
-| computed, shipped defaults (`rho` 2700, `beta` 3500, `R_c` 0.55) | **3.10** |
+| computed, shipped defaults (`rho` 2700, `beta` 3500, `R_c` 0.55) | **3.09** |
 | catalogue `surface_Mw` | **2.90** |
 
 The two constant sets straddle the catalogue value, within 0.16 and 0.20
@@ -1451,11 +1451,27 @@ the earlier candidate explanations — uncombined horizontals, phase-constant
 mismatch, microseismic spreading — are no longer needed to explain a gap that
 was mostly bookkeeping.
 
-**Still open:** the catalogue puts the hypocentre 60 m shallower, at 2.04 km
-against the 2.1 km used here, and gives eastings/northings that would need
-converting from British National Grid to check the epicentre. Adopting either
-moves every distance and so every golden reference, so it is a deliberate
-change rather than a drive-by one.
+**The hypocentre is now the catalogue's.** Its British National Grid
+easting/northing (336135.0, 432515.0; EPSG:27700) converts to 53.785021 N,
+2.970780 W, and its depth is 2.04 km. That moves the epicentre **274 m** from
+the values previously carried here — about 12% of the distance to the nearest
+station — and the consequences are confined to geometry, as they should be:
+
+| | before | after |
+|---|---|---|
+| event `fc` | 11.585 Hz | **12.081 Hz** |
+| nearest `repi` | 0.89 km | 1.02 km |
+| farthest `rhyp` | 22.94 km | 23.16 km |
+| Mw, §4.7 constants | 2.744 | 2.740 |
+
+Regenerating the golden references moved exactly the 112 geometry values —
+`repi`, `rhyp`, `azimuth` and `back_azimuth` on all 28 channels — and nothing
+else. Window edges, picks and sample counts are pick-derived and unchanged;
+`motion_reference.json` is untouched.
+
+`fc` moving 4.3% where Mw moves 0.004 is the inverse-distance weighting doing
+what §4.7 of PR #25 measured: the weight is largest exactly where the two
+distance measures disagree most.
 
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the

@@ -155,20 +155,20 @@ class TestOnTheRealEvent:
 
     def test_the_event_magnitude_is_unchanged(self, pnr_windows) -> None:  # type: ignore[no-untyped-def]
         event = event_magnitude(self._staged(pnr_windows))
-        assert event.value == pytest.approx(3.097, abs=0.01)
+        assert event.value == pytest.approx(3.094, abs=0.01)
         assert event.unit == "Mw"
         assert len(event.stations) == 28
         # M0 and Mw must describe the same event.
         assert moment_magnitude(event.m0) == pytest.approx(event.value, abs=1e-9)
 
     def test_it_reproduces_the_plan_s_measured_value(self, pnr_windows) -> None:  # type: ignore[no-untyped-def]
-        """§4.7 recorded Mw +2.75 for ``1/r`` with these constants."""
+        """§4.7 records Mw +2.74 for ``1/r`` with these constants."""
         event = event_magnitude(
             self._staged(pnr_windows),
             constants=PLAN_CONSTANTS,
             spreading=PowerLaw(exponent=1.0),
         )
-        assert event.value == pytest.approx(2.75, abs=0.01)
+        assert event.value == pytest.approx(2.74, abs=0.01)
 
     def test_squaring_the_exponent_costs_one_reference_distance(
         self,
@@ -254,7 +254,7 @@ class TestOnTheRealEvent:
 
 
 def test_the_pnr_event_brackets_its_catalogue_magnitude(pnr_windows) -> None:  # type: ignore[no-untyped-def]
-    """Mw 2.74 and 3.10 straddle the catalogue's 2.9.
+    """Mw 2.74 and 3.09 straddle the catalogue's 2.9.
 
     The catalogue value comes with its scale attached, which is the point of
     ``Event.catalogue_magnitude_type``: comparing a computed Mw against an
