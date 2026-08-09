@@ -56,18 +56,39 @@ are kept separate here rather than folded together.
 What this does and does not establish
 -------------------------------------
 
-The spreading **exponent** is settled by measurement: ``1/R**2`` puts the PNR
-event at Mw 5.39 against a catalogue 1.6, which is the distance term applied
-twice, while ``1/R`` lands within reach of the constants.
+The spreading **exponent** is 1 on theory — amplitude decays as ``1/R``,
+energy as ``1/R**2``, and a moment expression corrects an amplitude — and on
+the thesis's own inverted near-field values of 0.88 and 0.90.
 
-**The absolute calibration is not settled.** On the PNR event this returns
-roughly Mw 2.7 where the catalogue says 1.6, and that gap is real and
-unexplained — candidates include the horizontals being fitted as independent
-measurements rather than combined, the phase constants not matching the phase
-actually measured, and a microseismic spreading regime that the theoretical
-``1/R`` does not describe. Treat the number as a self-consistent computation
-whose scale is pending calibration against Magna (§5.2.5), not as a catalogue
-magnitude. :func:`moment_magnitude` is exact; what feeds it is a model.
+**The absolute calibration is not settled, and the size of the gap depends on
+a question this repository has not answered.** With the shipped defaults the
+PNR event comes out near Mw 3.1, and near Mw 2.75 with the constants §4.7
+used. The catalogue value carried through this repository is **1.6, quoted as
+"Mw" but nowhere sourced** — and BGS reports the Preston New Road sequence in
+**local magnitude**, the well-known 26 August 2019 event being 2.9 ML. If the
+1.6 is likewise ML, comparing it against a moment magnitude is a category
+error, and the two are not as far apart as they look:
+
+- Holt (2019) Table 2.2, the ``[R]`` relation for ``ML < 2.60``, gives
+  ``Mw = 0.67 ML + 1.03``. **ML 1.6 predicts Mw 2.10**, against 2.75 here — a
+  gap of 0.65 rather than 1.15.
+- Read the other way, Mw 2.75 implies **ML 2.57**.
+
+That relation is Utah's, fitted to tectonic events with Utah's own spreading,
+so applying it to shallow UK induced seismicity is an extrapolation across
+both region and source type. The 2/3 *slope* travels better than the
+intercept: it has a theoretical basis at small magnitudes (Deichmann, 2017 —
+attenuation makes observed pulse durations nearly constant, so ML falls away
+faster than Mw), where the intercept is regional.
+
+So: **do not read the residual gap as a known bias.** Establishing whether the
+catalogue value is ML or Mw would change its size materially, and it is the
+cheapest thing to check. Beyond that the candidates are the horizontals being
+fitted as independent measurements rather than combined, phase constants not
+matching the phase measured, and a microseismic spreading regime the
+theoretical ``1/R`` does not describe. Treat the output as a self-consistent
+computation whose scale is pending calibration against Magna (§5.2.5).
+:func:`moment_magnitude` is exact; what feeds it is a model.
 """
 
 from __future__ import annotations

@@ -1225,10 +1225,12 @@ constant that bridges kilometres and metres, which is worth checking rather
 than assuming either way.
 
 There is a cheap arithmetic check that settles it without reading any code.
-`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw 1.6**
-used throughout this repository should come out near **3e11 N m** — or 3e18 if
-the pipeline is working in dyne-centimetres. Anything else is a unit error,
-and a factor of 10^9 from a kilometre-per-second velocity is not subtle.
+`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so a **Mw 1.6** event should come
+out near **3e11 N m** — or 3e18 if the pipeline is working in
+dyne-centimetres. A factor of 10^9 from a kilometre-per-second velocity is not
+subtle, which is the point of the check. Note that it identifies *unit*
+errors, not calibration: whether the Preston New Road event is Mw 1.6 at all
+is a separate and still-open question — see §4.7.1.
 
 The general point is that this is ambiguous *now* because the constants live
 as bare floats in prose with no units attached — which is the same failure
@@ -1364,7 +1366,7 @@ kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 |---|---|---|
 | `1/r` | **+2.75** | reproduced exactly by `specmod.magnitude` |
 | `1/r**2` | **+3.42** | corrected; see below |
-| catalogue Mw | +1.60 | |
+| catalogue value | 1.60 | **magnitude type unverified — see §4.7.1** |
 
 **One figure in an earlier draft of this table was wrong, and building the
 module found it.** `1/r**2` was recorded as +5.39, and the text read that
@@ -1386,8 +1388,45 @@ exponent is still 1, but that now rests on theory — amplitude decays as `1/r`,
 energy as `1/r**2`, and a moment expression corrects an amplitude — plus the
 thesis's own inverted near-field values of 0.88 and 0.90. It does *not* rest
 on a dramatic mismatch, because a chunk of that mismatch was an arithmetic
-artefact rather than physics. **The absolute calibration remains unsettled**
-either way: 2.75 against a catalogue 1.6.
+artefact rather than physics.
+
+##### 4.7.1 Is the PNR catalogue value ML or Mw?
+
+**Unresolved, and worth resolving, because it changes how far off the
+calibration is.** This document, the tutorial and the module docstring all
+carry the Preston New Road event as **Mw 1.6**, and **none of them cites a
+source for it**. BGS reports the Preston New Road sequence in **local
+magnitude** — the well-known 26 August 2019 event is 2.9 **ML** — so a 1.6
+taken from the same catalogue is most likely ML rather than Mw.
+
+The distinction is not cosmetic, because the two scales genuinely diverge at
+small magnitudes. Under this thesis's own Table 2.2 relation for `ML < 2.60`,
+`Mw = 0.67 ML + 1.03`:
+
+| reading | expected Mw | gap to the computed 2.75 |
+|---|---|---|
+| 1.6 is **Mw** | 1.60 | **1.15** |
+| 1.6 is **ML** | **2.10** | **0.65** |
+
+Equivalently, Mw 2.75 implies ML 2.57. So under the ML reading the method is
+roughly half as far out as the Mw reading suggests, and a good deal of what
+§4.7 called an unexplained gap may be a category error rather than a defect.
+
+Two cautions against over-crediting this. The relation is **Utah's**, fitted
+to tectonic events with Utah's own spreading, and applying it to shallow UK
+induced seismicity extrapolates across region *and* source type. And the 2/3
+**slope** travels better than the **intercept** — the slope has a theoretical
+basis at small magnitudes (Deichmann, 2017: attenuation makes observed pulse
+durations nearly constant, so ML falls away faster than Mw), where the
+intercept is regional.
+
+**Action:** identify the catalogue entry for the 2019-08-26T07:49:24.2 event
+and record its magnitude *type* alongside its value, in
+`specmod.datasets.PNR_2019`, so the comparison stops being made against an
+unlabelled number. Until then the residual should not be read as a known bias.
+An attempt to check it from this environment was blocked — both
+`earthquakes.bgs.ac.uk` and the secondary tracker are refused by the egress
+proxy.
 
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the

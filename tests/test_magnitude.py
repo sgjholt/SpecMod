@@ -141,10 +141,13 @@ class TestOnTheRealEvent:
     """Measured on the 28 PNR channels through the two-stage fit.
 
     These pin a computation, not a physical truth. The absolute calibration is
-    unsettled — the catalogue says Mw 1.6 and this returns 2.7 — so the value
-    of the assertion is that a change to the constants, the units or the
-    spreading moves it visibly. See the module docstring of
-    ``specmod.magnitude``.
+    unsettled, and how far off it is depends on an open question: the
+    catalogue value carried through this repository is 1.6, labelled "Mw" but
+    nowhere sourced, while BGS reports this sequence in ML. Under the thesis's
+    own ML-Mw relation an ML 1.6 predicts Mw 2.10, not 1.6. So the value of
+    these assertions is that a change to the constants, the units or the
+    spreading moves the number visibly — not that the number is right. See the
+    module docstring of ``specmod.magnitude``.
     """
 
     @staticmethod
