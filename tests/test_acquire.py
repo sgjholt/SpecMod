@@ -298,3 +298,60 @@ class TestResolvingAnEventId:
                 out=tmp_path,
                 client=FakeClient(events=self._catalogue(n)),
             )
+
+
+class TestSeparateCatalogueAndArchive:
+    """Event ids are issued per catalogue, so the two centres can differ.
+
+    A USGS ComCat id like ``uu60363602`` means nothing to IRIS, and the Magna
+    config depends on being able to say so.
+    """
+
+    def test_the_shipped_magna_config_names_both(self) -> None:
+        config = read_config(ROOT / "datasets" / "magna_2020.toml")
+        assert config.data_centre == "IRIS"
+        assert config.event.catalogue == "USGS"
+        assert config.event.eventid == "uu60363602"
+        assert config.stations.max_radius_km == 400.0
+
+    def test_the_catalogue_is_asked_not_the_archive(self, tmp_path: Path) -> None:
+        archive, catalogue = FakeClient(), FakeClient(events=_magna_catalogue())
+        fetch(
+            _config(event=EventSpec(eventid="uu60363602", catalogue="USGS")),
+            out=tmp_path,
+            client=archive,
+            event_client=catalogue,
+        )
+        assert "get_events" in catalogue.calls
+        assert "get_events" not in archive.calls
+        # And the waveforms still come from the archive.
+        assert "get_waveforms" in archive.calls
+
+    def test_the_manifest_records_both(self, tmp_path: Path) -> None:
+        manifest = fetch(
+            _config(event=EventSpec(eventid="uu60363602", catalogue="USGS")),
+            out=tmp_path,
+            client=FakeClient(),
+            event_client=FakeClient(events=_magna_catalogue()),
+        )
+        assert manifest["data_centre"] == "IRIS"
+        assert manifest["event_catalogue"] == "USGS"
+
+    def test_one_centre_is_reused_when_no_catalogue_is_named(
+        self, tmp_path: Path
+    ) -> None:
+        """The common case stays a single client."""
+        client = FakeClient(events=_magna_catalogue())
+        fetch(_config(event=EventSpec(eventid="x")), out=tmp_path, client=client)
+        assert "get_events" in client.calls
+        assert "get_waveforms" in client.calls
+
+
+def _magna_catalogue() -> list[Any]:
+    """The epicentre USGS gives for uu60363602, per its KML."""
+    return [
+        _CatalogueEvent(
+            _Origin("2020-03-18T13:09:31.0", 40.751, -112.0783333, 9200.0),
+            _Magnitude(5.7, "mww"),
+        )
+    ]

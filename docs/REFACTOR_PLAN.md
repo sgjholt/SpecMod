@@ -2120,6 +2120,13 @@ converted to degrees at the FDSN boundary, because a config in degrees is a
 config people get wrong; and an `eventid` matching zero or several events
 **raises** rather than taking the first, which would pick an event at random.
 
+**The event catalogue is named separately from the waveform archive**, which
+writing `datasets/magna_2020.toml` is what surfaced. Event ids are issued per
+catalogue: `uu60363602` is a USGS ComCat id and means nothing to IRIS, so a
+single `data_centre` could not express the Magna fetch at all. `[event]
+catalogue` names the service to resolve the id against, defaults to the
+waveform centre, and the manifest records both.
+
 **Built: the consume half too.** `datasets.load_pnr_2019()` returns the event
 committed to this repository with no download and no network, because it is in
 the checkout — reaching for a URL to fetch data that is already present would

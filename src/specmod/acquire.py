@@ -60,6 +60,11 @@ class EventSpec:
     """
 
     eventid: str | None = None
+    #: FDSN service to resolve ``eventid`` against, when it is not the one
+    #: serving the waveforms. Event ids are issued per catalogue — a USGS
+    #: ComCat id means nothing to IRIS — so the two are genuinely separable
+    #: and the config has to be able to say so.
+    catalogue: str | None = None
     origin: str | None = None
     latitude: float | None = None
     longitude: float | None = None
@@ -183,12 +188,20 @@ def _default_client(data_centre: str) -> Any:
     return Client(data_centre)
 
 
-def _resolve_event(config: AcquisitionConfig, client: Any) -> EventSpec:
+def _resolve_event(
+    config: AcquisitionConfig, client: Any, event_client: Any = None
+) -> EventSpec:
     """Fill in the hypocentre from the catalogue when only an id was given."""
     if config.event.eventid is None:
         return config.event
 
-    catalogue = client.get_events(eventid=config.event.eventid)
+    if event_client is None:
+        event_client = (
+            client
+            if config.event.catalogue in (None, config.data_centre)
+            else _default_client(config.event.catalogue)
+        )
+    catalogue = event_client.get_events(eventid=config.event.eventid)
     if len(catalogue) != 1:
         raise ValueError(
             f"eventid {config.event.eventid!r} matched {len(catalogue)} events; "
@@ -218,6 +231,7 @@ def fetch(
     out: str | Path,
     *,
     client: Any = None,
+    event_client: Any = None,
 ) -> dict[str, Any]:
     """Fetch one event and write it as an :class:`EventDirectory`.
 
@@ -233,7 +247,7 @@ def fetch(
     if client is None:
         client = _default_client(config.data_centre)
 
-    spec = _resolve_event(config, client)
+    spec = _resolve_event(config, client, event_client)
     event = spec.resolved()
     origin_time = obspy.UTCDateTime(event.origin)
     start = origin_time - config.window.before_origin_s
@@ -286,6 +300,7 @@ def fetch(
         "name": config.name,
         "fetched_at": datetime.now(UTC).isoformat(),
         "data_centre": config.data_centre,
+        "event_catalogue": config.event.catalogue or config.data_centre,
         "specmod_version": __version__,
         "obspy_version": obspy.__version__,
         "config": config.source_toml,

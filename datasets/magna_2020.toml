@@ -1,0 +1,45 @@
+# Magna, Utah, 18 March 2020 — the validation dataset.
+#
+# Transcribed from Holt et al., "Towards Robust and Routine Determination of Mw
+# for Small Earthquakes: Application to the 2020 Mw 5.7 Magna, Utah, Seismic
+# Sequence". §5.2.4 of docs/REFACTOR_PLAN.md tabulates the published workflow;
+# this is the acquisition half of it.
+#
+# Fetching this needs the network and is not something any test does. Build the
+# artefact with:
+#
+#     specmod fetch datasets/magna_2020.toml -o build/magna_2020
+#
+# then publish it and add the hash to `specmod.datasets.REGISTRY`.
+
+name = "magna_2020"
+
+# Waveforms and station metadata from IRIS/EarthScope, as the paper used.
+data_centre = "IRIS"
+
+[event]
+# The hypocentre is resolved from the catalogue rather than retyped, so there
+# is one source of truth for it. `uu60363602` is a USGS ComCat id and means
+# nothing to IRIS, which is why the catalogue is named separately from the
+# centre serving the waveforms.
+eventid = "uu60363602"
+catalogue = "USGS"
+
+[stations]
+# The 88 stations the paper used, by the networks it lists: UU (73), IW (5),
+# US (4), IE (3), and one each of N4, NN and RE.
+network = "UU,IW,US,IE,N4,NN,RE"
+station = "*"
+location = "*"
+# Broadband and strong motion both, since the paper uses both. The vertical is
+# fetched too: the workflow rotates horizontals to R/T, and rotation is not a
+# reason to discard Z from the archive.
+channel = "HH*,BH*,HN*,EN*"
+max_radius_km = 400.0
+
+[window]
+# Long enough to reach Sg at 400 km. At a 3.4 km/s group velocity that arrival
+# is ~118 s after origin, and the signal window is 20 s from 80% of the Pg-Sg
+# time, so 300 s leaves room for the coda and for the window refinement.
+before_origin_s = 60.0
+after_origin_s = 300.0
