@@ -224,6 +224,48 @@ def _environment() -> dict:
     }
 
 
+def _carry_forward_legacy(fresh: dict, section: str, key: str, path: Path) -> None:
+    """Copy a ``*_legacy`` record from the existing reference into a fresh capture.
+
+    ``bsnr_legacy`` and ``band_legacy`` record what the pre-refactor lineage
+    produced, before two corrections landed: the binned noise is now derived
+    from the lifted noise rather than beside it, and the bandwidth selector
+    changed. **Neither can be recaptured** — the code paths that produced them
+    are gone — so the committed files are the only copies, and
+    ``test_golden_reference.py`` and ``test_pipeline.py`` each assert the
+    record is still there.
+
+    Without this, regenerating deletes them. Missing entries are reported
+    rather than passed over, since a silent gap is the failure this guards.
+    """
+    if not path.is_file():
+        print(f"note: {path.name} absent; no {key} to carry forward")
+        return
+
+    previous = json.loads(path.read_text())
+    carried, missing = 0, []
+    groups = fresh if section is None else {section: fresh[section]}
+    for group, windows in groups.items():
+        if group == "_environment":
+            continue
+        before = previous.get(group, {})
+        for name, record in windows.items():
+            legacy = before.get(name, {}).get(key)
+            if legacy is None:
+                missing.append(f"{group}/{name}")
+            else:
+                record[key] = legacy
+                carried += 1
+
+    print(f"carried {carried} {key} records forward from {path.name}")
+    if missing:
+        print(
+            f"WARNING: {len(missing)} window(s) had no {key}, e.g. "
+            f"{missing[:3]}. It cannot be recomputed — recover from git rather "
+            f"than committing this file."
+        )
+
+
 def main() -> None:
     reference = {
         "_environment": _environment(),
@@ -232,6 +274,7 @@ def main() -> None:
             for est in ("fft", "welch", "multitaper", "quadratic", "cwt")
         },
     }
+    _carry_forward_legacy(reference, None, "bsnr_legacy", OUT)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(reference, indent=1, sort_keys=True) + "\n")
     n = sum(len(v) for k, v in reference.items() if k != "_environment")
@@ -243,6 +286,7 @@ def main() -> None:
     print(f"wrote {WINDOWS_OUT.relative_to(ROOT)}: {len(windows['windows'])} traces")
 
     motion = {"_environment": _environment(), "displacement": capture_motion()}
+    _carry_forward_legacy(motion, "displacement", "band_legacy", MOTION_OUT)
     MOTION_OUT.write_text(json.dumps(motion, indent=1, sort_keys=True) + "\n")
     print(f"wrote {MOTION_OUT.relative_to(ROOT)}: {len(motion['displacement'])} pairs")
 
