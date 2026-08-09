@@ -18,9 +18,7 @@ Run with ``python tools/make_golden.py`` and commit the result.
 
 from __future__ import annotations
 
-import glob
 import json
-import os
 import platform
 import warnings
 from pathlib import Path
@@ -30,17 +28,19 @@ import obspy
 import scipy
 
 import specmod.preprocess as pre
+from specmod.datasets import PNR_2019
 from specmod.pipeline import spectrum_set_from_streams
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
-INVENTORY = ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml"
 OUT = ROOT / "tests" / "golden" / "pipeline_reference.json"
 WINDOWS_OUT = ROOT / "tests" / "golden" / "window_reference.json"
 MOTION_OUT = ROOT / "tests" / "golden" / "motion_reference.json"
 
-ORIGIN = "2019-08-26T07:49:24.2"
-LATITUDE, LONGITUDE, DEPTH_KM = 53.784, -2.967, 2.1
+#: Read from `specmod.datasets` so that the script generating the reference and
+#: the test asserting against it cannot disagree about which event, or which
+#: hypocentre, produced it.
+EVENT = PNR_2019
+PATHS = PNR_2019.directory(ROOT)
 
 
 #: Fixed probabilities at which every array is sampled. Quantiles rather than
@@ -65,20 +65,18 @@ def _prepared_stream():
     """Metadata set, picks read, response removed — everything before the cut."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        inventory = obspy.read_inventory(str(INVENTORY))
-        stream = obspy.read(os.path.join(str(DATA), "*HH[EN]*"))
+        inventory = obspy.read_inventory(str(PATHS.inventory))
+        stream = obspy.read(PATHS.waveform_glob("*HH[EN]*"))
         pre.set_stream_distance(
             stream,
-            LATITUDE,
-            LONGITUDE,
-            DEPTH_KM,
-            obspy.UTCDateTime(ORIGIN),
+            EVENT.latitude,
+            EVENT.longitude,
+            EVENT.depth_km,
+            obspy.UTCDateTime(EVENT.origin),
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks_from_pyrocko(
-            stream, glob.glob(os.path.join(str(DATA), "*.picks"))[0]
-        )
+        pre.set_picks_from_pyrocko(stream, str(PATHS.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")

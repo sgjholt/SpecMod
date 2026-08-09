@@ -57,9 +57,7 @@ one bin instead of thirteen.
 from __future__ import annotations
 
 import functools
-import glob
 import json
-import os
 import warnings
 from pathlib import Path
 from typing import Any
@@ -70,26 +68,23 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 import specmod.preprocess as pre  # noqa: E402
+from specmod.datasets import PNR_2019  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
-
-# TODO: Pin these to the conftest.py variables, rather than duplicating them here.
 
 _ROOT = Path(__file__).resolve().parent.parent
 
 _REFERENCE = _ROOT / "tests" / "golden" / "pipeline_reference.json"
 
-
-_ORIGIN = "2019-08-26T07:49:24.200000Z"
-_DATA = _ROOT / "tutorial" / "data" / "events" / _ORIGIN
-_INVENTORY = (
-    _ROOT / "tutorial" / "data" / "events" / _ORIGIN / "stations" / "inventory.xml"
-)
-_WAVEFORMS = _DATA / "waveforms"
-_PICKS = _DATA / "picks"
-_LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
+# The event and its layout come from `specmod.datasets`, which is also what
+# `conftest.py` and `tools/make_golden.py` read. This module cannot import the
+# constants from `conftest.py` directly — a conftest is not an importable
+# module — so the shared definition lives in the package instead, which has the
+# side benefit that the script regenerating this reference reads the same one.
+_EVENT = PNR_2019
+_PATHS = PNR_2019.directory(_ROOT)
 
 pytestmark = pytest.mark.skipif(
-    not _DATA.is_dir() or not _INVENTORY.is_file() or not _REFERENCE.is_file(),
+    not _PATHS.is_present() or not _REFERENCE.is_file(),
     reason="tutorial waveforms or the golden reference are not present",
 )
 
@@ -171,20 +166,18 @@ def _compare(
 def _build_windows() -> tuple[Any, Any]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        inventory = obspy.read_inventory(str(_INVENTORY))
-        stream = obspy.read(os.path.join(str(_WAVEFORMS), "*HH[EN]*"))
+        inventory = obspy.read_inventory(str(_PATHS.inventory))
+        stream = obspy.read(_PATHS.waveform_glob("*HH[EN]*"))
         pre.set_stream_distance(
             stream,
-            _LATITUDE,
-            _LONGITUDE,
-            _DEPTH_KM,
-            obspy.UTCDateTime(_ORIGIN),
+            _EVENT.latitude,
+            _EVENT.longitude,
+            _EVENT.depth_km,
+            obspy.UTCDateTime(_EVENT.origin),
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks_from_pyrocko(
-            stream, glob.glob(os.path.join(str(_PICKS), "*.picks"))[0]
-        )
+        pre.set_picks_from_pyrocko(stream, str(_PATHS.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")

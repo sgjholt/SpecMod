@@ -24,9 +24,10 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 import specmod.utils as ut  # noqa: E402
+from specmod.datasets import PNR_2019  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-PICKS = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
+PATHS = PNR_2019.directory(ROOT)
 
 HEADER = "# Snuffler Markers File Version 0.2\n"
 LINE = "phase: {date} {time}  {weight} {sid}  None  None  None  {phase}  None False\n"
@@ -149,12 +150,12 @@ class TestReadPyrocko:
         with pytest.raises(KeyError):
             ut.read_pyrocko(_picks(tmp_path, [{"time": "00:00:10.0", "phase": "X"}]))
 
-    @pytest.mark.skipif(not PICKS.is_dir(), reason="tutorial waveforms not present")
+    @pytest.mark.skipif(
+        not PATHS.picks.is_dir(), reason="tutorial waveforms not present"
+    )
     def test_the_tutorial_picks_are_unchanged(self) -> None:
         """The 15 stations every window in both golden references is cut from."""
-        import glob  # noqa: PLC0415
-
-        got = ut.read_pyrocko(glob.glob(str(PICKS / "*.picks"))[0])
+        got = ut.read_pyrocko(str(PATHS.picks_file()))
         assert len(got) == 15
         assert all(set(v) == {"P", "S"} for v in got.values())
         assert all(v["S"] > v["P"] for v in got.values())

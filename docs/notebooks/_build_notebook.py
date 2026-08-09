@@ -8,7 +8,11 @@ cells = []
 
 def md(text):
     cells.append(
-        {"cell_type": "markdown", "metadata": {}, "source": text.strip().splitlines(True)}
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": text.strip().splitlines(True),
+        }
     )
 
 
@@ -475,16 +479,17 @@ import obspy
 from scipy.integrate import cumulative_trapezoid
 
 import specmod.preprocess as pre
+from specmod.datasets import PNR_2019
 
 warnings.filterwarnings("ignore")
-DATA = "../../Tutorial/Data/2019-08-26T07:30:47.0"
-inv = obspy.read_inventory("../../Tutorial/MetaData/pnr_inventory.xml")
+paths = PNR_2019.directory("../..")
+inv = obspy.read_inventory(str(paths.inventory))
 
-st = obspy.read(os.path.join(DATA, "*HH[EN]*"))
-pre.set_stream_distance(st, 53.784, -2.967, 2.1,
-                        obspy.UTCDateTime("2019-08-26T07:49:24.2"),
+st = obspy.read(paths.waveform_glob("*HH[EN]*"))
+pre.set_stream_distance(st, PNR_2019.latitude, PNR_2019.longitude, PNR_2019.depth_km,
+                        obspy.UTCDateTime(PNR_2019.origin),
                         inventory=inv, dtype="mseed")
-pre.set_picks_from_pyrocko(st, glob.glob(os.path.join(DATA, "*.picks"))[0])
+pre.set_picks_from_pyrocko(st, str(paths.picks_file()))
 st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
 st.detrend("linear"); st.detrend("demean"); st.taper(0.05)
 st.remove_response(inv, output="VEL")
@@ -658,7 +663,11 @@ so the result can be reproduced.
 nb = {
     "cells": cells,
     "metadata": {
-        "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+        "kernelspec": {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3",
+        },
         "language_info": {"name": "python", "version": "3.11"},
     },
     "nbformat": 4,
@@ -668,5 +677,7 @@ nb = {
 out = pathlib.Path("/home/user/SpecMod/docs/notebooks/choosing_a_transform.ipynb")
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(nb, indent=1) + "\n")
-print(f"wrote {out} — {len(cells)} cells "
-      f"({sum(c['cell_type'] == 'code' for c in cells)} code)")
+print(
+    f"wrote {out} — {len(cells)} cells "
+    f"({sum(c['cell_type'] == 'code' for c in cells)} code)"
+)
