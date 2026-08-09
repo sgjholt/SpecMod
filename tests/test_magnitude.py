@@ -140,14 +140,9 @@ PLAN_CONSTANTS = MediumConstants(
 class TestOnTheRealEvent:
     """Measured on the 28 PNR channels through the two-stage fit.
 
-    These pin a computation, not a physical truth. The absolute calibration is
-    unsettled, and how far off it is depends on an open question: the
-    catalogue value carried through this repository is 1.6, labelled "Mw" but
-    nowhere sourced, while BGS reports this sequence in ML. Under the thesis's
-    own ML-Mw relation an ML 1.6 predicts Mw 2.10, not 1.6. So the value of
-    these assertions is that a change to the constants, the units or the
-    spreading moves the number visibly — not that the number is right. See the
-    module docstring of ``specmod.magnitude``.
+    These pin a computation. The catalogue gives this event ``Mw 2.9``, which
+    the two constant sets below straddle — see §4.7.1 of the refactor plan for
+    why that is agreement rather than calibration.
     """
 
     @staticmethod
@@ -256,3 +251,28 @@ class TestOnTheRealEvent:
         staged = self._staged(pnr_windows)
         with pytest.raises(ValueError, match="rjb"):
             station_moments(staged.table, distance_measure="rjb")
+
+
+def test_the_pnr_event_brackets_its_catalogue_magnitude(pnr_windows) -> None:  # type: ignore[no-untyped-def]
+    """Mw 2.74 and 3.10 straddle the catalogue's 2.9.
+
+    The catalogue value comes with its scale attached, which is the point of
+    ``Event.catalogue_magnitude_type``: comparing a computed Mw against an
+    unlabelled number is what made an earlier version of this look 1.15
+    magnitude units out.
+    """
+    from specmod.datasets import PNR_2019  # noqa: PLC0415
+    from specmod.pipeline import spectrum_set_from_streams  # noqa: PLC0415
+    from specmod.staged import fit_event  # noqa: PLC0415
+
+    assert PNR_2019.catalogue_magnitude_type == "Mw"
+    catalogue = PNR_2019.catalogue_magnitude
+    assert catalogue == 2.9
+
+    signal, noise = pnr_windows()
+    staged = fit_event(spectrum_set_from_streams(signal, noise))
+    low = event_magnitude(staged, constants=PLAN_CONSTANTS).value
+    high = event_magnitude(staged).value
+    assert low < catalogue < high
+    assert abs(low - catalogue) < 0.25
+    assert abs(high - catalogue) < 0.25

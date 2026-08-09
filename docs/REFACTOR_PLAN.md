@@ -1225,12 +1225,11 @@ constant that bridges kilometres and metres, which is worth checking rather
 than assuming either way.
 
 There is a cheap arithmetic check that settles it without reading any code.
-`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so a **Mw 1.6** event should come
-out near **3e11 N m** — or 3e18 if the pipeline is working in
-dyne-centimetres. A factor of 10^9 from a kilometre-per-second velocity is not
-subtle, which is the point of the check. Note that it identifies *unit*
-errors, not calibration: whether the Preston New Road event is Mw 1.6 at all
-is a separate and still-open question — see §4.7.1.
+`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw
+2.9** (§4.7.1) should come out near **2.8e13 N m** — or 2.8e20 if the pipeline
+is working in dyne-centimetres. A factor of 10^9 from a kilometre-per-second
+velocity is not subtle, which is the point of the check. It identifies *unit*
+errors rather than calibration.
 
 The general point is that this is ambiguous *now* because the constants live
 as bare floats in prose with no units attached — which is the same failure
@@ -1366,7 +1365,7 @@ kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 |---|---|---|
 | `1/r` | **+2.75** | reproduced exactly by `specmod.magnitude` |
 | `1/r**2` | **+3.42** | corrected; see below |
-| catalogue value | 1.60 | **magnitude type unverified — see §4.7.1** |
+| catalogue `Mw` | **2.90** | NGDC PNR-2 catalogue — see §4.7.1 |
 
 **One figure in an earlier draft of this table was wrong, and building the
 module found it.** `1/r**2` was recorded as +5.39, and the text read that
@@ -1390,43 +1389,73 @@ thesis's own inverted near-field values of 0.88 and 0.90. It does *not* rest
 on a dramatic mismatch, because a chunk of that mismatch was an arithmetic
 artefact rather than physics.
 
-##### 4.7.1 Is the PNR catalogue value ML or Mw?
+##### 4.7.1 The PNR event: identity, magnitude, and what the method returns
 
-**Unresolved, and worth resolving, because it changes how far off the
-calibration is.** This document, the tutorial and the module docstring all
-carry the Preston New Road event as **Mw 1.6**, and **none of them cites a
-source for it**. BGS reports the Preston New Road sequence in **local
-magnitude** — the well-known 26 August 2019 event is 2.9 **ML** — so a 1.6
-taken from the same catalogue is most likely ML rather than Mw.
+**Resolved against the published catalogue**, the PNR-2 dataset released with
+Cuadrilla's hydraulic-fracture monitoring
+([NGDC 709cbc2f](https://www2.bgs.ac.uk/nationalgeosciencedatacentre/citedData/catalogue/709cbc2f-af5c-4d09-a4ea-6deb5aa8c5d8.html)),
+which reports `downhole_Mw`, `downhole_ML`, `surface_ML`, `surface_Mw` and
+`corrected_Mw` for 56,022 PNR-2 events.
 
-The distinction is not cosmetic, because the two scales genuinely diverge at
-small magnitudes. Under this thesis's own Table 2.2 relation for `ML < 2.60`,
-`Mw = 0.67 ML + 1.03`:
+Two things were wrong, and they compounded.
 
-| reading | expected Mw | gap to the computed 2.75 |
-|---|---|---|
-| 1.6 is **Mw** | 1.60 | **1.15** |
-| 1.6 is **ML** | **2.10** | **0.65** |
+**The origin time named the wrong event.** `PNR_2019.origin` read
+`2019-08-26T07:49:24.2`, which is a real catalogue entry — but a different,
+far smaller event 18.6 minutes later (`downhole_Mw` −0.21, `corrected_Mw`
+0.08). The shipped waveforms span `07:30:46.9`–`07:30:53.9` and the pick file
+is named `07:30:47`, so the data was always the 07:30:47 event; only the label
+disagreed.
 
-Equivalently, Mw 2.75 implies ML 2.57. So under the ML reading the method is
-roughly half as far out as the Mw reading suggests, and a good deal of what
-§4.7 called an unexplained gap may be a category error rather than a defect.
+It survived because **nothing computed depended on it**. `set_stream_distance`
+uses the origin time only to stamp metadata; distances come from coordinates.
+Correcting it leaves `fc` identical to five decimal places.
 
-Two cautions against over-crediting this. The relation is **Utah's**, fitted
-to tectonic events with Utah's own spreading, and applying it to shallow UK
-induced seismicity extrapolates across region *and* source type. And the 2/3
-**slope** travels better than the **intercept** — the slope has a theoretical
-basis at small magnitudes (Deichmann, 2017: attenuation makes observed pulse
-durations nearly constant, so ML falls away faster than Mw), where the
-intercept is regional.
+What it *did* corrupt was the golden window reference, which stores window
+edges relative to the origin. Those were recorded as ≈ −1115 s — S arrivals
+**18 minutes before the earthquake** — and no test objected, because every
+value was consistently wrong by the same 1117.2 s. The reference was corrected
+by shifting exactly the origin-relative fields; the windows themselves are
+unchanged.
 
-**Action:** identify the catalogue entry for the 2019-08-26T07:49:24.2 event
-and record its magnitude *type* alongside its value, in
-`specmod.datasets.PNR_2019`, so the comparison stops being made against an
-unlabelled number. Until then the residual should not be read as a known bias.
-An attempt to check it from this environment was blocked — both
-`earthquakes.bgs.ac.uk` and the secondary tracker are refused by the egress
-proxy.
+**The magnitude was never sourced.** This document, the tutorial and the
+module all carried "Mw 1.6". **No event in the catalogue on 26 August 2019 has
+any magnitude near 1.6**, on any of its five scales. The 07:30:47 event is:
+
+| field | value |
+|---|---|
+| `surface_ML` | 2.9 |
+| `surface_Mw` | **2.9** |
+| `corrected_Mw` | 2.9 |
+
+It is the largest event of the PNR-2 sequence and the largest UK
+hydraulic-fracturing-induced event on record.
+
+**So the method agrees with the catalogue far better than it appeared to.**
+
+| | Mw |
+|---|---|
+| computed, §4.7 constants (`rho` 2500, `beta` 2500, `R_c` 0.63) | **2.74** |
+| computed, shipped defaults (`rho` 2700, `beta` 3500, `R_c` 0.55) | **3.10** |
+| catalogue `surface_Mw` | **2.90** |
+
+The two constant sets straddle the catalogue value, within 0.16 and 0.20
+magnitude units. The 1.15-unit "unexplained gap" recorded earlier in this
+section was an artefact of comparing against a number that belonged to no
+event.
+
+That is agreement, not calibration: one event cannot distinguish a correct
+method from a compensating pair of errors, and the constants that bracket 2.9
+differ in density, velocity *and* radiation pattern. Magna remains the
+calibration (§5.2.5). But the residual is no longer evidence of a defect, and
+the earlier candidate explanations — uncombined horizontals, phase-constant
+mismatch, microseismic spreading — are no longer needed to explain a gap that
+was mostly bookkeeping.
+
+**Still open:** the catalogue puts the hypocentre 60 m shallower, at 2.04 km
+against the 2.1 km used here, and gives eastings/northings that would need
+converting from British National Grid to check the epicentre. Adopting either
+moves every distance and so every golden reference, so it is a deliberate
+change rather than a drive-by one.
 
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the

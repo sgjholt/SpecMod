@@ -12,33 +12,33 @@
    "back_azimuth": 211.54068284658914,
    "noise": {
     "duration": 1.63,
-    "end": -1115.67,
+    "end": 1.53,
     "npts": 164,
-    "start": -1117.3
+    "start": -0.1
    },
-   "p_time": -1115.47061,
+   "p_time": 1.72939,
    "refinement": {
     "lead": 0.01,
     "trail": 3.05
    },
    "repi": 4.7530364975828,
    "rhyp": 5.205620515111927,
-   "s_time": -1114.41521,
+   "s_time": 2.78479,
    "sampling_rate": 100.0,
    "selv": 23.0,
    "signal": {
     "duration": 3.04,
-    "end": -1111.58,
+    "end": 5.62,
     "npts": 305,
-    "start": -1114.62
+    "start": 2.58
    },
    "slat": 53.82040142078019,
    "slon": -2.9292795997382197,
    "unrefined": {
     "duration": 4.33,
-    "end": -1110.3,
+    "end": 6.9,
     "npts": 434,
-    "start": -1114.63
+    "start": 2.57
    }
   },
   "LV.L001..HHN": {
@@ -46,33 +46,33 @@
    "back_azimuth": 211.54068284658914,
    "noise": {
     "duration": 1.63,
-    "end": -1115.67,
+    "end": 1.53,
     "npts": 164,
-    "start": -1117.3
+    "start": -0.1
    },
-   "p_time": -1115.47061,
+   "p_time": 1.72939,
    "refinement": {
     "lead": 0.05,
     "trail": 1.85
    },
    "repi": 4.7530364975828,
    "rhyp": 5.205620515111927,
-   "s_time": -1114.41521,
+   "s_time": 2.78479,
    "sampling_rate": 100.0,
    "selv": 23.0,
    "signal": {
     "duration": 1.8,
-    "end": -1112.78,
+    "end": 4.42,
     "npts": 181,
-    "start": -1114.58
+    "start": 2.62
    },
    "slat": 53.82040142078019,
    "slon": -2.9292795997382197,
    "unrefined": {
     "duration": 4.33,
-    "end": -1110.3,
+    "end": 6.9,
     "npts": 434,
-    "start": -1114.63
+    "start": 2.57
    }
   },
   "LV.L002..HHE": {
@@ -80,33 +80,33 @@
    "back_azimuth": 236.4894312015647,
    "noise": {
     "duration": 1.51,
-    "end": -1114.64,
+    "end": 2.56,
     "npts": 152,
-    "start": -1116.15
+    "start": 1.05
    },
-   "p_time": -1114.44187,
+   "p_time": 2.75813,
    "refinement": {
     "lead": 0.04,
     "trail": 3.38
    },
    "repi": 10.227978279888,
    "rhyp": 10.444770399288856,
-   "s_time": -1112.58693,
+   "s_time": 4.61307,
    "sampling_rate": 100.0,
    "selv": 17.0,
    "signal": {
     "duration": 3.34,
-    "end": -1109.58,
+    "end": 7.62,
     "npts": 335,
-    "start": -1112.92
+    "start": 4.28
    },
    "slat": 53.8348038686189,
    "slon": -2.837621899060794,
    "unrefined": {
     "duration": 3.81,
-    "end": -1109.15,
+    "end": 8.05,
     "npts": 382,
-    "start": -1112.96
+    "start": 4.24
    }
   },
   "LV.L002..HHN": {
@@ -114,33 +114,33 @@
    "back_azimuth": 236.4894312015647,
    "noise": {
     "duration": 1.51,
-    "end": -1114.64,
+    "end": 2.56,
     "npts": 152,
-    "start": -1116.15
+    "start": 1.05
    },
-   "p_time": -1114.44187,
+   "p_time": 2.75813,
    "refinement": {
     "lead": 0.29,
     "trail": 3.44
    },
    "repi": 10.227978279888,
    "rhyp": 10.444770399288856,
-   "s_time": -1112.58693,
+   "s_time": 4.61307,
    "sampling_rate": 100.0,
    "selv": 17.0,
    "signal": {
     "duration": 3.15,
-    "end": -1109.52,
+    "end": 7.68,
     "npts": 316,
-    "start": -1112.67
+    "start": 4.53
    },
    "slat": 53.8348038686189,
    "slon": -2.837621899060794,
    "unrefined": {
     "duration": 3.81,
-    "end": -1109.15,
+    "end": 8.05,
     "npts": 382,
-    "start": -1112.96
+    "start": 4.24
    }
   },
   "LV.L006..HHE": {
@@ -148,33 +148,33 @@
    "back_azimuth": 331.0661642181628,
    "noise": {
     "duration": 1.42,
-    "end": -1114.28,
+    "end": 2.92,
     "npts": 143,
-    "start": -1115.7
+    "start": 1.5
    },
-   "p_time": -1114.08175,
+   "p_time": 3.11825,
    "refinement": {
     "lead": 0.07,
     "trail": 2.97
    },
    "repi": 11.802868573926647,
    "rhyp": 11.989460186905216,
-   "s_time": -1111.45036,
+   "s_time": 5.74964,
    "sampling_rate": 100.0,
    "selv": 7.0,
    "signal": {
     "duration": 2.9,
-    "end": -1109.01,
+    "end": 8.19,
     "npts": 291,
-    "start": -1111.91
+    "start": 5.29
    },
    "slat": 53.691222529762875,
    "slon": -2.8803696714002265,
    "unrefined": {
     "duration": 3.28,
-    "end": -1108.7,
+    "end": 8.5,
     "npts": 329,
-    "start": -1111.98
+    "start": 5.22
    }
   },
   "LV.L006..HHN": {
@@ -182,33 +182,33 @@
    "back_azimuth": 331.0661642181628,
    "noise": {
     "duration": 1.42,
-    "end": -1114.28,
+    "end": 2.92,
     "npts": 143,
-    "start": -1115.7
+    "start": 1.5
    },
-   "p_time": -1114.08175,
+   "p_time": 3.11825,
    "refinement": {
     "lead": 0.28,
     "trail": 2.98
    },
    "repi": 11.802868573926647,
    "rhyp": 11.989460186905216,
-   "s_time": -1111.45036,
+   "s_time": 5.74964,
    "sampling_rate": 100.0,
    "selv": 7.0,
    "signal": {
     "duration": 2.7,
-    "end": -1109.0,
+    "end": 8.2,
     "npts": 271,
-    "start": -1111.7
+    "start": 5.5
    },
    "slat": 53.691222529762875,
    "slon": -2.8803696714002265,
    "unrefined": {
     "duration": 3.28,
-    "end": -1108.7,
+    "end": 8.5,
     "npts": 329,
-    "start": -1111.98
+    "start": 5.22
    }
   },
   "LV.L007..HHE": {
@@ -216,33 +216,33 @@
    "back_azimuth": 286.9197810003819,
    "noise": {
     "duration": 1.48,
-    "end": -1113.31,
+    "end": 3.89,
     "npts": 149,
-    "start": -1114.79
+    "start": 2.41
    },
-   "p_time": -1113.10834,
+   "p_time": 4.09166,
    "refinement": {
     "lead": 0.03,
     "trail": 2.82
    },
    "repi": 16.50811822629714,
    "rhyp": 16.644709410903026,
-   "s_time": -1110.23635,
+   "s_time": 6.96365,
    "sampling_rate": 100.0,
    "selv": 28.0,
    "signal": {
     "duration": 2.79,
-    "end": -1107.99,
+    "end": 9.21,
     "npts": 280,
-    "start": -1110.78
+    "start": 6.42
    },
    "slat": 53.74107330673488,
    "slon": -2.727394193116982,
    "unrefined": {
     "duration": 3.02,
-    "end": -1107.79,
+    "end": 9.41,
     "npts": 303,
-    "start": -1110.81
+    "start": 6.39
    }
   },
   "LV.L007..HHN": {
@@ -250,33 +250,33 @@
    "back_azimuth": 286.9197810003819,
    "noise": {
     "duration": 1.48,
-    "end": -1113.31,
+    "end": 3.89,
     "npts": 149,
-    "start": -1114.79
+    "start": 2.41
    },
-   "p_time": -1113.10834,
+   "p_time": 4.09166,
    "refinement": {
     "lead": 0.52,
     "trail": 2.79
    },
    "repi": 16.50811822629714,
    "rhyp": 16.644709410903026,
-   "s_time": -1110.23635,
+   "s_time": 6.96365,
    "sampling_rate": 100.0,
    "selv": 28.0,
    "signal": {
     "duration": 2.27,
-    "end": -1108.02,
+    "end": 9.18,
     "npts": 228,
-    "start": -1110.29
+    "start": 6.91
    },
    "slat": 53.74107330673488,
    "slon": -2.727394193116982,
    "unrefined": {
     "duration": 3.02,
-    "end": -1107.79,
+    "end": 9.41,
     "npts": 303,
-    "start": -1110.81
+    "start": 6.39
    }
   },
   "LV.L008..HHE": {
@@ -284,33 +284,33 @@
    "back_azimuth": 13.96146990064948,
    "noise": {
     "duration": 1.22,
-    "end": -1112.55,
+    "end": 4.65,
     "npts": 123,
-    "start": -1113.77
+    "start": 3.43
    },
-   "p_time": -1112.35178,
+   "p_time": 4.84822,
    "refinement": {
     "lead": 0.04,
     "trail": 2.43
    },
    "repi": 20.84212816515249,
    "rhyp": 20.94936742368711,
-   "s_time": -1108.47566,
+   "s_time": 8.72434,
    "sampling_rate": 100.0,
    "selv": 17.0,
    "signal": {
     "duration": 2.39,
-    "end": -1106.82,
+    "end": 10.38,
     "npts": 240,
-    "start": -1109.21
+    "start": 7.99
    },
    "slat": 53.60229425885455,
    "slon": -3.0432888011210237,
    "unrefined": {
     "duration": 2.48,
-    "end": -1106.77,
+    "end": 10.43,
     "npts": 249,
-    "start": -1109.25
+    "start": 7.95
    }
   },
   "LV.L008..HHN": {
@@ -318,33 +318,33 @@
    "back_azimuth": 13.96146990064948,
    "noise": {
     "duration": 1.22,
-    "end": -1112.55,
+    "end": 4.65,
     "npts": 123,
-    "start": -1113.77
+    "start": 3.43
    },
-   "p_time": -1112.35178,
+   "p_time": 4.84822,
    "refinement": {
     "lead": 0.28,
     "trail": 2.45
    },
    "repi": 20.84212816515249,
    "rhyp": 20.94936742368711,
-   "s_time": -1108.47566,
+   "s_time": 8.72434,
    "sampling_rate": 100.0,
    "selv": 17.0,
    "signal": {
     "duration": 2.17,
-    "end": -1106.8,
+    "end": 10.4,
     "npts": 218,
-    "start": -1108.97
+    "start": 8.23
    },
    "slat": 53.60229425885455,
    "slon": -3.0432888011210237,
    "unrefined": {
     "duration": 2.48,
-    "end": -1106.77,
+    "end": 10.43,
     "npts": 249,
-    "start": -1109.25
+    "start": 7.95
    }
   },
   "LV.L009..HHE": {
@@ -352,33 +352,33 @@
    "back_azimuth": 79.21447229168045,
    "noise": {
     "duration": 1.47,
-    "end": -1115.69,
+    "end": 1.51,
     "npts": 148,
-    "start": -1117.16
+    "start": 0.04
    },
-   "p_time": -1115.49033,
+   "p_time": 1.70967,
    "refinement": {
     "lead": 0.05,
     "trail": 3.59
    },
    "repi": 4.694954466963598,
    "rhyp": 5.1473000152372546,
-   "s_time": -1113.59079,
+   "s_time": 3.60921,
    "sampling_rate": 100.0,
    "selv": 10.0,
    "signal": {
     "duration": 3.54,
-    "end": -1110.38,
+    "end": 6.82,
     "npts": 355,
-    "start": -1113.92
+    "start": 3.28
    },
    "slat": 53.776126658725424,
    "slon": -3.036969393335407,
    "unrefined": {
     "duration": 3.81,
-    "end": -1110.16,
+    "end": 7.04,
     "npts": 382,
-    "start": -1113.97
+    "start": 3.23
    }
   },
   "LV.L009..HHN": {
@@ -386,33 +386,33 @@
    "back_azimuth": 79.21447229168045,
    "noise": {
     "duration": 1.47,
-    "end": -1115.69,
+    "end": 1.51,
     "npts": 148,
-    "start": -1117.16
+    "start": 0.04
    },
-   "p_time": -1115.49033,
+   "p_time": 1.70967,
    "refinement": {
     "lead": 0.08,
     "trail": 3.39
    },
    "repi": 4.694954466963598,
    "rhyp": 5.1473000152372546,
-   "s_time": -1113.59079,
+   "s_time": 3.60921,
    "sampling_rate": 100.0,
    "selv": 10.0,
    "signal": {
     "duration": 3.31,
-    "end": -1110.58,
+    "end": 6.62,
     "npts": 332,
-    "start": -1113.89
+    "start": 3.31
    },
    "slat": 53.776126658725424,
    "slon": -3.036969393335407,
    "unrefined": {
     "duration": 3.81,
-    "end": -1110.16,
+    "end": 7.04,
     "npts": 382,
-    "start": -1113.97
+    "start": 3.23
    }
   },
   "UR.AQ01.00.HHE": {
@@ -420,33 +420,33 @@
    "back_azimuth": 329.8873067319742,
    "noise": {
     "duration": 1.23,
-    "end": -1112.17,
+    "end": 5.03,
     "npts": 124,
-    "start": -1113.4
+    "start": 3.8
    },
-   "p_time": -1111.97057,
+   "p_time": 5.22943,
    "refinement": {
     "lead": 0.17,
     "trail": 2.3
    },
    "repi": 22.84443976210678,
    "rhyp": 22.94296850986213,
-   "s_time": -1108.21213,
+   "s_time": 8.98787,
    "sampling_rate": 100.0,
    "selv": 24.0,
    "signal": {
     "duration": 2.13,
-    "end": -1106.66,
+    "end": 10.54,
     "npts": 214,
-    "start": -1108.79
+    "start": 8.41
    },
    "slat": 53.606574367755925,
    "slon": -2.793122391617827,
    "unrefined": {
     "duration": 2.56,
-    "end": -1106.4,
+    "end": 10.8,
     "npts": 257,
-    "start": -1108.96
+    "start": 8.24
    }
   },
   "UR.AQ01.00.HHN": {
@@ -454,33 +454,33 @@
    "back_azimuth": 329.8873067319742,
    "noise": {
     "duration": 1.23,
-    "end": -1112.17,
+    "end": 5.03,
     "npts": 124,
-    "start": -1113.4
+    "start": 3.8
    },
-   "p_time": -1111.97057,
+   "p_time": 5.22943,
    "refinement": {
     "lead": 0.15,
     "trail": 2.23
    },
    "repi": 22.84443976210678,
    "rhyp": 22.94296850986213,
-   "s_time": -1108.21213,
+   "s_time": 8.98787,
    "sampling_rate": 100.0,
    "selv": 24.0,
    "signal": {
     "duration": 2.08,
-    "end": -1106.73,
+    "end": 10.47,
     "npts": 209,
-    "start": -1108.81
+    "start": 8.39
    },
    "slat": 53.606574367755925,
    "slon": -2.793122391617827,
    "unrefined": {
     "duration": 2.56,
-    "end": -1106.4,
+    "end": 10.8,
     "npts": 257,
-    "start": -1108.96
+    "start": 8.24
    }
   },
   "UR.AQ03.00.HHE": {
@@ -488,33 +488,33 @@
    "back_azimuth": 297.17247646953325,
    "noise": {
     "duration": 1.605,
-    "end": -1115.36,
+    "end": 1.84,
     "npts": 322,
-    "start": -1116.965
+    "start": 0.235
    },
-   "p_time": -1115.16071,
+   "p_time": 2.03929,
    "refinement": {
     "lead": 0.265,
     "trail": 3.64
    },
    "repi": 5.954925973541665,
    "rhyp": 6.3220465318092325,
-   "s_time": -1113.95356,
+   "s_time": 3.24644,
    "sampling_rate": 200.0,
    "selv": 23.0,
    "signal": {
     "duration": 3.375,
-    "end": -1110.555,
+    "end": 6.645,
     "npts": 676,
-    "start": -1113.93
+    "start": 3.27
    },
    "slat": 53.75959367161754,
    "slon": -2.8866277812041634,
    "unrefined": {
     "duration": 4.23,
-    "end": -1109.965,
+    "end": 7.235,
     "npts": 847,
-    "start": -1114.195
+    "start": 3.005
    }
   },
   "UR.AQ03.00.HHN": {
@@ -522,33 +522,33 @@
    "back_azimuth": 297.17247646953325,
    "noise": {
     "duration": 1.605,
-    "end": -1115.36,
+    "end": 1.84,
     "npts": 322,
-    "start": -1116.965
+    "start": 0.235
    },
-   "p_time": -1115.16071,
+   "p_time": 2.03929,
    "refinement": {
     "lead": 0.26,
     "trail": 3.59
    },
    "repi": 5.954925973541665,
    "rhyp": 6.3220465318092325,
-   "s_time": -1113.95356,
+   "s_time": 3.24644,
    "sampling_rate": 200.0,
    "selv": 23.0,
    "signal": {
     "duration": 3.33,
-    "end": -1110.605,
+    "end": 6.595,
     "npts": 667,
-    "start": -1113.935
+    "start": 3.265
    },
    "slat": 53.75959367161754,
    "slon": -2.8866277812041634,
    "unrefined": {
     "duration": 4.23,
-    "end": -1109.965,
+    "end": 7.235,
     "npts": 847,
-    "start": -1114.195
+    "start": 3.005
    }
   },
   "UR.AQ04.00.HHE": {
@@ -556,33 +556,33 @@
    "back_azimuth": 3.54413410773477,
    "noise": {
     "duration": 1.64,
-    "end": -1116.29,
+    "end": 0.91,
     "npts": 329,
-    "start": -1117.93
+    "start": -0.73
    },
-   "p_time": -1116.08895,
+   "p_time": 1.11105,
    "refinement": {
     "lead": 0.115,
     "trail": 3.285
    },
    "repi": 0.8924806836847975,
    "rhyp": 2.2955929017904033,
-   "s_time": -1115.52412,
+   "s_time": 1.67588,
    "sampling_rate": 200.0,
    "selv": 15.0,
    "signal": {
     "duration": 3.17,
-    "end": -1112.35,
+    "end": 4.85,
     "npts": 635,
-    "start": -1115.52
+    "start": 1.68
    },
    "slat": 53.77599670909336,
    "slon": -2.9678370021713434,
    "unrefined": {
     "duration": 4.705,
-    "end": -1110.93,
+    "end": 6.27,
     "npts": 942,
-    "start": -1115.635
+    "start": 1.565
    }
   },
   "UR.AQ04.00.HHN": {
@@ -590,33 +590,33 @@
    "back_azimuth": 3.54413410773477,
    "noise": {
     "duration": 1.64,
-    "end": -1116.29,
+    "end": 0.91,
     "npts": 329,
-    "start": -1117.93
+    "start": -0.73
    },
-   "p_time": -1116.08895,
+   "p_time": 1.11105,
    "refinement": {
     "lead": 0.11,
     "trail": 3.21
    },
    "repi": 0.8924806836847975,
    "rhyp": 2.2955929017904033,
-   "s_time": -1115.52412,
+   "s_time": 1.67588,
    "sampling_rate": 200.0,
    "selv": 15.0,
    "signal": {
     "duration": 3.1,
-    "end": -1112.425,
+    "end": 4.775,
     "npts": 621,
-    "start": -1115.525
+    "start": 1.675
    },
    "slat": 53.77599670909336,
    "slon": -2.9678370021713434,
    "unrefined": {
     "duration": 4.705,
-    "end": -1110.93,
+    "end": 6.27,
     "npts": 942,
-    "start": -1115.635
+    "start": 1.565
    }
   },
   "UR.AQ05.00.HHE": {
@@ -624,33 +624,33 @@
    "back_azimuth": 180.4151328723062,
    "noise": {
     "duration": 1.665,
-    "end": -1115.92,
+    "end": 1.28,
     "npts": 334,
-    "start": -1117.585
+    "start": -0.385
    },
-   "p_time": -1115.72049,
+   "p_time": 1.47951,
    "refinement": {
     "lead": 0.135,
     "trail": 3.485
    },
    "repi": 3.3169923130211862,
    "rhyp": 3.931762836774573,
-   "s_time": -1114.88957,
+   "s_time": 2.31043,
    "sampling_rate": 200.0,
    "selv": 11.0,
    "signal": {
     "duration": 3.35,
-    "end": -1111.57,
+    "end": 5.63,
     "npts": 671,
-    "start": -1114.92
+    "start": 2.28
    },
    "slat": 53.81380115015182,
    "slon": -2.9666353952069833,
    "unrefined": {
     "duration": 4.47,
-    "end": -1110.585,
+    "end": 6.615,
     "npts": 895,
-    "start": -1115.055
+    "start": 2.145
    }
   },
   "UR.AQ05.00.HHN": {
@@ -658,33 +658,33 @@
    "back_azimuth": 180.4151328723062,
    "noise": {
     "duration": 1.665,
-    "end": -1115.92,
+    "end": 1.28,
     "npts": 334,
-    "start": -1117.585
+    "start": -0.385
    },
-   "p_time": -1115.72049,
+   "p_time": 1.47951,
    "refinement": {
     "lead": 0.135,
     "trail": 2.525
    },
    "repi": 3.3169923130211862,
    "rhyp": 3.931762836774573,
-   "s_time": -1114.88957,
+   "s_time": 2.31043,
    "sampling_rate": 200.0,
    "selv": 11.0,
    "signal": {
     "duration": 2.39,
-    "end": -1112.53,
+    "end": 4.67,
     "npts": 479,
-    "start": -1114.92
+    "start": 2.28
    },
    "slat": 53.81380115015182,
    "slon": -2.9666353952069833,
    "unrefined": {
     "duration": 4.47,
-    "end": -1110.585,
+    "end": 6.615,
     "npts": 895,
-    "start": -1115.055
+    "start": 2.145
    }
   },
   "UR.AQ06.00.HHE": {
@@ -692,33 +692,33 @@
    "back_azimuth": 219.9332077757612,
    "noise": {
     "duration": 1.585,
-    "end": -1115.48,
+    "end": 1.72,
     "npts": 318,
-    "start": -1117.065
+    "start": 0.135
    },
-   "p_time": -1115.27805,
+   "p_time": 1.92195,
    "refinement": {
     "lead": 0.345,
     "trail": 3.725
    },
    "repi": 5.891405977354916,
    "rhyp": 6.2639483067800965,
-   "s_time": -1114.10721,
+   "s_time": 3.09279,
    "sampling_rate": 200.0,
    "selv": 28.0,
    "signal": {
     "duration": 3.38,
-    "end": -1110.615,
+    "end": 6.585,
     "npts": 677,
-    "start": -1113.995
+    "start": 3.205
    },
    "slat": 53.82460164857022,
    "slon": -2.909628048424276,
    "unrefined": {
     "duration": 4.275,
-    "end": -1110.065,
+    "end": 7.135,
     "npts": 856,
-    "start": -1114.34
+    "start": 2.86
    }
   },
   "UR.AQ06.00.HHN": {
@@ -726,33 +726,33 @@
    "back_azimuth": 219.9332077757612,
    "noise": {
     "duration": 1.585,
-    "end": -1115.48,
+    "end": 1.72,
     "npts": 318,
-    "start": -1117.065
+    "start": 0.135
    },
-   "p_time": -1115.27805,
+   "p_time": 1.92195,
    "refinement": {
     "lead": 0.235,
     "trail": 3.915
    },
    "repi": 5.891405977354916,
    "rhyp": 6.2639483067800965,
-   "s_time": -1114.10721,
+   "s_time": 3.09279,
    "sampling_rate": 200.0,
    "selv": 28.0,
    "signal": {
     "duration": 3.68,
-    "end": -1110.425,
+    "end": 6.775,
     "npts": 737,
-    "start": -1114.105
+    "start": 3.095
    },
    "slat": 53.82460164857022,
    "slon": -2.909628048424276,
    "unrefined": {
     "duration": 4.275,
-    "end": -1110.065,
+    "end": 7.135,
     "npts": 856,
-    "start": -1114.34
+    "start": 2.86
    }
   },
   "UR.AQ07.00.HHE": {
@@ -760,33 +760,33 @@
    "back_azimuth": 252.309028404682,
    "noise": {
     "duration": 1.12,
-    "end": -1112.79,
+    "end": 4.41,
     "npts": 113,
-    "start": -1113.91
+    "start": 3.29
    },
-   "p_time": -1112.59079,
+   "p_time": 4.60921,
    "refinement": {
     "lead": 0.07,
     "trail": 2.59
    },
    "repi": 20.95674687647585,
    "rhyp": 21.07086471041662,
-   "s_time": -1109.0115,
+   "s_time": 8.1885,
    "sampling_rate": 100.0,
    "selv": 90.0,
    "signal": {
     "duration": 2.52,
-    "end": -1107.14,
+    "end": 10.06,
     "npts": 253,
-    "start": -1109.66
+    "start": 7.54
    },
    "slat": 53.841600279093726,
    "slon": -2.664097548329021,
    "unrefined": {
     "duration": 2.82,
-    "end": -1106.91,
+    "end": 10.29,
     "npts": 283,
-    "start": -1109.73
+    "start": 7.47
    }
   },
   "UR.AQ07.00.HHN": {
@@ -794,33 +794,33 @@
    "back_azimuth": 252.309028404682,
    "noise": {
     "duration": 1.12,
-    "end": -1112.79,
+    "end": 4.41,
     "npts": 113,
-    "start": -1113.91
+    "start": 3.29
    },
-   "p_time": -1112.59079,
+   "p_time": 4.60921,
    "refinement": {
     "lead": 0.28,
     "trail": 2.63
    },
    "repi": 20.95674687647585,
    "rhyp": 21.07086471041662,
-   "s_time": -1109.0115,
+   "s_time": 8.1885,
    "sampling_rate": 100.0,
    "selv": 90.0,
    "signal": {
     "duration": 2.35,
-    "end": -1107.1,
+    "end": 10.1,
     "npts": 236,
-    "start": -1109.45
+    "start": 7.75
    },
    "slat": 53.841600279093726,
    "slon": -2.664097548329021,
    "unrefined": {
     "duration": 2.82,
-    "end": -1106.91,
+    "end": 10.29,
     "npts": 283,
-    "start": -1109.73
+    "start": 7.47
    }
   },
   "UR.AQ09.00.HHE": {
@@ -828,33 +828,33 @@
    "back_azimuth": 200.56854564677778,
    "noise": {
     "duration": 1.51,
-    "end": -1114.29,
+    "end": 2.91,
     "npts": 152,
-    "start": -1115.8
+    "start": 1.4
    },
-   "p_time": -1114.09375,
+   "p_time": 3.10625,
    "refinement": {
     "lead": 0.4,
     "trail": 3.37
    },
    "repi": 11.946476604020289,
    "rhyp": 12.130859501717268,
-   "s_time": -1112.12347,
+   "s_time": 5.07653,
    "sampling_rate": 100.0,
    "selv": 7.0,
    "signal": {
     "duration": 2.97,
-    "end": -1109.15,
+    "end": 8.05,
     "npts": 298,
-    "start": -1112.12
+    "start": 5.08
    },
    "slat": 53.88450862782858,
    "slon": -2.9033249462003763,
    "unrefined": {
     "duration": 3.72,
-    "end": -1108.8,
+    "end": 8.4,
     "npts": 373,
-    "start": -1112.52
+    "start": 4.68
    }
   },
   "UR.AQ09.00.HHN": {
@@ -862,33 +862,33 @@
    "back_azimuth": 200.56854564677778,
    "noise": {
     "duration": 1.51,
-    "end": -1114.29,
+    "end": 2.91,
     "npts": 152,
-    "start": -1115.8
+    "start": 1.4
    },
-   "p_time": -1114.09375,
+   "p_time": 3.10625,
    "refinement": {
     "lead": 0.43,
     "trail": 3.39
    },
    "repi": 11.946476604020289,
    "rhyp": 12.130859501717268,
-   "s_time": -1112.12347,
+   "s_time": 5.07653,
    "sampling_rate": 100.0,
    "selv": 7.0,
    "signal": {
     "duration": 2.96,
-    "end": -1109.13,
+    "end": 8.07,
     "npts": 297,
-    "start": -1112.09
+    "start": 5.11
    },
    "slat": 53.88450862782858,
    "slon": -2.9033249462003763,
    "unrefined": {
     "duration": 3.72,
-    "end": -1108.8,
+    "end": 8.4,
     "npts": 373,
-    "start": -1112.52
+    "start": 4.68
    }
   },
   "UR.AQ10.00.HHE": {
@@ -896,33 +896,33 @@
    "back_azimuth": 212.67929282272593,
    "noise": {
     "duration": 1.32,
-    "end": -1113.38,
+    "end": 3.82,
     "npts": 133,
-    "start": -1114.7
+    "start": 2.5
    },
-   "p_time": -1113.18037,
+   "p_time": 4.01963,
    "refinement": {
     "lead": 0.4,
     "trail": 2.88
    },
    "repi": 17.260203387335157,
    "rhyp": 17.39015540391103,
-   "s_time": -1110.21843,
+   "s_time": 6.98157,
    "sampling_rate": 100.0,
    "selv": 22.0,
    "signal": {
     "duration": 2.48,
-    "end": -1107.93,
+    "end": 9.27,
     "npts": 249,
-    "start": -1110.41
+    "start": 6.79
    },
    "slat": 53.91461111593276,
    "slon": -2.8256143062001318,
    "unrefined": {
     "duration": 3.11,
-    "end": -1107.7,
+    "end": 9.5,
     "npts": 312,
-    "start": -1110.81
+    "start": 6.39
    }
   },
   "UR.AQ10.00.HHN": {
@@ -930,33 +930,33 @@
    "back_azimuth": 212.67929282272593,
    "noise": {
     "duration": 1.32,
-    "end": -1113.38,
+    "end": 3.82,
     "npts": 133,
-    "start": -1114.7
+    "start": 2.5
    },
-   "p_time": -1113.18037,
+   "p_time": 4.01963,
    "refinement": {
     "lead": 0.61,
     "trail": 2.78
    },
    "repi": 17.260203387335157,
    "rhyp": 17.39015540391103,
-   "s_time": -1110.21843,
+   "s_time": 6.98157,
    "sampling_rate": 100.0,
    "selv": 22.0,
    "signal": {
     "duration": 2.17,
-    "end": -1108.03,
+    "end": 9.17,
     "npts": 218,
-    "start": -1110.2
+    "start": 7.0
    },
    "slat": 53.91461111593276,
    "slon": -2.8256143062001318,
    "unrefined": {
     "duration": 3.11,
-    "end": -1107.7,
+    "end": 9.5,
     "npts": 312,
-    "start": -1110.81
+    "start": 6.39
    }
   }
  }

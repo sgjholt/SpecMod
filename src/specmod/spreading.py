@@ -1,32 +1,19 @@
-"""Geometric spreading, as a registry rather than a hardcoded exponent.
+"""Geometric spreading models, as a registry.
 
-Spreading is the term that carries a spectral amplitude from the source to the
-site, and it is the one input to :mod:`specmod.magnitude` least checkable by
-any other means. Density and velocity are bounded by physics and by the
-literature; a spreading function is bounded only by the inversion that produced
-it. So it is a model an operator supplies, in the same shape as
-:data:`specmod.core.noise.NOISE_MODELS` and
-:data:`specmod.distance.DISTANCE_MEASURES`.
+Each model returns the **dimensionless** amplitude ratio between the reference
+distance and the site, so an observed plateau is corrected to the source by
+dividing by it. Distances are in **kilometres**, as published spreading tables
+are written.
 
-**Every model here returns a dimensionless factor**, the amplitude ratio
-between the reference distance and the site. An observed plateau is corrected
-to the source by *dividing* by it. Returning a ratio rather than a raw
-``R**-n`` is what makes the reference distance explicit instead of an implied
-unit convention: `1 km` here is the thesis's ``R_0 = 1000 m``, the distance at
-which the source spectrum is defined.
+:class:`PowerLaw` is the default at ``exponent=1``, the theoretical body-wave
+value. :class:`Piecewise` takes the contiguous segments regional models are
+published as, :class:`Tabulated` interpolates a supplied curve in log-log
+space, and :data:`HOLT_2019_UTAH` is the refined Utah model of Holt (2019)
+Table 2.1.
 
-Distances are in **kilometres**, which is how every published spreading model
-tabulates them — Holt (2019) Table 2.1 says so outright, "R in all cells is
-hypocentral distance in kilometres". The metres in the moment expression are a
-different quantity; see :mod:`specmod.magnitude`.
-
-The default is theoretical ``1/R``. That is defensible precisely because it is
-not fitted: §4.7 of ``docs/REFACTOR_PLAN.md`` records what happens when a
-single event is asked for its own spreading exponent — a bilinear fit to the 28
-PNR channels buys 5% of rms for two extra parameters across one decade of
-distance, which is a hinge finding scatter rather than a break. Spreading
-separates from site response only across a dataset where each station sees many
-distances, so one event cannot measure it and should not pretend to.
+Register new models in :data:`SPREADING_MODELS`; build one by name with
+:func:`get_spreading_model`. Why the default is not fitted, and why a single
+event cannot measure an exponent, is §4.7 of ``docs/REFACTOR_PLAN.md``.
 """
 
 from __future__ import annotations
@@ -53,9 +40,8 @@ __all__ = [
 class SpreadingModel(Protocol):
     """Amplitude decay from the reference distance to the site.
 
-    ``name`` and ``reference_km`` are declared read-only so that the frozen
-    dataclasses below satisfy the protocol. A bare annotation would demand a
-    *settable* attribute, which no frozen implementation can offer.
+    ``name`` and ``reference_km`` are read-only so frozen dataclasses satisfy
+    the protocol.
     """
 
     @property
@@ -83,16 +69,10 @@ def _as_distance(distance_km: ArrayLike) -> NDArray[np.float64]:
 class PowerLaw:
     """``(R_0 / R) ** exponent`` — a single power law.
 
-    ``exponent=1`` is body-wave amplitude decay in a homogeneous whole space,
-    and is the default. **It is 1 rather than 2, and that is worth stating
-    because it is easy to say the other one**: energy decays as ``1/R**2``,
-    amplitude as ``1/R``, and a moment expression corrects an amplitude.
-    Measured on the 28 PNR windows the difference is not subtle — ``1/R**2``
-    puts the event at Mw 5.39 against a catalogue 1.6, which is the distance
-    term applied twice.
-
-    ``exponent=0.5`` is the surface-wave value, for the distance ranges where
-    an Lg phase dominates the window.
+    ``exponent=1`` is body-wave amplitude decay in a homogeneous whole space
+    and is the default; ``0.5`` is the surface-wave value, for distance ranges
+    where an Lg phase dominates the window. Note that ``1/R**2`` is how
+    *energy* decays, and a moment expression corrects an amplitude.
     """
 
     exponent: float = 1.0
@@ -109,17 +89,14 @@ class PowerLaw:
 class Piecewise:
     """A contiguous piecewise power law, the shape regional models are published in.
 
-    ``segments`` is ``((exponent, upper_km), ...)`` in increasing distance. The
-    model is continuous by construction: each segment starts where the previous
-    one ended, so the decay accumulates as a product rather than each segment
-    being anchored independently. That is what the published tables mean, and
-    evaluating a segment in isolation would silently drop everything the wave
-    lost getting there.
+    ``segments`` is ``((exponent, upper_km), ...)`` in increasing distance.
+    Each segment starts where the previous one ended, so the decay accumulates
+    as a product and the curve is continuous across every hinge — which is what
+    the published tables mean.
 
-    Beyond the last boundary the final exponent continues, rather than raising.
-    A model fitted to 400 km says nothing about 500 km, but refusing outright
-    would make a single far station drop an event; the extrapolation is the
-    lesser evil and the segment table records where the evidence stopped.
+    Beyond the last boundary the final exponent continues rather than raising,
+    so one far station cannot drop an event. The segment table records where
+    the fitted evidence stopped.
     """
 
     segments: tuple[tuple[float, float], ...]
@@ -163,13 +140,9 @@ class Piecewise:
 class Tabulated:
     """A spreading curve supplied as data, interpolated in log-log space.
 
-    Required rather than a nicety: the non-parametric ``G(R)`` inversion is not
-    in this package (§5.2.5), so the Magna comparison has to be fed its
-    spreading as a table. A registry that accepted only functional forms would
-    make the better-constrained model the one it could not express.
-
-    Interpolation is linear in ``log10`` of both axes because that is the space
-    the curve is a straight line in, and the space it was inverted in.
+    For spreading that has no functional form — a non-parametric ``G(R)``
+    inversion, for instance. Interpolation is linear in ``log10`` of both axes,
+    the space such curves are inverted in.
     """
 
     distances_km: tuple[float, ...]
@@ -204,17 +177,12 @@ class Tabulated:
         return out
 
 
-#: Holt (2019) Table 2.1, the **refined** Utah model — ``Holt et al. [R]``.
+#: Holt (2019) Table 2.1, the refined Utah model ``Holt et al. [R]``, which
+#: §2.7 of that work recommends over the original ``[O]``. Bootstrap standard
+#: deviations on the four slopes are 0.01, 0.07, 0.08 and 0.04.
 #:
-#: The thesis prefers this over the original ``[O]`` (§2.7) on lower
-#: uncertainty across every slope, more events resolved, and the Mw-Mc relation
-#: moving closer to Mw-ML. Slope uncertainties from bootstrapping, in order:
-#: 0.01, 0.07, 0.08, 0.04.
-#:
-#: **Regional, and not a default.** It is fitted for 1-400 km, and every
-#: spreading model in that thesis breaks at 40-50 km — so it says nothing about
-#: the microseismic range, where the PNR data used throughout this repository
-#: sits entirely (2.3 to 22.9 km, inside the first segment of all of them).
+#: Regional and fitted for 1-400 km. It is not a default and says nothing about
+#: the microseismic range below its first hinge.
 HOLT_2019_UTAH = Piecewise(
     segments=((0.90, 43.0), (2.57, 76.0), (0.44, 136.0), (1.54, 400.0)),
     name="holt_2019_utah",

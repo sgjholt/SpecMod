@@ -1,94 +1,44 @@
 """Seismic moment and moment magnitude from a fitted long-period plateau.
 
-This is the last step of the Edwards et al. (2010) spectral method: the fit has
-already produced ``Omega``, the long-period displacement plateau, and this turns
-it into ``M0`` and ``Mw``. Everything it needs is already computed —
-``llpsp`` from the fit is ``log10(Omega)`` on **displacement** (source models
-are written for displacement and :func:`specmod.sources.motion_scaling`
-converts the model to whatever motion was recorded, so the fitted plateau is
-``Omega`` itself rather than a velocity plateau needing correction), and a
-distance is on every channel.
+The final step of the Edwards et al. (2010) spectral method. The fit supplies
+``Omega``, the long-period **displacement** plateau in ``m s`` — ``llpsp`` is
+its base-10 logarithm — and each channel supplies a distance.
 
-Constants and their sources
----------------------------
+    M0 = 4 pi rho beta**3 R_0 (Omega / G(R)) / (Theta F)      [N m]
+    Mw = (2/3) (log10 M0 - 9.1)
 
-Read from Holt (2019), Ch. 1 §1.4 and Ch. 2 §2.2, which is the published form
-of the method this package implements:
+Units
+-----
 
-===================== ============================ ==============================
-symbol                default                      what it is
-===================== ============================ ==============================
-``density``           2700 kg/m^3                  density **at the source**
-``velocity``          3500 m/s                     S velocity **at the source**
-``radiation_pattern`` 0.55                         average **SH** radiation pattern
-``free_surface``      2                            free surface, vertically incident SH
-``reference_dis...``  1000 m                       where the source spectrum sits
-===================== ============================ ==============================
+``rho`` in kg/m^3, ``beta`` in m/s, ``R_0`` in **metres**, ``Omega`` in ``m s``
+give ``M0`` in newton-metres. ``G(R)`` is :mod:`specmod.spreading`, whose
+distance is in **kilometres**. These are two different distances and both units
+are correct; they cancel only at spreading exponent 1.
 
-**0.55 is not a worse average of the same quantity than the textbook 0.63 — it
-is a different quantity.** 0.63 is the RMS over total S; 0.55 is the SH
-average, and it pairs with ``free_surface = 2`` for vertically incident SH.
-Phase, component and radiation-pattern constant are one choice, made once: a
-formulation using the SH radiation pattern wants the transverse component, and
-`§4.7 <../docs/REFACTOR_PLAN.md>`_ tracks the rotation work that makes that
-true here.
+Constants
+---------
 
-Ch. 2 enumerates the constants of its Eq. 2.7 **without** a partition factor,
-though Ch. 1 lists one among the parts of the generic constant. So none is
-folded in here. A study that wants one should say so rather than inherit it.
+Defaults are the S-wave values of Holt (2019) Ch. 1 §1.4 and Ch. 2 §2.2, all
+taken **at the source**:
 
-The two distances, which are not the same distance
---------------------------------------------------
+===================== ========== =============================================
+``density``           2700       kg/m^3
+``velocity``          3500       m/s, cubed here
+``radiation_pattern`` 0.55       average SH pattern over the focal sphere
+``free_surface``      2          vertically incident SH
+``reference_dist...`` 1000       metres
+===================== ========== =============================================
 
-This is the trap the whole module is arranged around, and two people can each
-be certain about "the unit of R" and both be right:
+``0.55`` is the **SH** average and pairs with ``free_surface = 2``; the
+textbook 0.63 is the RMS over total S, a different quantity. No partition
+factor is applied.
 
-* ``reference_distance_m`` is in **metres**, alongside density in kg/m^3 and
-  velocity in m/s, which is what makes ``M0`` come out in newton-metres.
-* The **spreading** model's distance is in **kilometres**, because that is how
-  every published spreading table is written.
+Use :func:`seismic_moment` and :func:`moment_magnitude` for arrays,
+:func:`station_moments` to append ``m0`` and ``mw`` to a fit table, and
+:func:`event_magnitude` for an event value aggregated over stations.
 
-They cancel exactly for the default ``1/R``, which is why the short form
-``M0 = 4 pi rho beta^3 R Omega / (Theta F)`` circulates and works. They do not
-cancel for any other exponent, or for a piecewise or tabulated model, so they
-are kept separate here rather than folded together.
-
-What this does and does not establish
--------------------------------------
-
-The spreading **exponent** is 1 on theory — amplitude decays as ``1/R``,
-energy as ``1/R**2``, and a moment expression corrects an amplitude — and on
-the thesis's own inverted near-field values of 0.88 and 0.90.
-
-**The absolute calibration is not settled, and the size of the gap depends on
-a question this repository has not answered.** With the shipped defaults the
-PNR event comes out near Mw 3.1, and near Mw 2.75 with the constants §4.7
-used. The catalogue value carried through this repository is **1.6, quoted as
-"Mw" but nowhere sourced** — and BGS reports the Preston New Road sequence in
-**local magnitude**, the well-known 26 August 2019 event being 2.9 ML. If the
-1.6 is likewise ML, comparing it against a moment magnitude is a category
-error, and the two are not as far apart as they look:
-
-- Holt (2019) Table 2.2, the ``[R]`` relation for ``ML < 2.60``, gives
-  ``Mw = 0.67 ML + 1.03``. **ML 1.6 predicts Mw 2.10**, against 2.75 here — a
-  gap of 0.65 rather than 1.15.
-- Read the other way, Mw 2.75 implies **ML 2.57**.
-
-That relation is Utah's, fitted to tectonic events with Utah's own spreading,
-so applying it to shallow UK induced seismicity is an extrapolation across
-both region and source type. The 2/3 *slope* travels better than the
-intercept: it has a theoretical basis at small magnitudes (Deichmann, 2017 —
-attenuation makes observed pulse durations nearly constant, so ML falls away
-faster than Mw), where the intercept is regional.
-
-So: **do not read the residual gap as a known bias.** Establishing whether the
-catalogue value is ML or Mw would change its size materially, and it is the
-cheapest thing to check. Beyond that the candidates are the horizontals being
-fitted as independent measurements rather than combined, phase constants not
-matching the phase measured, and a microseismic spreading regime the
-theoretical ``1/R`` does not describe. Treat the output as a self-consistent
-computation whose scale is pending calibration against Magna (§5.2.5).
-:func:`moment_magnitude` is exact; what feeds it is a model.
+The absolute calibration is unverified — see §4.7 of
+``docs/REFACTOR_PLAN.md``.
 """
 
 from __future__ import annotations
@@ -111,34 +61,27 @@ __all__ = [
     "station_moments",
 ]
 
-#: The Hanks and Kanamori (1979) constant, for ``M0`` in **N m**.
-#:
-#: The thesis quotes the relation in SI — "the equivalent relation in SI units
-#: of Newton meters (N.m) where 1 N.m = 1x10^7 dyne.cm" — so this is the right
-#: form for the units used throughout. The value itself is the standard one;
-#: the thesis's own equation images did not survive its PDF export, so it is
-#: taken from Hanks and Kanamori rather than re-read from there.
+#: Hanks and Kanamori (1979), for ``M0`` in N m. Use 16.1 for dyne cm.
 _HK79_CONSTANT = 9.1
 
 
 @dataclass(frozen=True)
 class MediumConstants:
-    """Properties **at the source**, and the geometry of the measurement.
+    """Medium properties at the source, and the geometry of the measurement.
 
-    "At the source" is not a formality. These are the values where the rupture
-    is, not at the station and not a crustal average — the velocity enters
-    cubed, so taking it from the wrong depth is a larger error than it looks.
+    Values are those at the rupture, not at the station and not a crustal
+    average. ``velocity`` enters cubed.
     """
 
     #: kg/m^3.
     density: float = 2700.0
-    #: m/s. Shear-wave velocity at the source, cubed in the moment expression.
+    #: m/s, shear-wave velocity at the source.
     velocity: float = 3500.0
     #: Average SH radiation pattern over the focal sphere (Boatwright, 1978).
     radiation_pattern: float = 0.55
-    #: Free-surface factor, 2 for vertically incident SH.
+    #: Free-surface factor; 2 for vertically incident SH.
     free_surface: float = 2.0
-    #: Metres. Where the source spectrum is defined.
+    #: Metres. The distance at which the source spectrum is defined.
     reference_distance_m: float = 1000.0
 
     def __post_init__(self) -> None:
@@ -155,9 +98,8 @@ class MediumConstants:
         if self.velocity < 100.0:
             raise ValueError(
                 f"velocity={self.velocity} looks like km/s, not m/s. It is "
-                f"cubed here, so the mistake is a factor of 1e9 in M0 and six "
-                f"magnitude units in Mw — which is why this refuses rather "
-                f"than computing it."
+                f"cubed here, so the error would be a factor of 1e9 in M0 and "
+                f"six magnitude units in Mw."
             )
 
 
@@ -219,12 +161,10 @@ def moment_magnitude(m0: ArrayLike) -> NDArray[np.float64]:
 
 @dataclass(frozen=True)
 class MomentMagnitude:
-    """An event magnitude, and the station estimates it was averaged from.
+    """An event magnitude and the station estimates behind it.
 
-    The per-station values are kept rather than reduced away, for the same
-    reason :class:`specmod.staged.StagedFit` keeps stage one: the spread across
-    stations is the only evidence for how well constrained the event value is,
-    and a magnitude with no spread beside it cannot be judged.
+    Per-station values are kept so :meth:`spread` can report how well
+    constrained the event value is.
     """
 
     value: float
@@ -262,10 +202,9 @@ def station_moments(
 ) -> Any:
     """Per-station ``M0`` and ``Mw`` from a fit table.
 
-    Takes the table rather than the :class:`~specmod.staged.StagedFit` so that
-    a stage-one table, a stage-two table or a flatfile read back from disk all
-    work the same way. Returns a copy with ``m0`` and ``mw`` appended; the input
-    is not modified.
+    Takes a table rather than a :class:`~specmod.staged.StagedFit`, so either
+    stage or a flatfile read from disk all work. Returns a copy with ``m0`` and
+    ``mw`` appended; the input is not modified.
     """
     import pandas as pd  # noqa: PLC0415
 
@@ -307,20 +246,12 @@ def event_magnitude(
 ) -> MomentMagnitude:
     """Event ``Mw``: the mean of station estimates, after rejecting outliers.
 
-    The aggregation follows the published method (Holt, 2019 §2.2) rather than
-    being invented here: take the sample mean of the station magnitudes,
-    exclude anything beyond ``outlier_sigma`` standard deviations, and refuse
-    to report an event at all on fewer than ``min_stations``.
+    Follows Holt (2019) §2.2 — the sample mean of station magnitudes, excluding
+    anything beyond ``outlier_sigma`` standard deviations, and no event value
+    at all on fewer than ``min_stations``.
 
-    Averaging in **magnitude** rather than in ``M0`` is deliberate and is what
-    the method specifies. The two differ — a mean of logarithms is a geometric
-    mean of moments — and for scattered station estimates the log-domain mean
-    is the more robust of the two, which is the point of averaging across a
-    network at all.
-
-    Rejection is a single pass, not iterated to convergence. Repeating it until
-    nothing moves will eventually trim a merely-broad distribution down to its
-    core and report a spread far tighter than the data support.
+    Averaging in magnitude rather than in ``M0`` makes this a geometric mean of
+    moments. Rejection is a single pass, not iterated to convergence.
     """
     medium = constants if constants is not None else MediumConstants()
     model: SpreadingModel = spreading if spreading is not None else PowerLaw()
