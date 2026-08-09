@@ -177,7 +177,7 @@ def _build_windows() -> tuple[Any, Any]:
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks_from_pyrocko(stream, str(_PATHS.picks_file()))
+        pre.set_picks(stream, str(_PATHS.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")

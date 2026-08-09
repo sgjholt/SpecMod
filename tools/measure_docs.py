@@ -515,7 +515,7 @@ def _field_signals():  # type: ignore[no-untyped-def]
         inventory=inv,
         dtype="mseed",
     )
-    pre.set_picks_from_pyrocko(st, str(paths.picks_file()))
+    pre.set_picks(st, str(paths.picks_file()))
     st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
     st.detrend("linear")
     st.detrend("demean")

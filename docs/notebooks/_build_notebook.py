@@ -471,8 +471,6 @@ percentiles of cumulative squared amplitude.
 """)
 
 code("""
-import glob
-import os
 import warnings
 
 import obspy
@@ -489,7 +487,7 @@ st = obspy.read(paths.waveform_glob("*HH[EN]*"))
 pre.set_stream_distance(st, PNR_2019.latitude, PNR_2019.longitude, PNR_2019.depth_km,
                         obspy.UTCDateTime(PNR_2019.origin),
                         inventory=inv, dtype="mseed")
-pre.set_picks_from_pyrocko(st, str(paths.picks_file()))
+pre.set_picks(st, str(paths.picks_file()))
 st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
 st.detrend("linear"); st.detrend("demean"); st.taper(0.05)
 st.remove_response(inv, output="VEL")

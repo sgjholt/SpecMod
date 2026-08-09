@@ -1250,7 +1250,7 @@ places, all written independently in the last week:
 - `staged._levels` splits `NET.STA.LOC.CHA` to let a selection pattern match
   at the station or channel level,
 - the tutorial does `ids[order[0]].split(".")[1]` to name a station,
-- `preprocess.set_picks_from_pyrocko` does
+- `preprocess.set_picks` does
   `".".join([tr.stats.network, tr.stats.station])` to build a lookup key.
 
 Three spellings of one idea, none of which can be given a type. And the bug in
@@ -2563,7 +2563,7 @@ the fix *is* the record of what observable behaviour changed:
 | `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`, and `UTCDateTime` has no `__radd__`: `TypeError` on **every** input. The function had never run. | Operands reversed. It runs, and is tested. |
 | `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, with the two functions spelling the relative mode differently (`"relative_time"` vs `"relative_ps"`). A typo — or the sibling's spelling — left the window end unbound, surfacing as `UnboundLocalError` from mid-function. | Validated up front against `TIME_AFTER_METHODS`; both functions accept both spellings; an unrecognised value raises naming itself. |
 | `get_noise_p` | Copied the whole input stream, then paired with `zip(..., strict=False)`, so traces the signal stream had lost came back **whole and unlinked** — full-length records presented as noise windows, no error, no warning. | `strict=True`. Positional pairing against a different-length stream is a wrong answer, not a short one. |
-| `set_picks_from_pyrocko` | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks; a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
+| `set_picks` (then `set_picks_from_pyrocko`) | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial was then configured with an origin 18 minutes *after* its picks — see §4.7.1 — and a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
 | `link_window_to_trace` | Recorded the *requested* window and never reconciled it with what `trim` delivered, so `wend - wstart` overstated every truncated noise trace. | Records both: `wstart`/`wend` are what the trace holds, `wstart_requested`/`wend_requested` what was asked for. All call sites link *after* the trim. |
 
 The last row is worth separating because it is not only a reporting bug.
