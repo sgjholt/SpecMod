@@ -10,10 +10,16 @@ Both times the notebook was the last thing to be updated and the first thing a
 new user would run. This is the cheap check that stops it drifting again:
 every name the notebook imports from ``specmod`` must resolve.
 
-It deliberately does **not** execute the notebook. Doing so takes ~40 seconds
-and needs a Jupyter kernel, which is a heavier dependency than the value
-justifies for every run. Executing it is a release step; not referring to
-deleted API is a per-commit one.
+Two levels of check. The cheap one, on every run, is that every name the
+notebook imports resolves. The thorough one, :func:`test_it_runs_end_to_end`,
+executes it — that costs ~40 seconds and a Jupyter kernel, so it is marked
+``notebook``, skips where those are not installed, and runs as its own CI job
+rather than in every matrix cell.
+
+Executing it used to be a release step. It was pulled forward because the
+third break was not an import: renaming the event directory left every name
+resolving and the first ``obspy.read`` raising, which only running it can
+catch.
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ from __future__ import annotations
 import ast
 import importlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -107,3 +114,41 @@ def test_it_does_not_write_a_pickle() -> None:
     text = _code()
     assert "pickle" not in text.lower()
     assert ".spec" not in text
+
+
+@pytest.mark.notebook
+def test_it_runs_end_to_end(tmp_path: Path) -> None:
+    """Execute the notebook, which is the only check that its paths still exist.
+
+    The import checks above pass on a notebook that cannot run: they read the
+    source without evaluating it. Both breaks this file was written for were
+    import-level, but the next one was not — renaming the event directory left
+    every name resolving and the first ``obspy.read`` raising, and nothing
+    caught it until the notebook was executed by hand.
+
+    Marked ``notebook`` and excluded from the matrix runs, so the ~40s and the
+    Jupyter kernel are paid once in CI rather than six times.
+
+    Runs against a copy so that the artefacts the notebook writes land in
+    ``tmp_path`` rather than in the working tree. The kernel's working
+    directory is the notebook's own, which is what lets the notebook use paths
+    relative to itself and no ``os.chdir``.
+    """
+    nbformat = pytest.importorskip("nbformat")
+    nbclient = pytest.importorskip("nbclient")
+    pytest.importorskip("ipykernel")
+
+    if not NOTEBOOK.is_file():
+        pytest.skip("tutorial notebook not present")
+
+    workdir = tmp_path / "tutorial"
+    shutil.copytree(NOTEBOOK.parent, workdir)
+
+    notebook = nbformat.read(workdir / NOTEBOOK.name, as_version=4)
+    # `allow_errors` defaults to False, so any raising cell fails the test.
+    nbclient.NotebookClient(
+        notebook,
+        timeout=600,
+        kernel_name="python3",
+        resources={"metadata": {"path": str(workdir)}},
+    ).execute()

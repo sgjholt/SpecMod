@@ -2947,6 +2947,23 @@ Each phase ends green on CI and is independently mergeable.
 | **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty | 3 | 4–6 days |
 | **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
 
+**Executing the tutorial was pulled forward out of Phase 6.** The `myst-nb`
+rewrite stays there — it is a docs-build change and depends on Phase 2b. What
+moved is only the check: `pytest -m notebook` executes the notebook and fails
+if any cell raises, as its own CI job.
+
+It moved because the import-level checks in `tests/test_tutorial.py` cannot
+catch the failure that actually happened. The notebook broke twice on renamed
+modules, which those checks were written for, and a third time on a renamed
+event directory — where every name still resolved and the first `obspy.read`
+raised. Nothing reported it until the notebook was run by hand.
+
+The cost is why it is a separate job rather than another matrix cell: ~40
+seconds and a Jupyter kernel, paid once per PR instead of six times. The test
+skips where `nbclient` and `ipykernel` are absent, so only a checkout with the
+`tutorial` extra pays it locally, and it executes against a copy so the
+artefacts the notebook writes do not land in the working tree.
+
 Phases 2b, and later 4 and 5, can run in parallel with their siblings.
 
 Rough total: **5–7 weeks** of focused work — up from the previous estimate,
