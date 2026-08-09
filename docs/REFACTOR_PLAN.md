@@ -2120,12 +2120,34 @@ converted to degrees at the FDSN boundary, because a config in degrees is a
 config people get wrong; and an `eventid` matching zero or several events
 **raises** rather than taking the first, which would pick an event at random.
 
-**Not built: the consume half.** `datasets.load_*()`, pooch, the SHA256
-registry and the published artefacts are still ahead, as is the fuller
-`--verify` that re-fetches and diffs against the manifest. `verify()` today
-re-hashes what is on disk, which answers "has this been touched" but not "has
-the data centre revised its holdings" — the question §5.2.2 is really about,
-and the one that needs the network.
+**Built: the consume half too.** `datasets.load_pnr_2019()` returns the event
+committed to this repository with no download and no network, because it is in
+the checkout — reaching for a URL to fetch data that is already present would
+be the wrong shape. Published datasets go through `datasets.load(name)`:
+`REGISTRY` maps a name to a URL, a SHA256 and the event it holds, pooch caches
+under `SPECMOD_DATA_DIR` or `pooch.os_cache("specmod")`, and the hash is
+checked on arrival.
+
+**Versioning is by registry name**, as planned: `magna_2020_v1` and `_v2` are
+separate entries, so a result pinned to v1 keeps fetching v1 after v2 exists.
+That is the whole reason pooch is here rather than a bare download.
+
+`load()` takes an injectable `downloader`, for the same reason `acquire.fetch`
+takes a `client`: pooch has no `file://` support, so a test cannot serve itself
+an archive without one. With it, the published path is exercised offline
+through pooch's real caching, hash check and `Untar` — including that a
+substituted archive is refused and that a second call does not download again.
+It also gives an operator behind an authenticating proxy somewhere to put it.
+
+**`REGISTRY` is empty**, and that is the honest state: there is no published
+artefact yet. Creating a `data-v1` release asset is a repository step, and the
+entry lands in the same change as the asset it points at — a `load_magna_2020()`
+that can only 404 would be worse than its absence.
+
+**Still ahead:** the fuller `--verify` that re-fetches and diffs against the
+manifest. `verify()` today re-hashes what is on disk, which answers "has this
+been touched" but not "has the data centre revised its holdings" — the question
+§5.2.2 is really about, and the one that needs the network.
 
 > **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
 > and release-please must be configured to ignore them or it will read `data-v1`
