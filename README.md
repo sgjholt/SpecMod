@@ -148,7 +148,7 @@ python tools/measure_docs.py check    # fail if any table is stale
 
 `tests/test_docs_are_current.py` runs `check`, so a change that moves a
 published number fails the suite rather than quietly leaving the prose wrong.
-Measurements that read `Tutorial/Data` are slower and opt-in via `--field`;
+Measurements that read `tutorial/data/events/` are slower and opt-in via `--field`;
 refresh those by hand after changing an estimator.
 
 ## References

@@ -1,6 +1,6 @@
 # Where arrivals land in a refined window, and what it costs
 
-Measured on the 28 PNR S-windows in `Tutorial/Data/`, cut with the published
+Measured on the 28 PNR S-windows in `tutorial/data/events/`, cut with the published
 Magna workflow — window opens at 80% of the Pg–Sg time, then refined to the 1st
 and 99th percentiles of the cumulative squared-amplitude integral.
 

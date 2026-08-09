@@ -20,10 +20,8 @@ Anything genuinely optional should ``pytest.importorskip`` or carry a
 
 from __future__ import annotations
 
-import glob
 import importlib.abc
 import importlib.machinery
-import os
 import sys
 import warnings
 from collections.abc import Sequence
@@ -101,14 +99,18 @@ def pytest_configure(config: pytest.Config) -> None:
 #: The Preston New Road event the tutorial is built around.
 _ROOT = Path(__file__).resolve().parent.parent
 
-_ORIGIN = "2019-08-26T07:49:24.200000Z"
-_DATA = _ROOT / "tutorial" / "data" / "events" / _ORIGIN
-_INVENTORY = (
-    _ROOT / "tutorial" / "data" / "events" / _ORIGIN / "stations" / "inventory.xml"
-)
-_WAVEFORMS = _DATA / "waveforms"
-_PICKS = _DATA / "picks"
-_LATITUDE, _LONGITUDE, _DEPTH_KM = 53.784, -2.967, 2.1
+
+def _pnr():
+    """The tutorial event and its directory, resolved on demand.
+
+    Imported inside the function for the same reason the fixtures below defer
+    ``specmod.preprocess``: this module must import even when specmod is not
+    installed, so that a missing package skips rather than erroring out of
+    collection entirely.
+    """
+    from specmod.datasets import PNR_2019  # noqa: PLC0415
+
+    return PNR_2019, PNR_2019.directory(_ROOT)
 
 
 @pytest.fixture(scope="session")
@@ -126,7 +128,8 @@ def pnr_stream():
     happen once per session.
     """
     obspy = pytest.importorskip("obspy")
-    if not _DATA.is_dir() or not _INVENTORY.is_file():
+    event, paths = _pnr()
+    if not paths.is_present():
         pytest.skip("tutorial waveforms not present")
 
     # Deferred: this module must import without specmod present, so the
@@ -135,20 +138,18 @@ def pnr_stream():
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        inventory = obspy.read_inventory(str(_INVENTORY))
-        stream = obspy.read(os.path.join(str(_WAVEFORMS), "*HH[EN]*"))
+        inventory = obspy.read_inventory(str(paths.inventory))
+        stream = obspy.read(paths.waveform_glob("*HH[EN]*"))
         pre.set_stream_distance(
             stream,
-            _LATITUDE,
-            _LONGITUDE,
-            _DEPTH_KM,
-            obspy.UTCDateTime(_ORIGIN),
+            event.latitude,
+            event.longitude,
+            event.depth_km,
+            obspy.UTCDateTime(event.origin),
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks_from_pyrocko(
-            stream, glob.glob(os.path.join(str(_PICKS), "*.picks"))[0]
-        )
+        pre.set_picks_from_pyrocko(stream, str(paths.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")

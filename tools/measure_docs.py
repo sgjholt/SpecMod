@@ -24,7 +24,7 @@ the build rather than quietly leaving the docs wrong.
 Measurements are in one of two groups, split by whether CI can be relied on to
 reproduce them. **Synthetic** ones need only numpy and specmod, are fast, and
 are checked on every run. **Field** ones need something not guaranteed to be
-present — the PNR waveforms under ``Tutorial/Data``, or the optional
+present — the PNR waveforms under ``tutorial/data/events/``, or the optional
 ``specmod[multitaper]`` extra — so they are excluded unless ``--field`` is
 passed.
 
@@ -36,8 +36,6 @@ fail to run belongs in ``FIELD``.
 
 from __future__ import annotations
 
-import glob
-import os
 import re
 import warnings
 from collections.abc import Callable
@@ -502,23 +500,22 @@ def _field_signals():  # type: ignore[no-untyped-def]
     import obspy  # noqa: PLC0415
 
     import specmod.preprocess as pre  # noqa: PLC0415
+    from specmod.datasets import PNR_2019  # noqa: PLC0415
 
     warnings.filterwarnings("ignore")
-    data = ROOT / "Tutorial" / "Data" / "2019-08-26T07:30:47.0"
-    inv = obspy.read_inventory(
-        str(ROOT / "Tutorial" / "MetaData" / "pnr_inventory.xml")
-    )
-    st = obspy.read(os.path.join(str(data), "*HH[EN]*"))
+    paths = PNR_2019.directory(ROOT)
+    inv = obspy.read_inventory(str(paths.inventory))
+    st = obspy.read(paths.waveform_glob("*HH[EN]*"))
     pre.set_stream_distance(
         st,
-        53.784,
-        -2.967,
-        2.1,
-        obspy.UTCDateTime("2019-08-26T07:49:24.2"),
+        PNR_2019.latitude,
+        PNR_2019.longitude,
+        PNR_2019.depth_km,
+        obspy.UTCDateTime(PNR_2019.origin),
         inventory=inv,
         dtype="mseed",
     )
-    pre.set_picks_from_pyrocko(st, glob.glob(os.path.join(str(data), "*.picks"))[0])
+    pre.set_picks_from_pyrocko(st, str(paths.picks_file()))
     st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
     st.detrend("linear")
     st.detrend("demean")
@@ -660,7 +657,7 @@ def _field_option(fn):  # type: ignore[no-untyped-def]
     return click.option(
         "--field",
         is_flag=True,
-        help="Include measurements that read Tutorial/Data (slow).",
+        help="Include measurements that read tutorial/data/events/ (slow).",
     )(fn)
 
 

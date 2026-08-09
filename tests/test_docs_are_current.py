@@ -8,7 +8,7 @@ estimator that moves a published number fails here instead of leaving the
 prose quietly wrong.
 
 Only the synthetic measurements are checked. The field ones read
-``Tutorial/Data`` and are slow; regenerate those by hand with
+``tutorial/data/events/`` and are slow; regenerate those by hand with
 ``python tools/measure_docs.py --write --field``.
 """
 
