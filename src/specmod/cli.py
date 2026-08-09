@@ -1,7 +1,6 @@
 """Command line interface.
 
-Currently covers configuration inspection. ``fetch`` arrives with
-:mod:`specmod.acquire`.
+Covers configuration inspection and dataset acquisition.
 
 Built on ``click``: every command SpecMod grows should be a ``click`` command
 so the whole surface stays consistent — one convention for options, one for
@@ -16,6 +15,7 @@ from typing import Any, TypeVar
 import click
 
 from . import __version__
+from .acquire import fetch, verify
 from .config import load_config
 from .config.provenance import Provenance
 from .config.serialize import to_toml
@@ -94,6 +94,44 @@ def config_freeze(config_file: str | None, no_local: bool, no_env: bool) -> None
             ),
         ),
         nl=False,
+    )
+
+
+@main.command("fetch")
+@click.argument("config_file", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "-o",
+    "--out",
+    required=True,
+    type=click.Path(file_okay=False),
+    help="Directory to write the event and its manifest into.",
+)
+@click.option(
+    "--verify",
+    "verify_only",
+    is_flag=True,
+    help="Re-hash an existing fetch against its manifest instead of fetching.",
+)
+def fetch_command(config_file: str, out: str, verify_only: bool) -> None:
+    """Fetch an event described by an acquisition config.
+
+    This is the one command that uses the network, which is why it is explicit
+    rather than something a test could reach by accident.
+    """
+    if verify_only:
+        problems = verify(out)
+        for problem in problems:
+            click.echo(problem, err=True)
+        if problems:
+            raise SystemExit(1)
+        click.echo(f"{out}: matches its manifest")
+        return
+
+    manifest = fetch(config_file, out=out)
+    channels = manifest["resolved"]["channels"]
+    click.echo(
+        f"{manifest['name']}: {len(channels)} channels from "
+        f"{manifest['data_centre']} -> {out}"
     )
 
 

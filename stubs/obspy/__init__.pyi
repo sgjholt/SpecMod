@@ -7,6 +7,8 @@ from .core.stream import Stream as Stream
 from .core.trace import Stats as Stats, Trace as Trace
 from .core.utcdatetime import UTCDateTime as UTCDateTime
 
+__version__: str
+
 def read(
     pathname_or_url: str | PathLike[str] | None = ...,
     format: str | None = ...,

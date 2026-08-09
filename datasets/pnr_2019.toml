@@ -1,0 +1,37 @@
+# Preston New Road, 26 August 2019 — the event shipped with the package.
+#
+# Written as a config so the committed dataset is regenerable rather than
+# merely present, and so there is a worked example next to the module. Fetching
+# it needs whichever data centre serves the LV and UR networks; the committed
+# copy under `tutorial/data/events/` is what tests read, and no test fetches.
+#
+# The event is declared explicitly rather than by `eventid`. It is induced
+# seismicity monitored under an operator's licence, so the hypocentre comes
+# from the PNR-2 catalogue published with Cuadrilla's hydraulic-fracture
+# monitoring (NGDC 709cbc2f) rather than from an FDSN catalogue.
+
+name = "pnr_2019"
+data_centre = "IRIS"
+
+[event]
+origin = "2019-08-26T07:30:47.000000Z"
+latitude = 53.785021
+longitude = -2.970780
+depth_km = 2.04
+catalogue_magnitude = 2.9
+catalogue_magnitude_type = "Mw"
+
+[stations]
+network = "LV,UR"
+station = "*"
+location = "*"
+# Horizontals only: the source model here is fitted to SgH, and the vertical
+# is not part of that measurement. `HH?` would fetch it too.
+channel = "HH*"
+max_radius_km = 30.0
+
+[window]
+# The committed waveforms are 7 s starting just before the origin. This asks
+# for more, because trimming is cheap and a re-fetch that is short is not.
+before_origin_s = 5.0
+after_origin_s = 60.0

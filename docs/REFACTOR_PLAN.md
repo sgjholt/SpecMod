@@ -2101,6 +2101,32 @@ is self-describing.
 record cassettes. Its logic is config parsing, wildcard resolution, windowing and
 manifest generation — all testable against a fake client.
 
+**Built: `specmod.acquire`, the produce half.** `AcquisitionConfig` reads the
+TOML, `fetch()` writes an `EventDirectory` plus `manifest.json`, and `specmod
+fetch` exposes it. `datasets/pnr_2019.toml` is the worked example and describes
+the event already committed, so the shipped dataset is regenerable rather than
+merely present — a test asserts the config and `datasets.PNR_2019` still agree,
+since they are two statements of one hypocentre and can drift apart.
+
+The design constraints above are honoured and tested: waveforms are written raw
+with the response beside them, the wrapper stays thin, and **every network call
+goes through an injected `client`**, so all 24 tests drive a hand-written fake
+and none touches FDSN. The manifest carries the config verbatim, the resolved
+hypocentre, the channel list after wildcard expansion, both versions, the fetch
+timestamp and a SHA256 per file.
+
+Two smaller decisions worth recording. Radii are declared in **kilometres** and
+converted to degrees at the FDSN boundary, because a config in degrees is a
+config people get wrong; and an `eventid` matching zero or several events
+**raises** rather than taking the first, which would pick an event at random.
+
+**Not built: the consume half.** `datasets.load_*()`, pooch, the SHA256
+registry and the published artefacts are still ahead, as is the fuller
+`--verify` that re-fetches and diffs against the manifest. `verify()` today
+re-hashes what is on disk, which answers "has this been touched" but not "has
+the data centre revised its holdings" — the question §5.2.2 is really about,
+and the one that needs the network.
+
 > **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
 > and release-please must be configured to ignore them or it will read `data-v1`
 > as a code release. Constrain it to `v*` and keep the data tags on a separate
