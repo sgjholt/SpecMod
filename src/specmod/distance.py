@@ -1,8 +1,8 @@
 """Source-to-site distance, as a registry rather than a stat name.
 
 Which distance you mean is a modelling choice, and at short range it is not a
-small one. On the PNR data the nearest station is **0.89 km epicentral against
-2.30 km hypocentral** — a factor of 2.57 — while the farthest agree to 1.00.
+small one. On the PNR data the nearest station is **1.02 km epicentral against
+2.30 km hypocentral** — a factor of 2.24 — while the farthest agree to 1.004.
 Anything weighted by inverse distance, or corrected for geometric spreading,
 therefore depends on the choice most strongly at exactly the station that
 matters most.

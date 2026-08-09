@@ -76,6 +76,8 @@ docs = [
 ]
 tutorial = [ # for running the tutorial notebook, which is not part of the package
     "ipykernel>=7.0",
+    "nbclient>=0.10",  # executes it; `pytest -m notebook` is the check
+    "nbformat>=5.10",
 ]
 
 [project.urls]
@@ -204,6 +206,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
     "dataset: requires a downloaded dataset (deselect with '-m \"not dataset\"')",
+    "notebook: executes the tutorial notebook; needs a Jupyter kernel and ~40s",
     "slow: long-running test",
 ]
 filterwarnings = [

@@ -1142,7 +1142,7 @@ horizontal motion.
 
 That has a concrete consequence for §5.2.5's two-stage fit, which is built and
 merged. Its ensemble weighting reports that "the nearest two channels carry
-22.8% of the weight" — those two channels are one station's two components, so
+38.1% of the weight" — those two channels are one station's two components, so
 each station is being counted twice, and a station whose components disagree
 contributes that disagreement as if it were between-station scatter. The
 weighting is doing what it says; what it is averaging over is wrong.
@@ -1225,10 +1225,11 @@ constant that bridges kilometres and metres, which is worth checking rather
 than assuming either way.
 
 There is a cheap arithmetic check that settles it without reading any code.
-`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw 1.6**
-used throughout this repository should come out near **3e11 N m** — or 3e18 if
-the pipeline is working in dyne-centimetres. Anything else is a unit error,
-and a factor of 10^9 from a kilometre-per-second velocity is not subtle.
+`M0 = 10 ** (1.5 * Mw + 9.1)` newton-metres, so the Preston New Road **Mw
+2.9** (§4.7.1) should come out near **2.8e13 N m** — or 2.8e20 if the pipeline
+is working in dyne-centimetres. A factor of 10^9 from a kilometre-per-second
+velocity is not subtle, which is the point of the check. It identifies *unit*
+errors rather than calibration.
 
 The general point is that this is ambiguous *now* because the constants live
 as bare floats in prose with no units attached — which is the same failure
@@ -1360,15 +1361,123 @@ moment formula corrects an amplitude, so it multiplies by `r`.
 Measured on the 28 PNR windows through the two-stage fit, with `rho = 2500`
 kg/m^3, `beta = 2500` m/s, `R_c = 0.63`, `F = 2`:
 
-| spreading | median M0 | median Mw |
+| spreading | event Mw | |
 |---|---|---|
-| `1/r` | 1.67e13 N m | **+2.75** |
-| `1/r**2` | 1.55e17 N m | **+5.39** |
-| catalogue Mw 1.6 | 3.16e11 N m | +1.60 |
+| `1/r` | **+2.74** | reproduced by `specmod.magnitude` |
+| `1/r**2` | **+3.42** | corrected; see below |
+| catalogue `Mw` | **2.90** | NGDC PNR-2 catalogue — see §4.7.1 |
 
-`1/r**2` is nearly four magnitude units out, which is the distance term
-applied twice; `1/r` lands within reach of the constants. **The exponent is
-settled by this; the absolute calibration is not.**
+**One figure in an earlier draft of this table was wrong, and building the
+module found it.** `1/r**2` was recorded as +5.39, and the text read that
+`1/r**2` is "nearly four magnitude units out". It is not — it is **0.68**
+magnitude units out. The +5.39 came from evaluating `r**n` with `r` in metres,
+which is dimensionally consistent only at `n = 1`: for any other exponent it
+multiplies in an extra reference distance. The discrepancy is exactly
+`(2/3) * log10(1000) = 2.0` magnitude units, and
+`tests/test_magnitude.py` pins that identity so the arithmetic cannot come
+back.
+
+`specmod.spreading` avoids the trap by construction. Every model returns the
+**dimensionless ratio** `(R_0/R)**n` rather than a raw `R**-n`, so the
+reference distance is explicit and cancels only where it genuinely does — at
+`n = 1`, which is why the short form circulates and works.
+
+**The conclusion is unchanged; its evidence is weaker than claimed.** The
+exponent is still 1, but that now rests on theory — amplitude decays as `1/r`,
+energy as `1/r**2`, and a moment expression corrects an amplitude — plus the
+thesis's own inverted near-field values of 0.88 and 0.90. It does *not* rest
+on a dramatic mismatch, because a chunk of that mismatch was an arithmetic
+artefact rather than physics.
+
+##### 4.7.1 The PNR event: identity, magnitude, and what the method returns
+
+**Resolved against the published catalogue**, the PNR-2 dataset released with
+Cuadrilla's hydraulic-fracture monitoring
+([NGDC 709cbc2f](https://www2.bgs.ac.uk/nationalgeosciencedatacentre/citedData/catalogue/709cbc2f-af5c-4d09-a4ea-6deb5aa8c5d8.html)),
+which reports `downhole_Mw`, `downhole_ML`, `surface_ML`, `surface_Mw` and
+`corrected_Mw` for 56,022 PNR-2 events.
+
+Two things were wrong, and they compounded.
+
+**The origin time named the wrong event.** `PNR_2019.origin` read
+`2019-08-26T07:49:24.2`, which is a real catalogue entry — but a different,
+far smaller event 18.6 minutes later (`downhole_Mw` −0.21, `corrected_Mw`
+0.08). The shipped waveforms span `07:30:46.9`–`07:30:53.9` and the pick file
+is named `07:30:47`, so the data was always the 07:30:47 event; only the label
+disagreed.
+
+It survived because **nothing computed depended on it**. `set_stream_distance`
+uses the origin time only to stamp metadata; distances come from coordinates.
+Correcting it leaves `fc` identical to five decimal places.
+
+What it *did* corrupt was the golden window reference, which stores window
+edges relative to the origin. Those were recorded as ≈ −1115 s — S arrivals
+**18 minutes before the earthquake** — and no test objected, because every
+value was consistently wrong by the same 1117.2 s. The reference was corrected
+by shifting exactly the origin-relative fields; the windows themselves are
+unchanged.
+
+**The magnitude was never sourced.** This document, the tutorial and the
+module all carried "Mw 1.6". **No event in the catalogue on 26 August 2019 has
+any magnitude near 1.6**, on any of its five scales. The 07:30:47 event is:
+
+| field | value |
+|---|---|
+| `surface_ML` | 2.9 |
+| `surface_Mw` | **2.9** |
+| `corrected_Mw` | 2.9 |
+
+It is the largest event of the PNR-2 sequence and the largest UK
+hydraulic-fracturing-induced event on record.
+
+**So the method agrees with the catalogue far better than it appeared to.**
+
+| | Mw |
+|---|---|
+| computed, §4.7 constants (`rho` 2500, `beta` 2500, `R_c` 0.63) | **2.74** |
+| computed, shipped defaults (`rho` 2700, `beta` 3500, `R_c` 0.55) | **3.09** |
+| catalogue `surface_Mw` | **2.90** |
+
+The two constant sets straddle the catalogue value, within 0.16 and 0.20
+magnitude units. The 1.15-unit "unexplained gap" recorded earlier in this
+section was an artefact of comparing against a number that belonged to no
+event.
+
+That is agreement, not calibration: one event cannot distinguish a correct
+method from a compensating pair of errors, and the constants that bracket 2.9
+differ in density, velocity *and* radiation pattern. Magna remains the
+calibration (§5.2.5). But the residual is no longer evidence of a defect, and
+the earlier candidate explanations — uncombined horizontals, phase-constant
+mismatch, microseismic spreading — are no longer needed to explain a gap that
+was mostly bookkeeping.
+
+**The hypocentre is now the catalogue's.** Its British National Grid
+easting/northing (336135.0, 432515.0; EPSG:27700) converts to 53.785021 N,
+2.970780 W, and its depth is 2.04 km. That moves the epicentre **274 m** from
+the values previously carried here — about 12% of the distance to the nearest
+station — and the consequences are confined to geometry, as they should be:
+
+| | before | after |
+|---|---|---|
+| event `fc` | 11.585 Hz | **12.081 Hz** |
+| nearest `repi` | 0.89 km | 1.02 km |
+| farthest `rhyp` | 22.94 km | 23.16 km |
+| Mw, §4.7 constants | 2.744 | 2.740 |
+
+Regenerating the golden references moved exactly the 112 geometry values —
+`repi`, `rhyp`, `azimuth` and `back_azimuth` on all 28 channels — and nothing
+else. Window edges, picks and sample counts are pick-derived and unchanged;
+`motion_reference.json` is untouched.
+
+`fc` moving 4.3% where Mw moves 0.004 is the inverse-distance weighting doing
+what §4.7 of PR #25 measured: the weight is largest exactly where the two
+distance measures disagree most.
+
+Every distance-dependent figure elsewhere in this document was re-measured
+against the corrected hypocentre rather than left standing — the weight
+concentration and stress-drop sensitivity in §6.7, the microseismic distance
+span and the spreading regression in §4.7. Two conclusions weakened slightly
+and say so where they appear; none reversed.
 
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
@@ -1456,7 +1565,7 @@ same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
 
 **Bilinear, and why the microseismic regime is not the regional one.** Every
 spreading model in the thesis breaks at 40-50 km. The PNR data used throughout
-this repository spans **2.3 to 22.9 km** — entirely inside the first segment of
+this repository spans **2.3 to 23.2 km** — entirely inside the first segment of
 all of them — so the regional tables offer no guidance at these distances, and
 a shape fitted for 1-400 km should not be assumed to extend downward. A
 bilinear form with a break inside the microseismic range is the right thing to
@@ -1469,12 +1578,20 @@ exactly the spreading, since `Omega_source` is a constant:
 
 | model | exponents | rms residual |
 |---|---|---|
-| single segment | 0.73 | 0.265 log10 |
-| bilinear, break searched | 0.41 then 1.89, break 13.5 km | 0.253 log10 |
+| single segment | 0.74 | 0.263 log10 |
+| bilinear, break searched | 0.66 then 2.58, break 12.2 km | 0.238 log10 |
 
-The bilinear fit buys **5%** in rms for two extra parameters, across **one
-decade** of distance. That is not evidence of a break; it is a hinge finding
-scatter. And the scatter is the point: 0.265 log10 units is a factor of 1.8,
+The break search requires at least **5 channels per segment**. Without that
+constraint the minimum sits at 4.9 km with an exponent of −2.4 — a segment
+fitted to three near stations, and a good illustration of what an
+unconstrained hinge does with 28 points.
+
+The bilinear fit buys **10%** in rms for two extra parameters, across **one
+decade** of distance, on **one event**. That is a weaker version of the same
+argument rather than a different one: it is still a hinge finding scatter, but
+it finds more of it than the 5% recorded before the hypocentre was corrected,
+so the case rests on the single event rather than on the size of the gain. And
+the scatter is the point: 0.263 log10 units is a factor of 1.83,
 which for a single event is site response and radiation pattern, neither of
 which is separable from spreading when every station contributes exactly one
 distance.
@@ -1482,7 +1599,7 @@ distance.
 That is the argument for the non-parametric inversion rather than against
 bilinear. Spreading becomes separable from site only across a dataset where
 each station sees many distances and each distance is sampled by many
-stations. One event cannot do it, and the apparent 0.73 here should not be
+stations. One event cannot do it, and the apparent 0.74 here should not be
 read as a measurement of anything.
 
 So: allow bilinear and tabulated forms, **default to theoretical `1/R`**, and
@@ -2181,18 +2298,19 @@ at, because "excluded" is not actionable and "matched exclude='AQ04' at
 station" is.
 
 That this matters is measured, not assumed. Under the configured weighting —
-inverse *epicentral* distance — the nearest two channels carry **41.4%** of the
-weight and the nearest four 52.5%, so dropping the single nearest station moves
-the event corner from 11.585 Hz to 15.602 Hz: **35%, which is 2.44x in stress
-drop**. The choice of weighting moves it too: 11.585 (epicentral), 12.751
-(hypocentral), 11.048 (uniform).
+inverse *epicentral* distance — the nearest two channels carry **38.1%** of the
+weight and the nearest four 50.2%, so dropping the single nearest station moves
+the event corner from 12.081 Hz to 15.881 Hz: **32%, which is 2.27x in stress
+drop**. The choice of weighting moves it too: 12.081 (epicentral), 12.939
+(hypocentral), 11.048 (uniform) — and note that the uniform value is the one
+the hypocentre correction left untouched, which is what it should do.
 
 **Which distance is itself configured, and `specmod.distance` is the registry
 for it.** `[geometry] distance_measure` is read now; it existed from the start as
 `[windows] distance_metric` and was read by nothing, in the wrong section —
 cutting a window does not depend on how distance is measured. That is not bookkeeping at these ranges: the nearest
-PNR station is **0.89 km epicentral against 2.30 km hypocentral**, a factor of
-2.57, while the farthest agree to 1.00 — so the two measures disagree most
+PNR station is **1.02 km epicentral against 2.30 km hypocentral**, a factor of
+2.24, while the farthest agree to 1.004 — so the two measures disagree most
 exactly where the inverse-distance weight is largest. Epicentral is the honest
 default here because `rhyp` is built from the source depth and the station
 *elevation*, assuming every sensor sits at the surface; where sensor depths are
@@ -2828,6 +2946,23 @@ Each phase ends green on CI and is independently mergeable.
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
 | **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty | 3 | 4–6 days |
 | **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
+
+**Executing the tutorial was pulled forward out of Phase 6.** The `myst-nb`
+rewrite stays there — it is a docs-build change and depends on Phase 2b. What
+moved is only the check: `pytest -m notebook` executes the notebook and fails
+if any cell raises, as its own CI job.
+
+It moved because the import-level checks in `tests/test_tutorial.py` cannot
+catch the failure that actually happened. The notebook broke twice on renamed
+modules, which those checks were written for, and a third time on a renamed
+event directory — where every name still resolved and the first `obspy.read`
+raised. Nothing reported it until the notebook was run by hand.
+
+The cost is why it is a separate job rather than another matrix cell: ~40
+seconds and a Jupyter kernel, paid once per PR instead of six times. The test
+skips where `nbclient` and `ipykernel` are absent, so only a checkout with the
+`tutorial` extra pays it locally, and it executes against a copy so the
+artefacts the notebook writes do not land in the working tree.
 
 Phases 2b, and later 4 and 5, can run in parallel with their siblings.
 

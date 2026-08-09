@@ -293,8 +293,8 @@ class GeometryConfig:
     #: the metadata says so.
     #:
     #: The choice is not a detail at short range: on the PNR data the nearest
-    #: station is 0.89 km epicentral against 2.30 km hypocentral, a factor of
-    #: 2.57, while the farthest agree to 1.00 — so anything weighted by inverse
+    #: station is 1.02 km epicentral against 2.30 km hypocentral, a factor of
+    #: 2.24, while the farthest agree to 1.004 — so anything weighted by inverse
     #: distance is most sensitive to it exactly where it matters most.
     #:
     #: ``rrup`` and ``rjb`` are registered and raise: both need a rupture

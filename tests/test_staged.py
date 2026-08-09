@@ -350,7 +350,7 @@ class TestWeighting:
 
         It matters at short range. Hypocentral and epicentral converge far from
         the source and diverge near it — on these windows the nearest station
-        is 0.89 km epicentral against 2.30 km hypocentral — and since this
+        is 1.02 km epicentral against 2.30 km hypocentral — and since this
         weighting is by *inverse* distance the disagreement lands hardest on
         the station carrying the most weight.
         """
