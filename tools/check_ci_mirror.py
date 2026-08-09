@@ -21,6 +21,17 @@ STAGED = ROOT / "ci" / "workflows"
 LIVE = ROOT / ".github" / "workflows"
 
 
+def _normalise(text: str) -> str:
+    """Ignore trailing blank lines at the end of a file.
+
+    GitHub's web editor leaves them behind, so comparing raw text reports a
+    difference for a file that was copied across faithfully. A check that
+    fails on invisible whitespace is one people stop reading, and it would
+    hide the substantive differences this exists to surface.
+    """
+    return text.rstrip("\n") + "\n"
+
+
 def main() -> int:
     if not STAGED.is_dir():
         print(f"no staged workflows at {STAGED.relative_to(ROOT)}")
@@ -34,7 +45,7 @@ def main() -> int:
             differing += 1
             continue
 
-        want, have = staged.read_text(), live.read_text()
+        want, have = _normalise(staged.read_text()), _normalise(live.read_text())
         if want == have:
             print(f"in sync  {live.relative_to(ROOT)}")
             continue

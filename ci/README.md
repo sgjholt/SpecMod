@@ -33,7 +33,14 @@ prints a diff for any that have diverged:
 python tools/check_ci_mirror.py
 ```
 
-It exits non-zero when they differ, so it can be wired into CI once the pair is
-in sync. It is deliberately not a test yet: the mirror is ahead of the live
-workflow by design until the copy is made, and a test that fails for the
-expected reason teaches people to ignore it.
+It exits non-zero when they differ, and the `lint` job runs it, so a staged
+change that has not been copied across fails CI rather than waiting to be
+noticed. Trailing blank lines are ignored — GitHub's web editor leaves them
+behind, and a check that fails on invisible whitespace is one people stop
+reading.
+
+The script uses only the standard library, so the step needs no install.
+
+There is one ordering quirk worth knowing: a change to a workflow lands in
+`ci/` first, so the check fails until the copy is made. That failure is the
+reminder, and it clears the moment the files match.
