@@ -1,0 +1,104 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv venv
+      - name: ruff check
+        run: uvx ruff@0.16.1 check --output-format=github src/ tests/ tools/
+      - name: ruff format
+        run: uvx ruff@0.16.1 format --check src/ tests/ tools/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # hatch-vcs needs history to derive the version
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv venv
+      - run: uv pip install -e ".[dev]"
+      - run: uv pip install mypy
+      - run: uv run mypy
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv venv
+      - run: uv pip install -e ".[dev]"
+      - run: uv pip install pytest pytest-cov
+      - name: pytest
+        # Dataset-marked tests need a network fetch; they are excluded here so
+        # the suite stays hermetic. See docs/REFACTOR_PLAN.md §5.2. Notebook
+        # execution is excluded because it costs ~40s and a Jupyter kernel, and
+        # is worth paying once rather than six times — see the notebook job.
+        run: uv run pytest -m "not dataset and not notebook" --cov=specmod --cov-report=xml --cov-report=term
+      - uses: codecov/codecov-action@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  floors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+      - run: uv venv
+      # Exercise the declared minimums. CI otherwise installs the newest of
+      # everything, so the floors are only ever tested by a user.
+      - run: uv pip install --resolution lowest-direct -e ".[dev]"
+      - run: uv run --no-sync python tools/check_floors.py
+      - run: uv run --no-sync pytest -m "not dataset and not notebook" -q
+
+  notebook:
+    # The tutorial is the documented entry point and has broken three times:
+    # twice on renamed modules, once on a renamed data directory that left
+    # every import resolving. Executing it is the only check that catches the
+    # third kind, so it runs per-PR rather than at release.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv venv
+      - run: uv pip install -e ".[dev,tutorial]"
+      - run: uv run pytest -m notebook -q
