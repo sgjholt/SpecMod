@@ -1142,7 +1142,7 @@ horizontal motion.
 
 That has a concrete consequence for §5.2.5's two-stage fit, which is built and
 merged. Its ensemble weighting reports that "the nearest two channels carry
-22.8% of the weight" — those two channels are one station's two components, so
+38.1% of the weight" — those two channels are one station's two components, so
 each station is being counted twice, and a station whose components disagree
 contributes that disagreement as if it were between-station scatter. The
 weighting is doing what it says; what it is averaging over is wrong.
@@ -1473,6 +1473,12 @@ else. Window edges, picks and sample counts are pick-derived and unchanged;
 what §4.7 of PR #25 measured: the weight is largest exactly where the two
 distance measures disagree most.
 
+Every distance-dependent figure elsewhere in this document was re-measured
+against the corrected hypocentre rather than left standing — the weight
+concentration and stress-drop sensitivity in §6.7, the microseismic distance
+span and the spreading regression in §4.7. Two conclusions weakened slightly
+and say so where they appear; none reversed.
+
 **The constants and the units are settled — from Holt (2019), the author's
 doctoral thesis, Chapter 1 §1.4 and Chapter 2 Eq. 2.7**, which is the
 Edwards et al. (2010) spectral method this package implements. Read directly
@@ -1559,7 +1565,7 @@ same shape as `WEIGHT_MODELS` and `NOISE_MODELS`.
 
 **Bilinear, and why the microseismic regime is not the regional one.** Every
 spreading model in the thesis breaks at 40-50 km. The PNR data used throughout
-this repository spans **2.3 to 22.9 km** — entirely inside the first segment of
+this repository spans **2.3 to 23.2 km** — entirely inside the first segment of
 all of them — so the regional tables offer no guidance at these distances, and
 a shape fitted for 1-400 km should not be assumed to extend downward. A
 bilinear form with a break inside the microseismic range is the right thing to
@@ -1572,12 +1578,20 @@ exactly the spreading, since `Omega_source` is a constant:
 
 | model | exponents | rms residual |
 |---|---|---|
-| single segment | 0.73 | 0.265 log10 |
-| bilinear, break searched | 0.41 then 1.89, break 13.5 km | 0.253 log10 |
+| single segment | 0.74 | 0.263 log10 |
+| bilinear, break searched | 0.66 then 2.58, break 12.2 km | 0.238 log10 |
 
-The bilinear fit buys **5%** in rms for two extra parameters, across **one
-decade** of distance. That is not evidence of a break; it is a hinge finding
-scatter. And the scatter is the point: 0.265 log10 units is a factor of 1.8,
+The break search requires at least **5 channels per segment**. Without that
+constraint the minimum sits at 4.9 km with an exponent of −2.4 — a segment
+fitted to three near stations, and a good illustration of what an
+unconstrained hinge does with 28 points.
+
+The bilinear fit buys **10%** in rms for two extra parameters, across **one
+decade** of distance, on **one event**. That is a weaker version of the same
+argument rather than a different one: it is still a hinge finding scatter, but
+it finds more of it than the 5% recorded before the hypocentre was corrected,
+so the case rests on the single event rather than on the size of the gain. And
+the scatter is the point: 0.263 log10 units is a factor of 1.83,
 which for a single event is site response and radiation pattern, neither of
 which is separable from spreading when every station contributes exactly one
 distance.
@@ -1585,7 +1599,7 @@ distance.
 That is the argument for the non-parametric inversion rather than against
 bilinear. Spreading becomes separable from site only across a dataset where
 each station sees many distances and each distance is sampled by many
-stations. One event cannot do it, and the apparent 0.73 here should not be
+stations. One event cannot do it, and the apparent 0.74 here should not be
 read as a measurement of anything.
 
 So: allow bilinear and tabulated forms, **default to theoretical `1/R`**, and
@@ -2284,18 +2298,19 @@ at, because "excluded" is not actionable and "matched exclude='AQ04' at
 station" is.
 
 That this matters is measured, not assumed. Under the configured weighting —
-inverse *epicentral* distance — the nearest two channels carry **41.4%** of the
-weight and the nearest four 52.5%, so dropping the single nearest station moves
-the event corner from 11.585 Hz to 15.602 Hz: **35%, which is 2.44x in stress
-drop**. The choice of weighting moves it too: 11.585 (epicentral), 12.751
-(hypocentral), 11.048 (uniform).
+inverse *epicentral* distance — the nearest two channels carry **38.1%** of the
+weight and the nearest four 50.2%, so dropping the single nearest station moves
+the event corner from 12.081 Hz to 15.881 Hz: **32%, which is 2.27x in stress
+drop**. The choice of weighting moves it too: 12.081 (epicentral), 12.939
+(hypocentral), 11.048 (uniform) — and note that the uniform value is the one
+the hypocentre correction left untouched, which is what it should do.
 
 **Which distance is itself configured, and `specmod.distance` is the registry
 for it.** `[geometry] distance_measure` is read now; it existed from the start as
 `[windows] distance_metric` and was read by nothing, in the wrong section —
 cutting a window does not depend on how distance is measured. That is not bookkeeping at these ranges: the nearest
-PNR station is **0.89 km epicentral against 2.30 km hypocentral**, a factor of
-2.57, while the farthest agree to 1.00 — so the two measures disagree most
+PNR station is **1.02 km epicentral against 2.30 km hypocentral**, a factor of
+2.24, while the farthest agree to 1.004 — so the two measures disagree most
 exactly where the inverse-distance weight is largest. Epicentral is the honest
 default here because `rhyp` is built from the source depth and the station
 *elevation*, assuming every sensor sits at the surface; where sensor depths are

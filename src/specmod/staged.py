@@ -27,13 +27,13 @@ The two stages
 
 Measured on the same 28 windows, with the same 28 channels contributing to
 both: the two minimisers differ by a factor 1.44 in ``f_c`` at the worst
-station and by **0.6%** on the event value. After stage two they agree to
-0.31% on ``t*`` and 2.3e-3 log10 units on ``Omega``.
+station and by **0.4%** on the event value. After stage two they agree to
+0.23% on ``t*`` and 1.7e-3 log10 units on ``Omega``.
 
 "With the same channels contributing" is load-bearing, and is the trap in this
 module. See :attr:`ChannelSelection.require_pass` — comparing two minimisers
-under the default selection compares two different ensembles, and gives 144%
-rather than 0.6%.
+under the default selection compares two different ensembles, and gives 125%
+rather than 0.4%.
 
 Be clear about what that last number is not. Fixing ``f_c`` removes the
 parameter the minimisers were disagreeing about, so of course they then agree.
@@ -258,10 +258,10 @@ class ChannelSelection:
     #:
     #: So changing the minimiser changes *which stations vote*, not just how
     #: each one is fitted. Comparing two minimisers under the default
-    #: selection therefore compares two different ensembles: 12.751 Hz from 28
-    #: channels against 5.228 Hz from 22, a 144% difference that says almost
+    #: selection therefore compares two different ensembles: 12.081 Hz from 28
+    #: channels against 5.376 Hz from 22, a 125% difference that says almost
     #: nothing about the minimisers. Holding the ensemble fixed with
-    #: ``require_pass=False`` gives 12.751 against 12.675 — 0.6%, which is the
+    #: ``require_pass=False`` gives 12.081 against 12.029 — 0.4%, which is the
     #: honest comparison and the number quoted in the module docstring.
     #:
     #: Left ``True`` because the flag is doing the right thing when it fires:
