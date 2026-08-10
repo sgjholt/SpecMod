@@ -3399,7 +3399,7 @@ Each phase ends green on CI and is independently mergeable.
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
-| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty; `picks/` per §4.9 — resolution first, then the registry, the ObsPy delegate and the plugin entry point | 3 | 4–6 days |
+| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/` ✅; ~~`Fitting.py` → `fitting/`~~ ✅ — `base`/`guess`/`spectrum`/`event`, 745 lines to four modules of 30–300, public names unchanged; models as objects ✅; `io/`; `viz/`; non-mutating operations; mypy override list → empty ✅; `picks/` per §4.9 ✅ | 3 | 4–6 days |
 | **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
 
 **Executing the tutorial was pulled forward out of Phase 6.** The `myst-nb`
