@@ -147,11 +147,13 @@ def recovered(measured: Any) -> Any:
     to displacement implicitly low-passes, and differentiating to acceleration
     amplifies high-frequency noise.
 
-    It also decides whether the initial guess means anything. ``initial_guess``
-    takes the spectral peak as the ``fc`` guess, which for a Brune source in
-    velocity is exact rather than approximate — ``2 pi f`` times the
-    displacement shape is maximised at ``f = fc``. In displacement the spectrum
-    is monotonic, so the peak is whichever band edge it was handed.
+    Velocity is also the convenient domain: it peaks at ``fc``, so
+    ``initial_guess`` taking the spectral peak is exact rather than
+    approximate. That holds for any omega-squared source — both registered
+    models — since the stationary point of ``f * [1 + (f/fc)**(g*n)]**(-1/g)``
+    sits at ``f = fc`` whenever ``n == 2``, whatever the corner sharpness
+    ``g``. In displacement the spectrum is monotonic, so the peak is whichever
+    band edge it was handed.
     """
     from specmod.fitting import FitSpectra  # noqa: PLC0415
 
