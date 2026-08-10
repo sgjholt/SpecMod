@@ -10,6 +10,7 @@ that estimates no covariance matrix, including the shipped default.
 from __future__ import annotations
 
 import inspect
+import warnings
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,7 @@ from matplotlib.ticker import NullFormatter, StrMethodFormatter
 
 from . import config as cfg
 from . import sources
+from .core.units import Motion
 from .tables import read_table, write_table
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -77,6 +79,26 @@ def fittable_signal(pair: Any, id: str = "") -> Spectrumish | None:
     return signal if passes else None
 
 
+def _warn_if_peak_is_meaningless(signal: Spectrumish, id: str) -> None:
+    """Warn when the peak-as-``fc`` guess is being read off the wrong domain.
+
+    A no-op for velocity, and for a spectrum that does not say what motion it
+    carries — something assembled by hand is the caller's business.
+    """
+    motion = getattr(signal, "motion", None)
+    if motion is None or Motion(motion) is Motion.VELOCITY:
+        return
+    warnings.warn(
+        f"{id or 'this spectrum'} is in {Motion(motion).value}, and the "
+        f"initial guess for fc is the frequency of the spectral peak — which "
+        f"is the corner only in velocity. A {Motion(motion).value} spectrum "
+        f"falls monotonically across the band, so the guess will be a band "
+        f"edge and the fit will settle near it. Fit the velocity spectrum; "
+        f"`llpsp` is the displacement plateau either way.",
+        stacklevel=3,
+    )
+
+
 def initial_guess(
     spectra: SpectraLike, model: Any = None
 ) -> dict[str, dict[str, float]]:
@@ -101,10 +123,19 @@ def initial_guess(
     ``fc``
         the frequency at which that maximum falls.
 
-    Both assume a **velocity** spectrum, where the peak sits near the corner.
-    On a displacement spectrum the peak is at the low-frequency end and ``fc``
-    would start at the bottom of the band; that is the pre-existing assumption,
-    made explicit here rather than left in a function name.
+    Both assume a **velocity** spectrum, which is where a fit belongs anyway:
+    the model carries a motion factor, so ``llpsp`` is the displacement plateau
+    whichever domain is fitted, but converting first is not a neutral change of
+    view — integrating implicitly low-passes and differentiating amplifies
+    high-frequency noise, so the record to fit is the one the sensor recorded.
+
+    In velocity the peak is not merely near the corner, it *is* the corner, for
+    any omega-squared source: the stationary point of
+    ``f * [1 + (f/fc)**(gamma*n)]**(-1/gamma)`` sits at ``f = fc`` whenever
+    ``n == 2``, whatever the corner sharpness. In displacement and acceleration
+    the spectrum is monotonic across the band, so the peak is whichever band
+    edge it was handed and the guess is meaningless. Handed one of those, this
+    warns rather than proceeding quietly.
 
     Stations with no band are omitted rather than given ``None`` guesses. The
     old version emitted ``{"llpsp": None, "fc": None, "ts": None}`` on
@@ -136,6 +167,8 @@ def initial_guess(
         inside = (signal.freq >= band[0]) & (signal.freq <= band[1])
         if not inside.any():
             continue
+
+        _warn_if_peak_is_meaningless(signal, id)
 
         amp, freq = signal.amp[inside], signal.freq[inside]
         peak = int(amp.argmax())

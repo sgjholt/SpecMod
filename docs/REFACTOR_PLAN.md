@@ -2266,12 +2266,13 @@ numbers:
   the "peak" is just whichever edge it was handed — 0.1 Hz and 100 Hz on the
   same grid.
 
-  So `FitSpectra(spectra.to_motion("displacement"))` gets a guess at the low
-  band edge and settles near it: `f_c` came back **1.6 instead of 8.0**, `Ω₀`
-  0.6 magnitude units low, with nothing warning. The design is right; what is
-  missing is that the wrong call is silent. Worth a warning from
-  `initial_guess` when the spectrum's motion is not the one the peak means
-  something in — not a redesign.
+  So `FitSpectra(spectra.to_motion("displacement"))` got a guess at the bottom
+  of the band and settled near it: `f_c` came back **1.6 instead of 8.0**, `Ω₀`
+  0.6 magnitude units low, with nothing warning. The design was right and the
+  silence was not, so `initial_guess` now warns when the spectrum's motion is
+  not one the peak means anything in. `FittableView` grew a `motion` property
+  to make that possible — it reads through to the pair like the rest, and a
+  fitter has to know the domain for exactly this reason.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
 on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
