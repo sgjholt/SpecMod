@@ -7,12 +7,17 @@ SpecMod estimates source parameters — long-period spectral level Ω, corner
 frequency `f_c`, and the attenuation operator `t*` — by fitting a Brune-type
 source model to direct-phase spectra.
 
-> **Status: under active reconstruction.**
-> The package is mid-refactor. The modern layers (`specmod.config`,
-> `specmod.core`, `specmod.transforms`) are built and tested; the older
-> pipeline modules still carry pre-refactor behaviour and are being replaced
-> stage by stage. Expect breaking changes at every `0.x` release until the API
-> settles at 1.0. See [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md).
+> **Status: alpha, and under active reconstruction.**
+> The package is pre-1.0 and mid-refactor. The modern layers
+> (`specmod.config`, `specmod.core`, `specmod.transforms`, `specmod.picks`,
+> `specmod.fitting`) are built and tested; the older pipeline modules still
+> carry pre-refactor behaviour and are being replaced stage by stage. Expect
+> breaking changes at every `0.x` release until the API settles at 1.0 — they
+> land in minor bumps by design, with no deprecation cycle. Pin an exact
+> version for anything you intend to publish.
+> [`docs/roadmap.md`](docs/roadmap.md) says which stages are done and what 1.0
+> will mean; [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) is the working
+> document behind it.
 
 ## Installation
 
@@ -191,6 +196,15 @@ python tools/measure_docs.py check    # fail if any table is stale
 published number fails the suite rather than quietly leaving the prose wrong.
 Measurements that read `tutorial/data/events/` are slower and opt-in via `--field`;
 refresh those by hand after changing an estimator.
+
+### Releasing
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org),
+which is what makes the changelog and the version automatic: `release-please`
+opens a standing release pull request, and merging it creates the tag, the
+GitHub Release, the PyPI upload and the Zenodo DOI. Nothing is released until
+that merge. See [`docs/releasing.md`](docs/releasing.md), which also lists the
+repository settings that have to be turned on once.
 
 ## References
 
