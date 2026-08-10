@@ -1,10 +1,14 @@
-"""Delimited pick tables, with the columns named by the caller.
+"""Delimited pick tables: one row per arrival, columns named by the caller.
+
+:class:`DelimitedPickReader` is the general case, configured with a delimiter
+and a column mapping. :class:`CSVPickReader`, :class:`TSVPickReader` and
+:class:`WhitespacePickReader` are it with the delimiter and the plausible file
+suffixes already set.
 
 No vendor presets ship. PhaseNet, EQTransformer and SeisBench each write
 several column layouts across versions, and a preset written from
 documentation rather than from a real output file is a guess with a name on it.
-Supply :class:`CSVPickReader` with your own mapping instead — see
-``docs/pick-formats.md``.
+Supply the mapping yourself — see ``docs/pick-formats.md``.
 """
 
 from __future__ import annotations
@@ -21,7 +25,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping
     from os import PathLike
 
-__all__ = ["CSVPickReader"]
+__all__ = [
+    "CSVPickReader",
+    "DelimitedPickReader",
+    "TSVPickReader",
+    "WhitespacePickReader",
+]
 
 #: Fields a mapping may name. ``station``, ``phase`` and ``time`` are required;
 #: the rest populate the matching :class:`~specmod.picks.Pick` attributes.
@@ -41,26 +50,31 @@ REQUIRED = ("station", "phase", "time")
 
 
 @dataclass(frozen=True)
-class CSVPickReader:
+class DelimitedPickReader:
     """A delimited table of picks, one row per arrival.
 
     ``columns`` maps this reader's field names to the column headings in the
     file: ``{"station": "sta", "phase": "phase_type", "time": "arrival_time"}``.
-    ``station``, ``phase`` and ``time`` are required.
+    ``station``, ``phase`` and ``time`` are required; :data:`FIELDS` lists what
+    else may be mapped.
 
-    ``reader_name`` is what :func:`specmod.picks.read` refers to it by, and
-    must be unique once registered. ``delimiter`` defaults to a comma.
+    ``delimiter`` is a single character, or ``None`` to split on runs of
+    whitespace — the latter takes a separate parse path, since quoting has no
+    meaning in a whitespace-aligned table.
 
-    Detection is by header: :meth:`can_read` claims a file only when every
-    mapped column is present, so two readers configured for different schemas
-    do not collide. A reader whose columns are a subset of another's will
-    collide, and that is the ambiguity :func:`specmod.picks.detect_reader`
-    reports.
+    ``reader_name`` is what :func:`specmod.picks.read` refers to it by and must
+    be unique once registered. ``file_suffixes`` is a hint for error messages
+    and nothing else; detection is by header, so a reader claims a file only
+    when every mapped column is present. Two readers configured for different
+    schemas therefore do not collide, and one whose columns are a subset of
+    another's collides visibly — the ambiguity
+    :func:`specmod.picks.detect_reader` reports.
     """
 
     columns: Mapping[str, str]
-    reader_name: str = "csv"
-    delimiter: str = ","
+    reader_name: str = "delimited"
+    delimiter: str | None = ","
+    file_suffixes: tuple[str, ...] = (".csv", ".tsv", ".txt", ".dat")
     #: Rows whose phase does not fold to P or S are skipped rather than raising.
     skip_unknown_phases: bool = True
 
@@ -73,6 +87,11 @@ class CSVPickReader:
         missing = [name for name in REQUIRED if name not in self.columns]
         if missing:
             raise ValueError(f"columns must map {missing}; got {sorted(self.columns)}.")
+        if self.delimiter is not None and len(self.delimiter) != 1:
+            raise ValueError(
+                f"delimiter must be one character or None for whitespace; "
+                f"got {self.delimiter!r}."
+            )
 
     @property
     def name(self) -> str:
@@ -80,28 +99,42 @@ class CSVPickReader:
 
     @property
     def suffixes(self) -> tuple[str, ...]:
-        return (".csv", ".tsv", ".txt")
+        return self.file_suffixes
 
-    def _headings(self, source: str | PathLike[str]) -> list[str] | None:
+    def _rows(self, source: str | PathLike[str]) -> list[list[str]] | None:
+        """Every line as a list of cells, or ``None`` if this is not a table."""
         try:
             with open(source, newline="") as handle:
-                row = next(_csv.reader(handle, delimiter=self.delimiter), None)
-        except (OSError, UnicodeDecodeError, _csv.Error):
+                text = handle.read()
+        except (OSError, UnicodeDecodeError):
             return None
-        return [cell.strip() for cell in row] if row else None
+
+        if self.delimiter is None:
+            return [line.split() for line in text.splitlines() if line.strip()]
+        try:
+            return [
+                [cell.strip() for cell in row]
+                for row in _csv.reader(text.splitlines(), delimiter=self.delimiter)
+                if row
+            ]
+        except _csv.Error:
+            return None
 
     def can_read(self, source: str | PathLike[str]) -> bool:
-        headings = self._headings(source)
-        if headings is None:
+        rows = self._rows(source)
+        if not rows:
             return False
-        return set(self.columns.values()) <= set(headings)
+        return set(self.columns.values()) <= set(rows[0])
 
     def read(self, source: str | PathLike[str]) -> list[PickSet]:
-        with open(source, newline="") as handle:
-            rows = list(_csv.DictReader(handle, delimiter=self.delimiter))
+        rows = self._rows(source)
+        if not rows:
+            return [PickSet()]
 
+        headings, body = rows[0], rows[1:]
         picks = []
-        for row in rows:
+        for cells in body:
+            row = dict(zip(headings, cells, strict=False))
             pick = self._pick(row)
             if pick is not None:
                 picks.append(pick)
@@ -145,6 +178,41 @@ class CSVPickReader:
             polarity=self._value(row, "polarity"),
             author=self._value(row, "author"),
         )
+
+
+@dataclass(frozen=True)
+class CSVPickReader(DelimitedPickReader):
+    """Comma-separated, with the quoting rules of :mod:`csv`."""
+
+    reader_name: str = "csv"
+    delimiter: str | None = ","
+    file_suffixes: tuple[str, ...] = (".csv",)
+
+
+@dataclass(frozen=True)
+class TSVPickReader(DelimitedPickReader):
+    """Tab-separated."""
+
+    reader_name: str = "tsv"
+    delimiter: str | None = "\t"
+    file_suffixes: tuple[str, ...] = (".tsv", ".tab")
+
+
+@dataclass(frozen=True)
+class WhitespacePickReader(DelimitedPickReader):
+    """Columns separated by runs of spaces or tabs.
+
+    The shape most hand-written and Fortran-era arrival tables come in. Cells
+    cannot contain spaces, and quoting is not honoured.
+
+    This **subsumes** :class:`TSVPickReader` — splitting on whitespace splits
+    on tabs — so registering both against the same column names makes every
+    tab-separated file ambiguous. Register one, or pass ``format=``.
+    """
+
+    reader_name: str = "whitespace"
+    delimiter: str | None = None
+    file_suffixes: tuple[str, ...] = (".txt", ".dat", ".lst")
 
 
 def _as_float(value: str | None) -> float | None:

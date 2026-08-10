@@ -2119,7 +2119,14 @@ and dated.
 
 **The presets are not shipped.** The rule was that a preset which cannot be
 checked against a real file is not shipped, and no such file is available here
-— so `CSVPickReader` ships with the mechanism and none of the guesses. Four
+— so the delimited readers ship with the mechanism and none of the guesses.
+
+The two halves are worth separating, because only one of them needed a real
+file. A *delimiter* is knowable without one, so `DelimitedPickReader` has three
+named specialisations — `CSVPickReader`, `TSVPickReader`,
+`WhitespacePickReader` — each carrying its separator and its plausible
+suffixes. A *column schema* is not knowable without one, which is what stays
+open. Four
 lines of column mapping is what a user with a real file writes instead, and
 that is documented rather than hidden. Presets are a **§7.1 item for a later
 release**: additive, and the rule still applies to them.
@@ -3380,7 +3387,7 @@ changes anything shipped.
 
 | Item | Blocked on | Unblocked by |
 |---|---|---|
-| **Picker CSV presets** (§4.9.6) — named mappings for PhaseNet, EQTransformer, SeisBench, so those users write no column map | No such output is available, and §4.9.6's rule is that a preset written from documentation is a guess with a vendor's name on it | One real output file per tool and version. `CSVPickReader` already takes the mapping, so a preset is a dict and a test |
+| **Picker CSV presets** (§4.9.6) — named mappings for PhaseNet, EQTransformer, SeisBench, so those users write no column map | No such output is available, and §4.9.6's rule is that a preset written from documentation is a guess with a vendor's name on it | One real output file per tool and version. The delimited readers already take the mapping, so a preset is a dict and a test |
 | **Confirming NonLinLoc and the bulletins** (§4.9.6) — two roster rows marked unconfirmed | A round trip cannot reach them: ObsPy writes `NLLOC_OBS` but reads `NLLOC_HYP`, and writes no bulletin at all | One real `.hyp` and one IMS/GSE bulletin, added to the fixture corpus. Expected to pass as-is; the point is that the table should not claim what it has not measured |
 | **SeisComP picks** (§4.9.6) — SCML reads its origin and drops its picks and magnitudes | ObsPy 1.5.0's SCML↔QuakeML XSLT is asymmetric on `<pick>`; the writer emits them, the reader discards them | An upstream fix, which `test_scml_loses_its_picks_on_the_way_back` is written to detect — it fails when SCML starts working. Otherwise a specmod-side reader, which is a real piece of work and only worth it if someone needs SeisComP output |
 | **A `[picks]` config section** (§4.9.8) | Nothing; it is a judgement call | Wanting a study's resolution policies recorded in provenance rather than passed as keyword arguments. Sensible alongside §4.8's stamping |

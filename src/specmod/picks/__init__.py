@@ -28,7 +28,12 @@ from .base import (
     Resolution,
     SensorID,
 )
-from .csv import CSVPickReader
+from .delimited import (
+    CSVPickReader,
+    DelimitedPickReader,
+    TSVPickReader,
+    WhitespacePickReader,
+)
 from .events import ObsPyEventsReader, from_catalog
 from .resolution import resolve, select_event
 from .snuffler import SnufflerReader
@@ -43,6 +48,7 @@ __all__ = [
     "PICK_READERS",
     "AmbiguousPolicy",
     "CSVPickReader",
+    "DelimitedPickReader",
     "DuplicatePolicy",
     "ObsPyEventsReader",
     "Pick",
@@ -51,6 +57,8 @@ __all__ = [
     "Resolution",
     "SensorID",
     "SnufflerReader",
+    "TSVPickReader",
+    "WhitespacePickReader",
     "detect_reader",
     "from_catalog",
     "get_reader",

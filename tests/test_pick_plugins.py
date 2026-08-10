@@ -1,10 +1,10 @@
-"""Registration, plugin discovery, and the configurable CSV reader."""
+"""Registration, plugin discovery, and the delimited-table readers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import pytest
 
@@ -15,12 +15,17 @@ import specmod.picks as pk  # noqa: E402
 if TYPE_CHECKING:  # pragma: no cover
     from os import PathLike
 
-CSV = """station,phase_type,arrival_time,net,loc,chan,prob
-L001,P,2019-08-26T07:30:50.500,LV,,HHZ,0.94
-L001,S,2019-08-26T07:30:52.900,LV,,HHN,0.81
-L002,Pg,2019-08-26T07:30:51.100,LV,,HHZ,0.77
-L002,Lg,2019-08-26T07:30:59.000,LV,,HHZ,0.30
-"""
+#: One header and four arrivals, as cells — rendered with each delimiter
+#: below. The last row is an Lg, which is neither P nor S.
+ROWS = (
+    ("station", "phase_type", "arrival_time", "net", "loc", "chan", "prob"),
+    ("L001", "P", "2019-08-26T07:30:50.500", "LV", "", "HHZ", "0.94"),
+    ("L001", "S", "2019-08-26T07:30:52.900", "LV", "", "HHN", "0.81"),
+    ("L002", "Pg", "2019-08-26T07:30:51.100", "LV", "", "HHZ", "0.77"),
+    ("L002", "Lg", "2019-08-26T07:30:59.000", "LV", "", "HHZ", "0.30"),
+)
+
+CSV = "\n".join(",".join(row) for row in ROWS) + "\n"
 
 COLUMNS = {
     "station": "station",
@@ -49,6 +54,117 @@ def _restore_registry() -> Any:
     pk.PICK_READERS.clear()
     pk.PICK_READERS.update(before)
     pk._plugins_loaded = loaded
+
+
+#: The same three rows in each delimiter the package names a reader for.
+BY_DELIMITER = {
+    "csv": (pk.CSVPickReader, ",", "picks.csv"),
+    "tsv": (pk.TSVPickReader, "\t", "picks.tsv"),
+    "whitespace": (pk.WhitespacePickReader, "   ", "picks.txt"),
+}
+
+
+def _table(tmp_path: Path, delimiter: str, filename: str) -> Path:
+    path = tmp_path / filename
+    path.write_text("\n".join(delimiter.join(row) for row in ROWS) + "\n")
+    return path
+
+
+class TestDelimiters:
+    @pytest.mark.parametrize("kind", BY_DELIMITER)
+    def test_each_reader_parses_its_own_delimiter(
+        self, tmp_path: Path, kind: str
+    ) -> None:
+        cls, delimiter, filename = BY_DELIMITER[kind]
+        picks = cls(columns=COLUMNS).read(_table(tmp_path, delimiter, filename))[0]
+        assert len(picks) == 3
+        assert {p.sensor.station for p in picks} == {"L001", "L002"}
+
+    #: Which readers claim which files. Whitespace-splitting subsumes
+    #: tab-splitting — `str.split()` splits on tabs — so the whitespace reader
+    #: legitimately claims a TSV. Everything else is disjoint, because a
+    #: delimiter that is absent leaves the whole line as one cell and the
+    #: headings then match nothing.
+    CLAIMS: ClassVar = {
+        "csv": {"csv"},
+        "tsv": {"tsv"},
+        "whitespace": {"tsv", "whitespace"},
+    }
+
+    @pytest.mark.parametrize("kind", BY_DELIMITER)
+    def test_each_reader_claims_exactly_the_files_it_should(
+        self, tmp_path: Path, kind: str
+    ) -> None:
+        cls, _, _ = BY_DELIMITER[kind]
+        reader = cls(columns=COLUMNS)
+        for other, (_, delimiter, filename) in BY_DELIMITER.items():
+            path = _table(tmp_path, delimiter, filename)
+            assert reader.can_read(path) is (other in self.CLAIMS[kind])
+
+    def test_registering_whitespace_and_tsv_together_is_ambiguous(
+        self, tmp_path: Path
+    ) -> None:
+        """The documented overlap, surfacing the way the design says it should."""
+        pk.register_reader(pk.TSVPickReader(columns=COLUMNS))
+        pk.register_reader(pk.WhitespacePickReader(columns=COLUMNS))
+        path = _table(tmp_path, "\t", "picks.tsv")
+        with pytest.raises(ValueError, match="2 readers claim"):
+            pk.detect_reader(path)
+        assert len(pk.read(path, format="tsv")[0]) == 3
+
+    @pytest.mark.parametrize("kind", BY_DELIMITER)
+    def test_the_suffixes_match_the_delimiter(self, kind: str) -> None:
+        # The generic reader used to claim .csv, .tsv and .txt whatever it was
+        # built with, which is a hint that says nothing.
+        cls, _, filename = BY_DELIMITER[kind]
+        assert Path(filename).suffix in cls(columns=COLUMNS).suffixes
+
+    def test_whitespace_runs_collapse(self, tmp_path: Path) -> None:
+        path = tmp_path / "aligned.txt"
+        path.write_text(
+            "station   phase_type     arrival_time\n"
+            "L001      P              2019-08-26T07:30:50.5\n"
+        )
+        reader = pk.WhitespacePickReader(
+            columns={
+                "station": "station",
+                "phase": "phase_type",
+                "time": "arrival_time",
+            }
+        )
+        assert len(reader.read(path)[0]) == 1
+
+    def test_a_generic_delimiter_is_still_available(self, tmp_path: Path) -> None:
+        path = tmp_path / "piped.dat"
+        path.write_text("sta|ph|t\nL001|P|2019-08-26T07:30:50.5\n")
+        reader = pk.DelimitedPickReader(
+            columns={"station": "sta", "phase": "ph", "time": "t"},
+            reader_name="piped",
+            delimiter="|",
+            file_suffixes=(".dat",),
+        )
+        assert reader.can_read(path)
+        assert len(reader.read(path)[0]) == 1
+
+    def test_a_multi_character_delimiter_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="one character or None"):
+            pk.DelimitedPickReader(columns=COLUMNS, delimiter="||")
+
+    def test_csv_quoting_is_honoured(self, tmp_path: Path) -> None:
+        path = tmp_path / "quoted.csv"
+        path.write_text(
+            "station,phase_type,arrival_time,author\n"
+            'L001,P,2019-08-26T07:30:50.5,"Doe, J."\n'
+        )
+        reader = pk.CSVPickReader(
+            columns={
+                "station": "station",
+                "phase": "phase_type",
+                "time": "arrival_time",
+                "author": "author",
+            }
+        )
+        assert reader.read(path)[0].picks[0].author == "Doe, J."
 
 
 class TestCSVPickReader:

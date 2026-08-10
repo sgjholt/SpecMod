@@ -62,8 +62,8 @@ catalogues and do not belong in ObsPy's roster. Register those with SpecMod.
 
 ### A delimited table
 
-`CSVPickReader` handles one-row-per-arrival tables. You supply the column
-mapping, because there is no standard to assume:
+For one-row-per-arrival tables. You supply the column mapping, because there is
+no standard to assume:
 
 ```python
 import specmod.picks as pk
@@ -84,6 +84,34 @@ pk.register_reader(reader)
 
 pre.set_picks(stream, "picks.csv")   # detected by its column headings
 ```
+
+Four classes, differing only in how a line is split:
+
+| Class | Separator | Suffixes |
+|---|---|---|
+| `CSVPickReader` | `,`, with `csv` quoting | `.csv` |
+| `TSVPickReader` | a tab | `.tsv`, `.tab` |
+| `WhitespacePickReader` | runs of spaces or tabs | `.txt`, `.dat`, `.lst` |
+| `DelimitedPickReader` | whatever you pass as `delimiter` | whatever you pass as `file_suffixes` |
+
+`DelimitedPickReader` is the general case — the other three are it with the
+delimiter and the plausible suffixes already set, so `pk.TSVPickReader(columns=…)`
+is all a tab-separated table needs. Use the base directly for anything else:
+
+```python
+pk.DelimitedPickReader(
+    columns={...}, reader_name="piped", delimiter="|", file_suffixes=(".dat",)
+)
+```
+
+`delimiter` is one character, or `None` for whitespace. The whitespace path is
+a separate parse — quoting has no meaning in a space-aligned table, and cells
+cannot contain spaces.
+
+One overlap to know about: **whitespace-splitting subsumes tab-splitting**, so
+`WhitespacePickReader` claims a `.tsv` too. Registering both against the same
+column names makes every tab-separated file ambiguous. Register one, or pass
+`format=`.
 
 Mappable fields are `station`, `phase`, `time`, `network`, `location`,
 `channel`, `weight`, `uncertainty`, `polarity` and `author`. Phase values fold
