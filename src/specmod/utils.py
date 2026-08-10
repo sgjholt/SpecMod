@@ -24,7 +24,7 @@ from matplotlib.dates import num2date
 from obspy.core.event import Catalog, Event, WaveformStreamID
 from obspy.core.event import Pick as ObsPyPick
 
-from specmod.picks import Pick, PickSet, SensorID, from_catalog, select_event
+from specmod.picks import PickSet, SnufflerReader, from_catalog, select_event
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
@@ -50,52 +50,13 @@ def _to_datetime(value: Any) -> Any:
     return num2date(value)  # type: ignore[no-untyped-call]
 
 
-#: Marker symbol to ``(phase, branch, first motion, onset)``. Only the phase is
-#: used; the rest records what the symbol carries.
-_PYROCKO_PHASES = {
-    "^": ("P", "Pg", "u", "i"),
-    "v": ("P", "Pg", "d", "i"),
-    "P": ("P", "Pg", None, "e"),
-    "S": ("S", "Sg", None, "e"),
-}
-
-
 def read_pyrocko_picks(path: str | PathLike[str]) -> PickSet:
     """Snuffler marker file to a :class:`~specmod.picks.PickSet`.
 
-    Picks of weight 4 and above are dropped, which is how the format spells a
-    rejected arrival. Weight, first motion and the branch the symbol names are
-    kept on each pick.
+    Thin wrapper over :class:`specmod.picks.SnufflerReader`, which is where the
+    format lives.
     """
-    with open(path) as handle:
-        # Read the whole file at once. Marker files are small enough that
-        # buffering buys nothing. The header line is dropped.
-        lines = handle.readlines()[1:]
-
-    picks = []
-    for line in lines:
-        fields = line.split()  # split between whitespace
-        tid = fields[4].replace("..", ".--.").split(".")  # ensure locs are the same
-        phase, branch, motion, _onset = _PYROCKO_PHASES[fields[8]]
-        weight = int(fields[3])
-        if weight > 3:
-            continue
-        picks.append(
-            Pick(
-                sensor=SensorID.parse(
-                    ".".join((tid[0], tid[1], tid[2] if len(tid) > 2 else "--"))
-                ),
-                phase=phase,
-                time=obspy.UTCDateTime("T".join(fields[1:3])),
-                raw_phase=branch,
-                polarity=motion,
-                weight=float(weight),
-                # A marker file is what an analyst saved out of Snuffler.
-                automatic=False,
-                reviewed=True,
-            )
-        )
-    return PickSet(picks=tuple(picks))
+    return SnufflerReader().read(path)[0]
 
 
 def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]:

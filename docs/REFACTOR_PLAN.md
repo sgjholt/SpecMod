@@ -1890,17 +1890,12 @@ which only that method used, is removed.
 
 ### 4.9 Pick input: one contract, many formats
 
-**Status: stage 1 landed; stages 2 and 3 specified.** `specmod.picks` holds the
-record types and the three resolution rules, and `set_picks` goes through them.
-The registry, the sniffing contract and the plugin entry point are still ahead —
-see §4.9.8. The roadmap this section describes is a registry with a published
-contract, so that the common standards work out of the box and a lab with its
-own format can add it without forking.
-
-The stage-1 change also went further than resolution in one respect, because it
-was free: `read` hands anything that is not a marker file to
-`obspy.read_events`, so the standard roster is *readable* today. What it is not
-yet is discoverable, sniffed, or extensible — that is stage 2.
+**Status: stages 1 and 2 landed; stage 3 specified.** `specmod.picks` is a
+package: record types and the reader protocol in `base`, the three resolution
+rules in `resolution`, and two readers — `SnufflerReader` and the
+`ObsPyEventsReader` delegate — registered in `PICK_READERS`. Formats are
+detected by sniffing, not by suffix. What is still ahead is stage 3: the
+plugin entry point and the picker CSVs.
 
 #### 4.9.1 ObsPy already owns the parsing — the gap is elsewhere
 
@@ -2086,20 +2081,32 @@ Rules the loader must follow:
 
 | Format | Source | Status |
 |---|---|---|
-| QuakeML | ObsPy delegate | reading now; the shipped PNR picks |
-| SC3ML / SCML | ObsPy delegate | expected free with the delegate |
-| SEISAN Nordic | ObsPy delegate | expected free with the delegate |
-| NonLinLoc `.hyp` | ObsPy delegate | expected free with the delegate |
-| HypoDD `.pha` | ObsPy delegate | **parses today**; resolution is what blocks it |
-| IMS1.0 / GSE2 bulletin | ObsPy delegate | multi-event; needs §4.9.3 event selection |
+| QuakeML | ObsPy delegate | **round-tripped**; the shipped PNR picks |
+| SEISAN Nordic | ObsPy delegate | **round-tripped**; station code only, resolves |
+| HypoDD `.pha` | ObsPy delegate | **round-tripped**; station code only, resolves |
+| SC3ML / SCML | ObsPy delegate | ~~expected free~~ — **ObsPy drops the picks**, see below |
+| NonLinLoc `.hyp` | ObsPy delegate | unconfirmed: ObsPy writes `NLLOC_OBS` and reads `NLLOC_HYP`, so a round trip cannot test it. Needs a real file |
+| IMS1.0 / GSE2 bulletin | ObsPy delegate | unconfirmed; multi-event, so §4.9.3 event selection applies. Needs a real file |
 | Snuffler / Pyrocko markers | native | reading now |
 | PhaseNet / EQTransformer / SeisBench CSV | native | to write — see below |
 | Generic CSV with a column map | native | to write; the escape hatch |
 
-"Expected free" is a claim the fixture corpus settles, not one to take on
-trust — a format ObsPy parses may still put nothing useful in `waveform_id`,
-and that is exactly what the corpus is for. Each row is confirmed by a fixture
-or the row is corrected.
+The first three rows are measured: `TestRoster` writes the format with ObsPy,
+reads it back and asserts the picks both survive and resolve against a stream.
+Nordic and HypoDD supply a station code and nothing else, which is precisely
+the case §4.9.3 exists for — before resolution they attached nothing.
+
+**SCML was wrong, and the corpus is what caught it.** ObsPy 1.5.0's SCML
+support is an XSLT translation to and from QuakeML, and the two directions are
+not symmetric: the writer emits `<pick>` elements — they are in the file — and
+the reader returns the origin with `picks` empty. Magnitudes are lost the same
+way. So SeisComP output is **not** free with the delegate. Pinned by
+`test_scml_loses_its_picks_on_the_way_back`, which is written to fail if a
+later ObsPy fixes it, at which point the row can move back up.
+
+The two "unconfirmed" rows are honest rather than pessimistic: nothing suggests
+they fail, but a round trip cannot reach them and a claim without a fixture is
+what this table exists to avoid.
 
 The ML-picker CSVs are the one part of the roster with real work in it and no
 standard behind it. Column names differ between PhaseNet, EQTransformer,
@@ -2149,15 +2156,20 @@ reference:
    duplicate policy replaced last-wins, which had been pinned as a defect in
    `test_utils.py` — nothing in the shipped data has a duplicate, so no number
    moved, but the tie-break is now documented rather than file-order.
-2. **Registry, sniffing, and the ObsPy delegate.** `picks/` package, the
-   contract suite, the fixture corpus. The standard roster arrives here, in one
-   reader.
+2. ~~**Registry, sniffing, and the ObsPy delegate.**~~ **Landed.** `picks/`
+   package, `PICK_READERS`, `detect_reader`, and a contract suite parameterised
+   over every registered reader — the one a plugin author will run against
+   their own. The delegate asks ObsPy's own `isFormat` detectors, so detection
+   agrees with what a subsequent `read_events` would do without parsing twice.
+
+   The corpus did its job on its first outing: the SCML row of §4.9.6 was
+   wrong, and is now a pinned negative test.
 3. **Plugins and the CSV readers.** Entry points, `register_reader`, the
    configurable CSV reader and its presets, the how-to page — which leads with
    "register with ObsPy if you can".
 
-Stage 1 has no dependencies and can land any time. Stages 2 and 3 want §4.8's
-config in place for `[picks]`, so they sit alongside Phase 5.
+Stage 3 wants §4.8's config in place for `[picks]`, so it sits alongside
+Phase 5.
 
 Out of scope, and deliberately: writing every format back — `picks_to_quakeml`
 plus `Catalog.write` already covers what ObsPy can write, and a Snuffler writer
