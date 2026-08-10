@@ -3133,17 +3133,49 @@ existing only in the config file.
 
 ### 6.3 Documentation (Sphinx)
 
+**Built**, in `docs/conf.py` and `ci/workflows/docs.yml`. What follows is the
+plan as written, annotated with what building it changed.
+
 - **Sphinx** with `pydata-sphinx-theme` (the NumPy/SciPy/ObsPy house style —
   familiar to this audience, good API-reference layout).
 - `myst-parser` so prose pages can stay Markdown; `myst-nb` to execute and render
   the tutorial notebook as a docs page, which makes the tutorial a **tested**
-  artefact rather than a snapshot that silently rots.
-- `autodoc` + `napoleon` (numpydoc style) + `sphinx-autodoc-typehints`, so
-  signatures come from the annotations rather than being hand-maintained.
-- `intersphinx` to numpy, scipy, obspy, lmfit, matplotlib.
+  artefact rather than a snapshot that silently rots. `myst-nb` waits for
+  Phase 6; until then `docs/notebooks/` is excluded, because copying an
+  unexecuted notebook into the site is worse than leaving it out.
+- `autodoc` + `napoleon` (numpydoc style), signatures coming from the
+  annotations rather than being hand-maintained. **Not**
+  `sphinx-autodoc-typehints`, which this line named until it was measured:
+  with `autodoc_typehints = "description"` the built-in extension produced the
+  same 367 documented objects, while the third-party one calls an API Sphinx
+  10 removes and emits a deprecation warning per module. Dropped, after
+  checking rather than assuming — removing a dependency that was quietly doing
+  work would have been a bad trade.
+- `intersphinx` to python, numpy, scipy, pandas, matplotlib, obspy and lmfit.
 - `sphinx.ext.doctest` — the units/normalisation examples in §4.2 and §4.4 are
-  exactly the kind of thing that should be executable in the docs.
-**The equations in `docs/` do not render today, and building this is the fix.**
+  exactly the kind of thing that should be executable in the docs. Not turned
+  on yet; the examples have to be written as doctests first.
+
+Four things the first build found, each fixed rather than tolerated:
+
+- **Ambiguous cross-references.** Documenting a package *and* its submodules
+  gave every re-exported name two targets, so `PickSet`, `SensorID`,
+  `Resolution` and `FitSpectra` were all ambiguous. Packages are now documented
+  at the path you import from.
+- **A link into `REFACTOR_PLAN.md`**, which is excluded on purpose — it is a
+  working document, not documentation. `processing.md` now links to it on
+  GitHub instead.
+- **`notes/` was excluded on that same reasoning, and that was wrong.**
+  `choosing_a_transform.md` links to `notes/window_position.md` for a per-trace
+  table, which makes it documentation. Now built, and reachable through a
+  hidden toctree on the page that cites it.
+- **`HOLT_2019_UTAH` broke autodoc.** It is a callable dataclass instance
+  documented as module data, and autodoc's signature formatter raises on it
+  where `inspect.signature` handles it fine. Excluded, with the value written
+  out in prose.
+
+**The equations in `docs/` did not render before this, and building it was the
+fix.**
 `processing.md` and `choosing_a_transform.md` are written in LaTeX with
 `$...$` and `$$...$$`, which is what MyST's `dollarmath` extension reads — and
 that extension does not exist yet, because neither does the Sphinx build. The
@@ -3151,35 +3183,49 @@ only renderer these files currently meet is GitHub's, whose math support is
 both newer and weaker, so the equations that state the Parseval contract and
 the window refinement are being read as literal dollar signs and backslashes.
 
-Two things to do when this section is built rather than before, since neither
-is verifiable without a renderer to check against:
+Two things were listed here to do at build time, since neither was verifiable
+without a renderer to check against. Measured against the built site:
 
-- Turn on `myst_enable_extensions = ["dollarmath", "amsmath"]`. Without
-  `dollarmath` MyST does not read `$...$` at all, so adding Sphinx without it
-  would change nothing.
-- Fix the syntax that is wrong independently of the renderer. A scan finds one
-  display block in `processing.md` without a blank line before it and one
-  spanning multiple lines, both of which break under MyST as well as GitHub.
-  The 26 inline expressions containing underscores are the other risk: on
-  GitHub the emphasis parser can reach them before the math parser does.
+- **`dollarmath` was necessary, `amsmath` was not.** `myst_enable_extensions`
+  turns on `dollarmath` (plus `colon_fence`, `deflist` and `substitution`).
+  `amsmath` covers bare `\begin{align}` outside `$` delimiters, and there are
+  none — the one `\begin{cases}` in `processing.md` sits inside `$$` and
+  renders without it.
+- **The syntax predicted to break does not.** The prediction was one display
+  block without a preceding blank line, one spanning two lines, and 26 inline
+  expressions containing underscores. Built: `processing.html` and
+  `choosing_a_transform.html` contain **no** literal `$` at all and 120 math
+  nodes between them, the two-line block and the `cases` block included. The
+  risk was real on GitHub's renderer; MyST's parses all of it.
 
-Worth stating the general point, because it is the same shape as §6.6. Prose
+The general point stands anyway, because it is the same shape as §6.6: prose
 that has never been rendered is prose that has never been checked. These files
-have been edited a dozen times in this refactor against a renderer nobody has
-run.
+were edited a dozen times in this refactor against a renderer nobody had run,
+and running it found four separate faults (above) even though the equations
+turned out fine.
 
-- `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference fails
-  the build. **Not** an undocumented public symbol, which is what this line
-  used to claim — `-W` promotes warnings that Sphinx already emits, and
-  autodoc emits none for a symbol it was never asked to document. Catching
-  that needs `sphinx.ext.coverage` with `coverage_show_missing_items`, or
-  `nitpicky` for unresolved references. Worth having; it is a different
-  setting, and writing it as a property of `-W` would have meant discovering
-  the gap only after trusting it.
+- **No `sphinx-build -W`**, though this line asked for it twice. `-W` promotes
+  warnings Sphinx emits — and intersphinx emits one whenever any of the seven
+  inventories is briefly unreachable, which makes a third party's downtime a
+  red build. That is flakiness, not a check; a genuinely broken build exits
+  non-zero on its own. (The line before that claimed `-W` fails on an
+  undocumented public symbol, which it does not: autodoc emits no warning for
+  a symbol it was never asked to document. That needs `sphinx.ext.coverage`
+  with `coverage_show_missing_items`, or `nitpicky` for unresolved references.
+  Still worth having, and still a different setting.)
 - Structure: Getting started → User guide (preprocessing, transforms, SNR,
   fitting) → **Theory** (the normalisation conventions, one page, with the
   Parseval contract stated explicitly) → Tutorial → API reference → Migration
-  guide from 0.x → Changelog.
+  guide from 0.x → Changelog. Built so far: an index, the four existing prose
+  pages plus `notes/`, `releasing.md`, `roadmap.md`, and the API reference.
+  Theory, tutorial and migration pages are Phase 6.
+
+`roadmap.md` is this section's §7 restated for a reader rather than for
+whoever is doing the work: stages, no durations, and no phase numbers. The
+durations here are estimates that have already been wrong; publishing them on
+the site would turn an estimate into a promise. It says explicitly that the
+stages become milestones against released versions once there are releases to
+anchor them to.
 
 The theory page matters more than usual here. The units question that prompted
 this refactor is not obvious from the code, and if the conventions are only
@@ -3197,8 +3243,8 @@ version string is ever committed, so there is nothing to forget to bump and no
 **Version *decision* — `release-please` (GitHub Action).** It parses
 [Conventional Commits](https://www.conventionalcommits.org) since the last
 release, works out the SemVer bump, and opens a standing "release PR" carrying
-the generated `CHANGELOG.md`. Merging that PR creates the tag; the tag triggers
-publication. Nothing is released until a human merges.
+the generated `CHANGELOG.md`. Merging that PR creates the tag and the GitHub
+Release. Nothing is released until a human merges.
 
 That human gate is the reason to prefer `release-please` over
 `python-semantic-release` (which tags on every qualifying push to `main`)
@@ -3208,22 +3254,70 @@ mint a citable version of the software. Use `python-semantic-release` only if yo
 would rather have zero-touch releases and accept that.
 
 This does impose Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`,
-`feat!:` for breaking) on commit messages, enforced by a `commitlint` pre-commit
-hook. It is a small discipline and it is what makes the changelog automatic.
+`feat!:` for breaking) on commit messages. The convention is followed by hand:
+there is no `commitlint` hook, and this paragraph claimed one until §6.6 went
+looking. It is a small discipline and it is what makes the changelog automatic.
+
+**Built, in `release-please-config.json` and `ci/workflows/release.yml`.**
+Three settings there are load-bearing, and each was chosen against a measured
+consequence rather than a default:
+
+- **`include-component-in-tag: false`.** Left on, release-please tags
+  `specmod-v0.2.0`, which `pyproject.toml`'s `--match v[0-9]*` does not
+  describe and its `tag_regex` does not parse. The wheel would then be built
+  as `0.1.1.postN.devN` and uploaded under that name, which PyPI does not let
+  you take back. `tests/test_release_config.py` asserts the two formats agree;
+  `tools/check_built_version.py` re-checks the artefact between the build and
+  the upload, because a configuration test cannot see a build.
+- **`bump-minor-pre-major: true`.** The history holds two breaking commits
+  (`30b4e89`, `628d36d`). Without this, either one proposes `1.0.0` — a
+  version that says the API has stopped moving, with a DOI attached.
+- **Explicit `changelog-sections`.** The default preset hides `refactor`,
+  `docs`, `build`, `test`, `ci`, `style` and `chore`. Over this repository's
+  146 conventional commits that prints 73 and drops 73, so a release that is
+  mostly refactoring would ship an almost empty changelog. `refactor`, `docs`
+  and `build` are shown.
+
+The `simple` release type is what suits a project with no version string to
+update: its only other updater targets `version.txt` with `createIfMissing:
+false`, so with no such file it writes the changelog and nothing else. Checked
+in release-please's source rather than assumed, since a strategy that created
+a second source of truth for the version would defeat `hatch-vcs`.
+
+The manifest starts at `0.1.1` — the version the Magna paper cites, and the
+last one this code had. There are no tags in the repository at all, so that is
+a statement about history rather than something derived; the first release PR
+therefore proposes `0.2.0` and carries the whole refactor as its changelog,
+which is what the delta from 0.1.1 actually is.
 
 ### 6.5 CI (GitHub Actions)
 
 | Workflow | Trigger | Does |
 |---|---|---|
 | `test.yml` | PR, push | `lint` (ruff check + format), `typecheck` (mypy), `test` matrix 3.11/3.12/3.13 × ubuntu/macos (pytest + coverage → Codecov), `floors` (`--resolution lowest-direct`, see §6.6). Five job names, not one matrix — the row used to describe them as a single matrix step |
-| `docs.yml` | PR, push | `sphinx-build -W`; on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
+| `docs.yml` | PR, push | `sphinx-build` (no `-W`, see §6.3); on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
 | `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
-| `release-please.yml` | push to `main` | maintains the release PR; creates tag + GitHub Release on merge |
-| `publish.yml` | GitHub Release published | PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
+| `release.yml` | push to `main` | `release-please` maintains the release PR and creates tag + GitHub Release on merge; a gated `publish` job then builds from the tag and uploads to PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
 
-Zenodo is wired to the GitHub Release webhook, so the DOI is minted from the same
+**That last row was two workflows until it was built.** The plan had
+`publish.yml` triggered by `release: published`, which never fires:
+release-please creates the release with the default `GITHUB_TOKEN`, and per
+GitHub's documentation "events triggered by the `GITHUB_TOKEN` will not create
+a new workflow run". The fix is either a personal access token in secrets —
+the one thing Trusted Publishing exists to avoid — or putting the publish job
+in the same workflow, gated on release-please's `release_created` output.
+The second, so the token count stays at zero.
+
+Zenodo is unaffected by that restriction, because it listens to the release
+*webhook* rather than running a workflow: the DOI is still minted from the same
 event as the PyPI upload. Branch protection on `main`: require `test`, `docs`
 and `build` green.
+
+Six repository settings have to be turned on by hand before a release can
+happen — Pages, Actions-may-open-PRs, the `pypi` environment, the PyPI trusted
+publisher, the Zenodo webhook, and branch protection. None of them is
+expressible in a commit, so they are written down in `docs/releasing.md`
+instead of being remembered.
 
 **Versioning policy.** SemVer. Stay on `0.x` for the whole refactor — breaking
 changes are expected and permitted in minor bumps there, so no deprecation cycle
@@ -3261,6 +3355,8 @@ been audited once is worth more than one that reads confidently throughout.
 | "Conventional Commits, **`commitlint`-enforced**" (§7) | No `commitlint` hook. The convention is followed by hand. §7 corrected. |
 | "`sphinx-build -W` … an **undocumented public symbol** fails the build" | `-W` promotes warnings Sphinx emits; autodoc emits none for a symbol it was never asked to document. Needs `sphinx.ext.coverage` or `nitpicky`. §6.3 corrected. |
 | `test.yml` "matrix … → ruff, mypy, pytest" | Five jobs, not one matrix: `lint`, `typecheck`, `test`, `floors`, plus `build.yml`. §6.5 corrected. |
+| "`commitlint`-enforced" again, in §6.4 | The §7 instance was corrected and this one was left standing, in the same document. §6.4 corrected. |
+| `publish.yml` "GitHub Release published → PyPI" | It would never have run. release-please creates the release with the default `GITHUB_TOKEN`, and events triggered by that token do not start a workflow. The publish job moved into `release.yml`, gated on `release_created`. §6.5 corrected. |
 
 **A claim whose mechanism is absent but whose property holds — for a different
 reason, which matters:**
@@ -3416,7 +3512,7 @@ Each phase ends green on CI and is independently mergeable.
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
-| **2b. Release plumbing** | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → GH Pages~~ ✅ (staged in `ci/`, needs Pages enabling once); release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
+| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → GH Pages~~ ✅; ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. All three workflows are staged in `ci/` and need copying across, and six repository settings have to be turned on by hand: `docs/releasing.md` lists them. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
 | **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/` ✅; ~~`Fitting.py` → `fitting/`~~ ✅ — `base`/`guess`/`spectrum`/`event`, 745 lines to four modules of 30–300, public names unchanged; models as objects ✅; `io/`; `viz/`; non-mutating operations; mypy override list → empty ✅; `picks/` per §4.9 ✅ | 3 | 4–6 days |
