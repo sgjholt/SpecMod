@@ -104,28 +104,41 @@ pytestmark = pytest.mark.skipif(
 #: If a runner ever fails on tolerance alone, that bound is what to revisit.
 RTOL = 1e-6
 
-#: ``cwt`` alone is not exactly reproducible across machines, and this is an
-#: open question rather than a tolerance that was tuned until green.
+#: ``cwt`` was held at 5e-2 for a residual disagreement on CI that nothing
+#: could explain. A round of measurement (below) failed to reproduce it and
+#: ruled out every mechanism proposed for it, so the tolerance is being
+#: tightened by four orders of magnitude to find out whether it still exists.
 #:
-#: What is known. Four discontinuities were found and fixed (see
-#: ``docs/REFACTOR_PLAN.md`` §4.5.2); they were worth 41-82% and this residual
-#: is 1-2% on the quantile profile of 4 of 28 stations, with sums agreeing to
-#: 1e-4 and array lengths identical. The other four estimators are exact
-#: everywhere, and ``cwt``'s *signal* amplitudes and frequency axis are exact
-#: too — it is only the post-rotation noise that moves.
+#: **What was measured**, on a Linux box matching the reference environment
+#: exactly — same system, arch, Python 3.11, numpy 2.4.6, scipy 1.17.1:
 #:
-#: What is ruled out. Not a library-version effect: the failing runner matches
-#: the reference machine exactly, down to Python 3.11.15, numpy 2.4.6, scipy
-#: 1.17.1, obspy 1.5.0 and x86_64. Not a remaining branch in the lift, as far
-#: as sweeping across the "already touching" boundary and across the centroid
-#: split can show. Not local amplification: perturbing the input by 1e-15
-#: moves ``cwt`` noise by 2e-13, *better* than multitaper.
+#: - ``cwt`` reproduces the committed reference to **3.8e-16**, machine
+#:   epsilon. The disagreement is not "Linux versus macOS"; it is that runner
+#:   versus this one.
+#: - The ``cwt`` noise path is **linear** in the input: a 1e-13 perturbation
+#:   moves the noise by 8.7e-14, with no step, on all 28 windows. So a 1-2%
+#:   output difference needs a 1-2% *input* difference — which is not
+#:   something last-bit floating point can produce.
+#: - Not bin-edge fragility: the closest ``cwt`` sample sits 5.7e-4 of a bin
+#:   from an interior edge, against 1.4e-6 for ``fft``.
+#: - Not a differing window. One sample fewer moves ``fft``'s noise by 8.5%
+#:   and ``cwt``'s by 3.6%, so a window that differed on CI would show up in
+#:   ``fft`` *first* — and ``fft`` agrees exactly.
+#: - Not quantile fragility from ``cwt``'s shorter arrays (51 samples against
+#:   109): a 1e-15 perturbation moves its worst quantile by 2.4e-14, better
+#:   than ``fft``'s 5.1e-13.
+#: - Not PyWavelets, which the estimator does not use, and not threading:
+#:   the transform is a batched ``numpy.fft.ifft``.
 #:
-#: What is not known. Why macOS agrees with the reference and Linux does not,
-#: when the reference was generated on Linux. That is the thread to pull next.
-#: Until then this is loose enough to pass and tight enough that the 41-82%
-#: class of defect cannot come back unnoticed.
-RTOL_BY_ESTIMATOR = {"cwt": 5e-2}
+#: So the CWT is as numerically stable here as every other estimator, and
+#: 5e-2 was 12 orders of magnitude looser than anything measurable. Holding it
+#: there hides whatever the real difference was rather than describing it.
+#:
+#: **1e-3 is an experiment**, not a calibration: still 5e4 times looser than
+#: the worst perturbation response measured above, and tight enough that if
+#: the 1-2% residual survives, CI says so with the per-station detail
+#: ``_compare`` prints. If it passes everywhere, the entry can go.
+RTOL_BY_ESTIMATOR = {"cwt": 1e-3}
 
 QUANTILES = np.linspace(0.0, 1.0, 33)
 

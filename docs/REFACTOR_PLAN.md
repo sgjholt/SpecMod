@@ -628,6 +628,26 @@ failing checks to one, and the survivor was `cwt` alone, disagreeing by 1-2%
 on four stations. Small enough to look like tolerance, but it was another
 branch — the "already touching" guard inside the lift.
 
+**The `cwt` residual, measured.** After those four, `cwt` was still held at
+`rtol = 5e-2` on CI for a disagreement nobody could explain. Measured on a box
+matching the reference environment exactly, every proposed mechanism fails:
+
+| Hypothesis | Measurement | Verdict |
+|---|---|---|
+| Linux disagrees with a Linux-generated reference | `cwt` reproduces it to **3.8e-16** here | it is that *runner*, not Linux |
+| A remaining discontinuity in the `cwt` path | 1e-13 in moves the noise 8.7e-14 out, **no step, all 28 windows** | linear; so 1-2% out needs 1-2% *in*, which floating point cannot supply |
+| A sample sitting on a bin edge | closest `cwt` sample is **5.7e-4 of a bin** from an interior edge; `fft` 1.4e-6 | not fragile, and `fft` is the fragile one |
+| The window differs on CI | one sample fewer moves `fft` noise **8.5%** and `cwt` **3.6%** | ruled out — `fft` would disagree first, and it agrees exactly |
+| Quantile fragility from short arrays (51 vs 109) | 1e-15 moves `cwt`'s worst quantile **2.4e-14**, `fft`'s 5.1e-13 | `cwt` is the *more* stable of the two |
+| PyWavelets, or threading | the estimator is hand-written; the transform is a batched `numpy.fft.ifft` | neither applies |
+
+So the CWT is as stable as everything else, and `5e-2` was twelve orders of
+magnitude looser than anything reproducible — wide enough to hide the real
+difference rather than describe it. It is now **`1e-3`**, still 5e4 times
+looser than the worst measured response, as an experiment: if the residual is
+still there CI reports it with per-station detail, and if it is not the entry
+can go. Either outcome is worth more than the number that was there.
+
 **Measured after the fix**, end to end over all 28 windows: perturbing the
 input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
 response is linear. The golden reference's exact noise comparison, which had
