@@ -1,13 +1,15 @@
 """Characterisation tests for what is left of :mod:`specmod.utils`.
 
-``read_pyrocko`` is the only part of this module the pipeline depends on, and
-it sits upstream of both golden references — every window is cut relative to
-the picks it returns. Like ``preprocess``, a change here *moves* those
-references rather than failing against them, so it needs pinning separately.
+The pick readers here are now thin wrappers over :mod:`specmod.picks`, which
+is what the pipeline goes through; they return the flat mapping their callers
+were written against. Their behaviour still sits upstream of both golden
+references — every window is cut relative to the picks they return — so a
+change *moves* those references rather than failing against them, and needs
+pinning separately. ``tests/test_picks.py`` covers the resolution the pipeline
+actually uses.
 
-The catalogue readers are covered here too. ``plot_traces`` is not: it draws,
-and a test that only asserts it does not raise buys nothing that a broken
-figure would not also pass.
+``plot_traces`` is not covered: it draws, and a test that only asserts it does
+not raise buys nothing that a broken figure would not also pass.
 
 Where current behaviour is wrong, the test says so and pins it anyway — see
 ``TestReadPyrocko``'s notes on weights and on repeated picks.
