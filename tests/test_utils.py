@@ -118,21 +118,26 @@ class TestReadPyrocko:
         )
         assert set(got["XX.TEST.--"]) == {"P"}
 
-    def test_a_repeated_phase_keeps_the_last_one_read(self, tmp_path: Path) -> None:
-        # DEFECT, pinned: two P picks for one station — easy to produce by
-        # picking on more than one component — silently resolve to whichever
-        # appears last in the file, with no warning and no ordering guarantee
-        # beyond file order. There is no weighting or averaging.
+    def test_a_repeated_phase_resolves_by_policy_not_by_file_order(
+        self, tmp_path: Path
+    ) -> None:
+        # FIXED. Two P picks for one station — easy to produce by picking on
+        # more than one component — used to resolve to whichever appeared last
+        # in the file: no warning, and no ordering guarantee beyond the order
+        # lines happened to be written in. The flat mapping now applies a
+        # documented policy, which for equally-credible marker picks is the
+        # earliest. Nothing in the shipped data has a duplicate, so this moves
+        # no golden number; see §4.9.3.
         got = ut.read_pyrocko(
             _picks(
                 tmp_path,
                 [
-                    {"time": "00:00:10.0", "phase": "P"},
                     {"time": "00:00:11.0", "phase": "P"},
+                    {"time": "00:00:10.0", "phase": "P"},
                 ],
             )
         )
-        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:11")
+        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:10")
 
     def test_an_unknown_marker_raises(self, tmp_path: Path) -> None:
         # A `KeyError` on the marker character rather than a message. Pinned

@@ -1890,10 +1890,17 @@ which only that method used, is removed.
 
 ### 4.9 Pick input: one contract, many formats
 
-**Status: specified, not built.** `read_picks` today dispatches on a filename
-suffix between two hand-written readers. This section is the roadmap item for
-making that a registry with a published contract, so that the common standards
-work out of the box and a lab with its own format can add it without forking.
+**Status: stage 1 landed; stages 2 and 3 specified.** `specmod.picks` holds the
+record types and the three resolution rules, and `set_picks` goes through them.
+The registry, the sniffing contract and the plugin entry point are still ahead —
+see §4.9.8. The roadmap this section describes is a registry with a published
+contract, so that the common standards work out of the box and a lab with its
+own format can add it without forking.
+
+The stage-1 change also went further than resolution in one respect, because it
+was free: `read` hands anything that is not a marker file to
+`obspy.read_events`, so the standard roster is *readable* today. What it is not
+yet is discoverable, sniffed, or extensible — that is stage 2.
 
 #### 4.9.1 ObsPy already owns the parsing — the gap is elsewhere
 
@@ -2128,11 +2135,20 @@ a few arrivals each, not real bulletins. The tutorial dataset stays QuakeML.
 Three stages, each independently mergeable, none of which moves the golden
 reference:
 
-1. **Fix resolution against the two readers that exist.** `Pick`, `SensorID`,
-   `PickSet`, the three resolution rules, the summary. `set_picks` keeps its
-   signature and the golden reference is what proves the numbers did not move.
-   This is where the defects die, and it is worth doing on its own even if
-   nothing after it is built.
+1. ~~**Fix resolution against the two readers that exist.**~~ **Landed.**
+   `specmod.picks` holds `Pick`, `SensorID`, `PickSet`, `Resolution` and the
+   three rules; `set_picks` resolves through them and grows `event_id`,
+   `on_ambiguous`, `duplicates` and `report` keyword arguments. All three
+   defects are pinned as regression tests in `tests/test_picks.py`, the HypoDD
+   one end to end against a real phase file. The golden reference did not move,
+   which is what makes this a fix rather than a new baseline.
+
+   Two things surfaced in the doing. `read_picks`'s suffix dispatch sent a
+   `.pha` file to the *marker* parser and it died in `fields[4]`; it now routes
+   through the same reader, so the flat mapping gains the roster too. And the
+   duplicate policy replaced last-wins, which had been pinned as a defect in
+   `test_utils.py` — nothing in the shipped data has a duplicate, so no number
+   moved, but the tie-break is now documented rather than file-order.
 2. **Registry, sniffing, and the ObsPy delegate.** `picks/` package, the
    contract suite, the fixture corpus. The standard roster arrives here, in one
    reader.
