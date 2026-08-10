@@ -21,7 +21,10 @@ import numpy as np
 import obspy
 import pandas as pd
 from matplotlib.dates import num2date
-from obspy.core.event import Catalog, Event, Pick, WaveformStreamID
+from obspy.core.event import Catalog, Event, WaveformStreamID
+from obspy.core.event import Pick as ObsPyPick
+
+from specmod.picks import PickSet, SnufflerReader, from_catalog, select_event
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
@@ -47,6 +50,15 @@ def _to_datetime(value: Any) -> Any:
     return num2date(value)  # type: ignore[no-untyped-call]
 
 
+def read_pyrocko_picks(path: str | PathLike[str]) -> PickSet:
+    """Snuffler marker file to a :class:`~specmod.picks.PickSet`.
+
+    Thin wrapper over :class:`specmod.picks.SnufflerReader`, which is where the
+    format lives.
+    """
+    return SnufflerReader().read(path)[0]
+
+
 def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]:
     """Snuffler marker file to ``{"NET.STA.LOC": {"P": UTCDateTime, ...}}``.
 
@@ -59,37 +71,11 @@ def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]
     sensors at one site. A surface and a borehole instrument share a station
     name and see genuinely different arrivals; collapsing them would silently
     give one the other's picks.
+
+    A flat mapping cannot express a partial identity or a second event; prefer
+    :func:`read_pyrocko_picks` with :func:`specmod.picks.resolve`.
     """
-    pyrocko_map = {
-        "^": ("P", "Pg", "u", "i"),
-        "v": ("P", "Pg", "d", "i"),
-        "P": ("P", "Pg", None, "e"),
-        "S": ("S", "Sg", None, "e"),
-    }
-
-    with open(path) as handle:
-        # Read the whole file at once. Marker files are small enough that
-        # buffering buys nothing. The header line is dropped.
-        lines = handle.readlines()[1:]
-
-    stations: dict[str, dict[str, UTCDateTime]] = {}
-    for line in lines:
-        fields = line.split()  # split between whitespace
-        tid = fields[4].replace("..", ".--.").split(".")  # ensure locs are the same
-        net = tid[0]
-        name = tid[1]
-        loc = tid[2] if len(tid) > 2 else "--"
-        time = "T".join(fields[1:3])
-        des, _pt, _fm, _po = pyrocko_map[fields[8]]
-        weight = int(fields[3])
-        ID = ".".join((net, name, loc))
-        if weight <= 3:
-            try:
-                stations[ID].update({des: obspy.UTCDateTime(time)})
-            except KeyError:
-                stations.update({ID: {des: obspy.UTCDateTime(time)}})
-
-    return stations
+    return read_pyrocko_picks(path).mapping()
 
 
 def read_quakeml_picks(
@@ -109,27 +95,13 @@ def read_quakeml_picks(
     Picks with an ``evaluation_status`` of ``rejected`` are dropped. Anything
     else — reviewed, preliminary, unset — is kept, matching how the Snuffler
     reader treats weights.
+
+    A multi-event source raises rather than merging. A flat mapping cannot
+    express a partial identity or a second event; prefer
+    :func:`specmod.picks.read` with :func:`specmod.picks.resolve`.
     """
     catalog = source if isinstance(source, Catalog) else obspy.read_events(str(source))
-
-    picks: dict[str, dict[str, UTCDateTime]] = {}
-    for event in catalog:
-        for pick in event.picks:
-            hint = (pick.phase_hint or "").strip()
-            if not hint or hint[0].upper() not in ("P", "S"):
-                continue
-            if pick.evaluation_status == "rejected":
-                continue
-            wid = pick.waveform_id
-            key = ".".join(
-                (
-                    wid.network_code or "--",
-                    wid.station_code or "--",
-                    wid.location_code or "--",
-                )
-            )
-            picks.setdefault(key, {})[hint[0].upper()] = pick.time
-    return picks
+    return select_event(from_catalog(catalog)).mapping()
 
 
 def picks_to_quakeml(
@@ -148,7 +120,7 @@ def picks_to_quakeml(
         net, sta, loc = key.split(".")
         for phase, time in sorted(phases.items()):
             event.picks.append(
-                Pick(
+                ObsPyPick(
                     time=time,
                     phase_hint=phase,
                     waveform_id=WaveformStreamID(

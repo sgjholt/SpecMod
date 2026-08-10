@@ -1,13 +1,15 @@
 """Characterisation tests for what is left of :mod:`specmod.utils`.
 
-``read_pyrocko`` is the only part of this module the pipeline depends on, and
-it sits upstream of both golden references — every window is cut relative to
-the picks it returns. Like ``preprocess``, a change here *moves* those
-references rather than failing against them, so it needs pinning separately.
+The pick readers here are now thin wrappers over :mod:`specmod.picks`, which
+is what the pipeline goes through; they return the flat mapping their callers
+were written against. Their behaviour still sits upstream of both golden
+references — every window is cut relative to the picks they return — so a
+change *moves* those references rather than failing against them, and needs
+pinning separately. ``tests/test_picks.py`` covers the resolution the pipeline
+actually uses.
 
-The catalogue readers are covered here too. ``plot_traces`` is not: it draws,
-and a test that only asserts it does not raise buys nothing that a broken
-figure would not also pass.
+``plot_traces`` is not covered: it draws, and a test that only asserts it does
+not raise buys nothing that a broken figure would not also pass.
 
 Where current behaviour is wrong, the test says so and pins it anyway — see
 ``TestReadPyrocko``'s notes on weights and on repeated picks.
@@ -118,21 +120,26 @@ class TestReadPyrocko:
         )
         assert set(got["XX.TEST.--"]) == {"P"}
 
-    def test_a_repeated_phase_keeps_the_last_one_read(self, tmp_path: Path) -> None:
-        # DEFECT, pinned: two P picks for one station — easy to produce by
-        # picking on more than one component — silently resolve to whichever
-        # appears last in the file, with no warning and no ordering guarantee
-        # beyond file order. There is no weighting or averaging.
+    def test_a_repeated_phase_resolves_by_policy_not_by_file_order(
+        self, tmp_path: Path
+    ) -> None:
+        # FIXED. Two P picks for one station — easy to produce by picking on
+        # more than one component — used to resolve to whichever appeared last
+        # in the file: no warning, and no ordering guarantee beyond the order
+        # lines happened to be written in. The flat mapping now applies a
+        # documented policy, which for equally-credible marker picks is the
+        # earliest. Nothing in the shipped data has a duplicate, so this moves
+        # no golden number; see §4.9.3.
         got = ut.read_pyrocko(
             _picks(
                 tmp_path,
                 [
-                    {"time": "00:00:10.0", "phase": "P"},
                     {"time": "00:00:11.0", "phase": "P"},
+                    {"time": "00:00:10.0", "phase": "P"},
                 ],
             )
         )
-        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:11")
+        assert got["XX.TEST.--"]["P"] == obspy.UTCDateTime("2020-01-01T00:00:10")
 
     def test_an_unknown_marker_raises(self, tmp_path: Path) -> None:
         # A `KeyError` on the marker character rather than a message. Pinned

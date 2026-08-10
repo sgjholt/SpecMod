@@ -18,7 +18,7 @@ import numpy as np
 import obspy
 from scipy.integrate import cumulative_trapezoid
 
-from . import utils as ut
+from . import picks as pk
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -165,37 +165,74 @@ def sensor_id(tr: Trace) -> str:
     return ".".join([tr.stats.network, tr.stats.station, tr.stats.location or "--"])
 
 
-def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
-    """Read picks from QuakeML or from a Snuffler marker file.
+def read_picks(
+    source: str | PathLike[str], *, format: str | None = None
+) -> dict[str, dict[str, Any]]:
+    """Read picks as ``{"NET.STA.LOC": {"P": UTCDateTime, ...}}``.
 
-    Dispatches on the suffix, so a caller holding a path from
+    Accepts a Snuffler marker file or anything :func:`obspy.read_events`
+    parses, so a caller holding a path from
     :meth:`~specmod.datasets.EventDirectory.picks_file` does not have to know
-    which format it got. Both return the same ``{"NET.STA.LOC": {...}}``
-    mapping.
+    which format it got.
+
+    Keyed on each pick's own identity, so a format supplying no network code
+    keys on ``*.STA.*`` and matches no trace. :func:`set_picks` resolves
+    against the sensors present instead.
     """
-    if str(source).endswith((".xml", ".quakeml")):
-        return ut.read_quakeml_picks(source)
-    return ut.read_pyrocko(source)
+    return pk.select_event(pk.read(source, format=format)).mapping()
 
 
 def set_picks(
-    st: Stream, source: str | PathLike[str], emergency_ratio: float = 1.7
+    st: Stream,
+    source: str | PathLike[str],
+    emergency_ratio: float = 1.7,
+    *,
+    format: str | None = None,
+    event_id: str | None = None,
+    on_ambiguous: pk.AmbiguousPolicy = "error",
+    duplicates: pk.DuplicatePolicy = "prefer_reviewed",
+    report: list[pk.Resolution] | None = None,
 ) -> None:
     """Attach ``p_time`` and ``s_time`` to every trace with a pick.
 
-    ``source`` is QuakeML or a Snuffler marker file; :func:`read_picks`
-    dispatches on the suffix. Picks are matched per sensor — ``NET.STA.LOC`` —
-    so a pick made on one component reaches that sensor's other components.
+    ``source`` is a Snuffler marker file, a registered plugin's format, or
+    anything :func:`obspy.read_events` parses — QuakeML, SEISAN Nordic,
+    HypoDD, NonLinLoc, a bulletin. See ``docs/pick-formats.md``.
+
+    Picks are matched per sensor rather than per channel, so a pick made on one
+    component reaches that sensor's others, and a pick stating only part of an
+    identity matches on the fields it does state. ``on_ambiguous`` and
+    ``duplicates`` are passed to :func:`specmod.picks.resolve`; ``event_id`` to
+    :func:`specmod.picks.select_event`, and is required for a multi-event
+    source.
+
+    A trace whose P pick has no matching S gets one extrapolated at
+    ``p + (p - otime) * emergency_ratio``, unless that would place S before P,
+    in which case ``s_time`` is left unset and a warning is issued.
+
+    Pass ``report=[]`` to receive the :class:`~specmod.picks.Resolution`.
     """
-    picks = read_picks(source)
+    picks = pk.resolve(
+        pk.select_event(pk.read(source, format=format), event_id=event_id),
+        [pk.SensorID.parse(sensor_id(tr)) for tr in st],
+        on_ambiguous=on_ambiguous,
+        duplicates=duplicates,
+    )
+    if report is not None:
+        report.append(picks)
+
+    attached = {
+        key: {phase: pick.time for phase, pick in phases.items()}
+        for key, phases in picks.attached.items()
+    }
     for tr in st:
         id = sensor_id(tr)
         try:
-            tr.stats["p_time"] = picks[id]["P"]
+            tr.stats["p_time"] = attached[id]["P"]
         except KeyError:
             continue
         try:
-            tr.stats["s_time"] = picks[id]["S"]
+            tr.stats["s_time"] = attached[id]["S"]
         except KeyError:
             sdiff = (tr.stats["p_time"] - tr.stats["otime"]) * emergency_ratio
             # Only meaningful when the origin precedes the pick. It is not

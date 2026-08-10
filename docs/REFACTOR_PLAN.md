@@ -1890,10 +1890,14 @@ which only that method used, is removed.
 
 ### 4.9 Pick input: one contract, many formats
 
-**Status: specified, not built.** `read_picks` today dispatches on a filename
-suffix between two hand-written readers. This section is the roadmap item for
-making that a registry with a published contract, so that the common standards
-work out of the box and a lab with its own format can add it without forking.
+**Status: built.** `specmod.picks` is a package: record types and the reader
+protocol in `base`, the three resolution rules in `resolution`, and readers in
+`snuffler`, `events` and `csv`. Formats are detected by sniffing, not by
+suffix. Third parties register through `specmod.pick_readers` entry points or
+`register_reader`. The how-to is `docs/pick-formats.md`.
+
+What is deliberately **not** built: vendor presets for the picker CSVs. See
+§4.9.6.
 
 #### 4.9.1 ObsPy already owns the parsing — the gap is elsewhere
 
@@ -2079,29 +2083,53 @@ Rules the loader must follow:
 
 | Format | Source | Status |
 |---|---|---|
-| QuakeML | ObsPy delegate | reading now; the shipped PNR picks |
-| SC3ML / SCML | ObsPy delegate | expected free with the delegate |
-| SEISAN Nordic | ObsPy delegate | expected free with the delegate |
-| NonLinLoc `.hyp` | ObsPy delegate | expected free with the delegate |
-| HypoDD `.pha` | ObsPy delegate | **parses today**; resolution is what blocks it |
-| IMS1.0 / GSE2 bulletin | ObsPy delegate | multi-event; needs §4.9.3 event selection |
+| QuakeML | ObsPy delegate | **round-tripped**; the shipped PNR picks |
+| SEISAN Nordic | ObsPy delegate | **round-tripped**; station code only, resolves |
+| HypoDD `.pha` | ObsPy delegate | **round-tripped**; station code only, resolves |
+| SC3ML / SCML | ObsPy delegate | ~~expected free~~ — **ObsPy drops the picks**, see below |
+| NonLinLoc `.hyp` | ObsPy delegate | unconfirmed: ObsPy writes `NLLOC_OBS` and reads `NLLOC_HYP`, so a round trip cannot test it. Needs a real file |
+| IMS1.0 / GSE2 bulletin | ObsPy delegate | unconfirmed; multi-event, so §4.9.3 event selection applies. Needs a real file |
 | Snuffler / Pyrocko markers | native | reading now |
 | PhaseNet / EQTransformer / SeisBench CSV | native | to write — see below |
 | Generic CSV with a column map | native | to write; the escape hatch |
 
-"Expected free" is a claim the fixture corpus settles, not one to take on
-trust — a format ObsPy parses may still put nothing useful in `waveform_id`,
-and that is exactly what the corpus is for. Each row is confirmed by a fixture
-or the row is corrected.
+The first three rows are measured: `TestRoster` writes the format with ObsPy,
+reads it back and asserts the picks both survive and resolve against a stream.
+Nordic and HypoDD supply a station code and nothing else, which is precisely
+the case §4.9.3 exists for — before resolution they attached nothing.
+
+**SCML was wrong, and the corpus is what caught it.** ObsPy 1.5.0's SCML
+support is an XSLT translation to and from QuakeML, and the two directions are
+not symmetric: the writer emits `<pick>` elements — they are in the file — and
+the reader returns the origin with `picks` empty. Magnitudes are lost the same
+way. So SeisComP output is **not** free with the delegate. Pinned by
+`test_scml_loses_its_picks_on_the_way_back`, which is written to fail if a
+later ObsPy fixes it, at which point the row can move back up.
+
+The two "unconfirmed" rows are honest rather than pessimistic: nothing suggests
+they fail, but a round trip cannot reach them and a claim without a fixture is
+what this table exists to avoid. Closing them needs a real file of each, which
+is a **§7.1 item** rather than work anything waits on.
 
 The ML-picker CSVs are the one part of the roster with real work in it and no
 standard behind it. Column names differ between PhaseNet, EQTransformer,
-SeisBench and between versions of each, so the design is **one configurable CSV
-reader plus named presets**, not one reader per tool. Presets are written
-against real output files and dated; a preset that cannot be checked against a
-real file is not shipped. Given how much modern picking is done this way, this
-is the format most likely to matter to a new user and the least likely to be
-covered by anything else.
+SeisBench and between versions of each, so the design was **one configurable
+CSV reader plus named presets**, with presets written against real output files
+and dated.
+
+**The presets are not shipped.** The rule was that a preset which cannot be
+checked against a real file is not shipped, and no such file is available here
+— so the delimited readers ship with the mechanism and none of the guesses.
+
+The two halves are worth separating, because only one of them needed a real
+file. A *delimiter* is knowable without one, so `DelimitedPickReader` has three
+named specialisations — `CSVPickReader`, `TSVPickReader`,
+`WhitespacePickReader` — each carrying its separator and its plausible
+suffixes. A *column schema* is not knowable without one, which is what stays
+open. Four
+lines of column mapping is what a user with a real file writes instead, and
+that is documented rather than hidden. Presets are a **§7.1 item for a later
+release**: additive, and the rule still applies to them.
 
 #### 4.9.7 Testing
 
@@ -2128,20 +2156,44 @@ a few arrivals each, not real bulletins. The tutorial dataset stays QuakeML.
 Three stages, each independently mergeable, none of which moves the golden
 reference:
 
-1. **Fix resolution against the two readers that exist.** `Pick`, `SensorID`,
-   `PickSet`, the three resolution rules, the summary. `set_picks` keeps its
-   signature and the golden reference is what proves the numbers did not move.
-   This is where the defects die, and it is worth doing on its own even if
-   nothing after it is built.
-2. **Registry, sniffing, and the ObsPy delegate.** `picks/` package, the
-   contract suite, the fixture corpus. The standard roster arrives here, in one
-   reader.
-3. **Plugins and the CSV readers.** Entry points, `register_reader`, the
-   configurable CSV reader and its presets, the how-to page — which leads with
-   "register with ObsPy if you can".
+1. ~~**Fix resolution against the two readers that exist.**~~ **Landed.**
+   `specmod.picks` holds `Pick`, `SensorID`, `PickSet`, `Resolution` and the
+   three rules; `set_picks` resolves through them and grows `event_id`,
+   `on_ambiguous`, `duplicates` and `report` keyword arguments. All three
+   defects are pinned as regression tests in `tests/test_picks.py`, the HypoDD
+   one end to end against a real phase file. The golden reference did not move,
+   which is what makes this a fix rather than a new baseline.
 
-Stage 1 has no dependencies and can land any time. Stages 2 and 3 want §4.8's
-config in place for `[picks]`, so they sit alongside Phase 5.
+   Two things surfaced in the doing. `read_picks`'s suffix dispatch sent a
+   `.pha` file to the *marker* parser and it died in `fields[4]`; it now routes
+   through the same reader, so the flat mapping gains the roster too. And the
+   duplicate policy replaced last-wins, which had been pinned as a defect in
+   `test_utils.py` — nothing in the shipped data has a duplicate, so no number
+   moved, but the tie-break is now documented rather than file-order.
+2. ~~**Registry, sniffing, and the ObsPy delegate.**~~ **Landed.** `picks/`
+   package, `PICK_READERS`, `detect_reader`, and a contract suite parameterised
+   over every registered reader — the one a plugin author will run against
+   their own. The delegate asks ObsPy's own `isFormat` detectors, so detection
+   agrees with what a subsequent `read_events` would do without parsing twice.
+
+   The corpus did its job on its first outing: the SCML row of §4.9.6 was
+   wrong, and is now a pinned negative test.
+3. ~~**Plugins and the CSV readers.**~~ **Landed, minus the presets.**
+   `specmod.pick_readers` entry points, `register_reader`, `CSVPickReader`,
+   and `docs/pick-formats.md`, which leads with "register with ObsPy if you
+   can" because that route needs no specmod registration at all.
+
+   Discovery is lazy and contained: a plugin costs nothing to a caller who
+   never reads a pick, and one that fails to import warns naming its
+   distribution rather than making the built-in formats unreadable. A plugin
+   cannot take a built-in name.
+
+   The vendor presets are dropped rather than deferred — see §4.9.6.
+
+A `[picks]` config section is the one piece §4.9 never grew: policies are
+keyword arguments to `set_picks` rather than settings. Listed in §7.1 — worth
+adding when a study needs to record which policy produced a result, alongside
+§4.8's provenance stamping.
 
 Out of scope, and deliberately: writing every format back — `picks_to_quakeml`
 plus `Catalog.write` already covers what ObsPy can write, and a Snuffler writer
@@ -2165,12 +2217,34 @@ and are backend-independent:
 - `integrate ∘ differentiate ≈ identity` to within float tolerance.
 - Unit conversions round-trip; illegal conversions raise.
 
-**Tier 2 — synthetic end-to-end.** Generate a Brune spectrum with known
-`(Ω₀, f_c, t*)`, inverse-FFT to a synthetic seismogram, add noise, and run the
-whole pipeline. Assert parameter recovery within tolerance. This is the single
-most valuable test in the suite: it validates preprocessing, transform, SNR,
-binning and fitting together, and it is the only way to know the mtspec removal
-did not change the science.
+**Tier 2 — synthetic end-to-end.** ~~Generate a Brune spectrum…~~ **Landed**,
+as `tests/test_end_to_end.py`. A Brune spectrum with chosen `(Ω₀, f_c, t*)`
+becomes a velocity record, is buried in noise, and goes through cutting,
+transforming, bandwidth selection, binning and fitting. Recovery on three
+stations: `f_c` **7.71–8.01** against a true 8.0, `t*` **0.0196–0.0197**
+against 0.020, `Ω₀` within **0.07 in log10**.
+
+It is the only test that can catch an answer that has been *systematically
+wrong since the snapshot was taken* — the golden references pin that numbers do
+not move and say nothing about whether they are right.
+
+Two things came out of building it, both about the conventions rather than the
+numbers:
+
+- **The recovered plateau is biased ~5% low, and it is the window refinement.**
+  Trimming to the 1st and 99th percentiles of cumulative energy costs ~2% of
+  the record's duration, and amplitude scales with duration for a stationary
+  record; the rest is the taper. That is **0.03 in Mw** — negligible, but
+  one-directional, so it is asserted as a signed bias rather than absorbed
+  into a symmetric tolerance.
+- **The fit belongs on velocity, not displacement.** The model carries a motion
+  factor, so `llpsp` is the displacement plateau either way — but
+  `initial_guess` takes the spectral *peak* as the `f_c` guess, and a
+  displacement spectrum falls monotonically. Fitting the displacement set puts
+  the guess at the low band edge and the fit settles near it: `f_c` came back
+  **1.6 instead of 8.0**, and `Ω₀` 0.6 magnitude units low. Nothing warns. That
+  is a sharp edge on a public API, and a candidate for `initial_guess` to
+  either detect the motion or refuse it.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
 on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
@@ -3334,6 +3408,21 @@ anything worth releasing.** Publishing infrastructure is much easier to debug
 against a trivial package than against a finished one, and having `v0.2.0` go out
 end-to-end proves the pipeline while the stakes are zero.
 
+### 7.1 After 1.0
+
+Work that is designed but not done, and is **not** on the path to 1.0. Each
+entry says what blocks it, because in every case the blocker is an input that
+is not to hand rather than effort — and each is additive, so none of them
+changes anything shipped.
+
+| Item | Blocked on | Unblocked by |
+|---|---|---|
+| **Picker CSV presets** (§4.9.6) — named mappings for PhaseNet, EQTransformer, SeisBench, so those users write no column map | No such output is available, and §4.9.6's rule is that a preset written from documentation is a guess with a vendor's name on it | One real output file per tool and version. The delimited readers already take the mapping, so a preset is a dict and a test |
+| **Confirming NonLinLoc and the bulletins** (§4.9.6) — two roster rows marked unconfirmed | A round trip cannot reach them: ObsPy writes `NLLOC_OBS` but reads `NLLOC_HYP`, and writes no bulletin at all | One real `.hyp` and one IMS/GSE bulletin, added to the fixture corpus. Expected to pass as-is; the point is that the table should not claim what it has not measured |
+| **SeisComP picks** (§4.9.6) — SCML reads its origin and drops its picks and magnitudes | ObsPy 1.5.0's SCML↔QuakeML XSLT is asymmetric on `<pick>`; the writer emits them, the reader discards them | An upstream fix, which `test_scml_loses_its_picks_on_the_way_back` is written to detect — it fails when SCML starts working. Otherwise a specmod-side reader, which is a real piece of work and only worth it if someone needs SeisComP output |
+| **A `[picks]` config section** (§4.9.8) | Nothing; it is a judgement call | Wanting a study's resolution policies recorded in provenance rather than passed as keyword arguments. Sensible alongside §4.8's stamping |
+| **The fuller `acquire --verify`** (§5.2.3) — re-fetch and diff against the manifest | Needs the network, so it cannot be a test | Deciding it is worth a manual tool. `verify()` today answers "has this been touched", not "has the data centre revised its holdings" |
+
 ---
 
 ## 8. Decisions
@@ -3391,10 +3480,12 @@ end-to-end proves the pipeline while the stakes are zero.
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
-7. **Which picker CSVs to ship presets for** (§4.9.6). PhaseNet, EQTransformer
-   and SeisBench each have several column layouts across versions, and the rule
-   is that a preset is written against a real output file rather than against
-   documentation. Which of them do you have output from?
+7. ~~**Which picker CSVs to ship presets for**~~ (§4.9.6). **Resolved: none**,
+   and moved to §7.1. No picker output is available, so by the rule that a
+   preset must be written against a real file, none ships; `CSVPickReader`
+   takes a column mapping instead. The same answer moved the two unconfirmed
+   roster rows there: they need a real NonLinLoc or bulletin file, not a
+   decision. Nothing on the path to 1.0 waits on either.
 
 ---
 

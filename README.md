@@ -93,6 +93,33 @@ Amplitude normalisation is keyed off the physical record duration, never off the
 length of the frequency axis, so zero-padding refines the frequency grid and
 changes nothing else.
 
+## Reading picks
+
+Arrivals are attached to traces by `set_picks`, which detects the format from
+the file rather than from its name:
+
+```python
+import specmod.preprocess as pre
+
+pre.set_picks(stream, "event.xml")
+```
+
+Everything `obspy.read_events` parses is read through one delegate — QuakeML,
+SEISAN Nordic, HypoDD, NonLinLoc, IMS/GSE bulletins — plus Snuffler marker
+files, plus delimited tables whose columns you name. A format registered with
+ObsPy's own plugin system is read here with no SpecMod-side registration at
+all.
+
+Most formats supply less than a full sensor identity — a bare station code is
+common — so a pick matches a trace on the fields it *states*. A pick that fits
+several sensors is an error rather than a broadcast: a station's surface and
+borehole instruments differ only by location code and do not see the same
+arrival.
+
+Adding a format, the column mapping for a picker's CSV, and the policies for
+duplicate picks and multi-event files are in
+[`docs/pick-formats.md`](docs/pick-formats.md).
+
 ## Configuration
 
 Settings are grouped by pipeline stage and resolved through five layers —
