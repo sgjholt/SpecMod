@@ -2499,11 +2499,19 @@ been touched" but not "has the data centre revised its holdings" — the questio
 §5.2.2 is really about, and the one that needs the network.
 
 > **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
-> and release-please must be configured to ignore them or it will read `data-v1`
-> as a code release. Constrain it to `v*` and keep the data tags on a separate
-> prefix. If the release feed gets noisy, the fallback is a sibling
-> `sgjholt/specmod-data` repository holding only assets — a repo, not a package,
-> so no extra release cycle for code.
+> and anything reading tags must be told they are not code releases. Two things
+> do. **hatch-vcs** was the live one: setuptools-scm's default `tag_regex` has
+> an optional `(?:[\w-]+-)?` prefix group, so it strips `data-`, reads the `v1`
+> that is left, and the package reports version **`1`** — measured,
+> `0.1.0.post1.dev173` before the tag and `1` after. `pyproject.toml` now
+> constrains `git_describe_command` and `tag_regex`, pinned by
+> `tests/test_versioning.py`. **release-please** is the same hazard deferred:
+> when it lands in Phase 2b, configure it manifest-first rather than letting it
+> infer the last release from tags. If the release feed gets noisy, the fallback
+> is a sibling `sgjholt/specmod-data` repository holding only assets — a repo,
+> not a package, so no extra release cycle for code.
+>
+> The end-to-end procedure is `docs/releasing-data.md`.
 
 Tests that need a fetched dataset get `@pytest.mark.dataset`, so
 `pytest -m "not dataset"` is a complete offline run. CI caches
