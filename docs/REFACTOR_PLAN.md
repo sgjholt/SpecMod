@@ -2237,14 +2237,31 @@ numbers:
   record; the rest is the taper. That is **0.03 in Mw** — negligible, but
   one-directional, so it is asserted as a signed bias rather than absorbed
   into a symmetric tolerance.
-- **The fit belongs on velocity, not displacement.** The model carries a motion
-  factor, so `llpsp` is the displacement plateau either way — but
-  `initial_guess` takes the spectral *peak* as the `f_c` guess, and a
-  displacement spectrum falls monotonically. Fitting the displacement set puts
-  the guess at the low band edge and the fit settles near it: `f_c` came back
-  **1.6 instead of 8.0**, and `Ω₀` 0.6 magnitude units low. Nothing warns. That
-  is a sharp edge on a public API, and a candidate for `initial_guess` to
-  either detect the motion or refuse it.
+- **The fit is done in the sensor's natural units** — velocity for these
+  instruments — and that is a general rule rather than a quirk of this
+  pipeline. The model carries a motion factor, so `llpsp` is the displacement
+  plateau whichever domain is fitted; what changes is the record being fitted
+  and the noise on it.
+
+  Converting first is not a neutral change of view. Integrating to
+  displacement divides by `2πf`, which implicitly low-passes: it damps
+  high-frequency noise, but it also destroys the feature the guess is read
+  from. Differentiating to acceleration multiplies by `2πf` and blows the
+  high-frequency noise up instead.
+
+  `initial_guess` takes the spectral *peak* as the `f_c` guess, and for a Brune
+  source in **velocity** that is not a heuristic — it is exact. Velocity is
+  `2πf·Ω/(1+(f/f_c)²)`, whose maximum is at `f = f_c`; measured on a 20001-point
+  grid the peak lands at 7.999 Hz for a true 8.0. In displacement and
+  acceleration the spectrum is monotonic, so the "peak" is just whichever band
+  edge it was handed — 0.1 Hz and 100 Hz on the same grid.
+
+  So `FitSpectra(spectra.to_motion("displacement"))` gets a guess at the low
+  band edge and settles near it: `f_c` came back **1.6 instead of 8.0**, `Ω₀`
+  0.6 magnitude units low, with nothing warning. The design is right; what is
+  missing is that the wrong call is silent. Worth a warning from
+  `initial_guess` when the spectrum's motion is not the one the peak means
+  something in — not a redesign.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
 on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit

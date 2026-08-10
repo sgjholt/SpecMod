@@ -141,12 +141,17 @@ def measured() -> Any:
 def recovered(measured: Any) -> Any:
     """The fit table.
 
-    Fitted on **velocity**, which is the pipeline's convention: the model
-    carries a motion factor, so ``llpsp`` is the displacement plateau either
-    way. Fitting the displacement set instead makes `initial_guess` useless —
-    it takes the spectral peak as the ``fc`` guess, and a displacement spectrum
-    falls monotonically, so the guess lands at the low band edge and the fit
-    settles near it.
+    Fitted in the motion the sensor recorded — velocity. The model carries a
+    motion factor, so ``llpsp`` is the displacement plateau whichever domain is
+    fitted, but converting first is not a neutral change of view: integrating
+    to displacement implicitly low-passes, and differentiating to acceleration
+    amplifies high-frequency noise.
+
+    It also decides whether the initial guess means anything. ``initial_guess``
+    takes the spectral peak as the ``fc`` guess, which for a Brune source in
+    velocity is exact rather than approximate — ``2 pi f`` times the
+    displacement shape is maximised at ``f = fc``. In displacement the spectrum
+    is monotonic, so the peak is whichever band edge it was handed.
     """
     from specmod.fitting import FitSpectra  # noqa: PLC0415
 
