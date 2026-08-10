@@ -99,6 +99,24 @@ fallback-version = "0.0.0"
 # instead, which claims nothing.
 version_scheme = "no-guess-dev"
 
+# Only `v*` tags are code releases. Data artefacts are published under their
+# own prefix (`data-v1`), and setuptools-scm's default `tag_regex` has an
+# optional `(?:[\w-]+-)?` prefix group that strips `data-` and reads what is
+# left as a version: measured, a `data-v1` tag takes the package from
+# 0.1.0.post1.dev173 to **1**. Both settings are needed — `git_describe_command`
+# keeps non-code tags out of `git describe`, `tag_regex` refuses to parse one
+# if it gets there anyway.
+git_describe_command = [
+    "git",
+    "describe",
+    "--dirty",
+    "--tags",
+    "--long",
+    "--match",
+    "v[0-9]*",
+]
+tag_regex = '^v(?P<version>\d+\.\d+\.\d+.*)$'
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/specmod"]
 
