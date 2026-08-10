@@ -1890,12 +1890,14 @@ which only that method used, is removed.
 
 ### 4.9 Pick input: one contract, many formats
 
-**Status: stages 1 and 2 landed; stage 3 specified.** `specmod.picks` is a
-package: record types and the reader protocol in `base`, the three resolution
-rules in `resolution`, and two readers — `SnufflerReader` and the
-`ObsPyEventsReader` delegate — registered in `PICK_READERS`. Formats are
-detected by sniffing, not by suffix. What is still ahead is stage 3: the
-plugin entry point and the picker CSVs.
+**Status: built.** `specmod.picks` is a package: record types and the reader
+protocol in `base`, the three resolution rules in `resolution`, and readers in
+`snuffler`, `events` and `csv`. Formats are detected by sniffing, not by
+suffix. Third parties register through `specmod.pick_readers` entry points or
+`register_reader`. The how-to is `docs/pick-formats.md`.
+
+What is deliberately **not** built: vendor presets for the picker CSVs. See
+§4.9.6.
 
 #### 4.9.1 ObsPy already owns the parsing — the gap is elsewhere
 
@@ -2110,12 +2112,16 @@ what this table exists to avoid.
 
 The ML-picker CSVs are the one part of the roster with real work in it and no
 standard behind it. Column names differ between PhaseNet, EQTransformer,
-SeisBench and between versions of each, so the design is **one configurable CSV
-reader plus named presets**, not one reader per tool. Presets are written
-against real output files and dated; a preset that cannot be checked against a
-real file is not shipped. Given how much modern picking is done this way, this
-is the format most likely to matter to a new user and the least likely to be
-covered by anything else.
+SeisBench and between versions of each, so the design was **one configurable
+CSV reader plus named presets**, with presets written against real output files
+and dated.
+
+**The presets are not shipped.** The rule was that a preset which cannot be
+checked against a real file is not shipped, and no such file is available here
+— so `CSVPickReader` ships with the mechanism and none of the guesses. Four
+lines of column mapping is what a user with a real file writes instead, and
+that is documented rather than hidden. If picker output turns up later, a
+preset is an additive change and the rule still applies to it.
 
 #### 4.9.7 Testing
 
@@ -2164,12 +2170,22 @@ reference:
 
    The corpus did its job on its first outing: the SCML row of §4.9.6 was
    wrong, and is now a pinned negative test.
-3. **Plugins and the CSV readers.** Entry points, `register_reader`, the
-   configurable CSV reader and its presets, the how-to page — which leads with
-   "register with ObsPy if you can".
+3. ~~**Plugins and the CSV readers.**~~ **Landed, minus the presets.**
+   `specmod.pick_readers` entry points, `register_reader`, `CSVPickReader`,
+   and `docs/pick-formats.md`, which leads with "register with ObsPy if you
+   can" because that route needs no specmod registration at all.
 
-Stage 3 wants §4.8's config in place for `[picks]`, so it sits alongside
-Phase 5.
+   Discovery is lazy and contained: a plugin costs nothing to a caller who
+   never reads a pick, and one that fails to import warns naming its
+   distribution rather than making the built-in formats unreadable. A plugin
+   cannot take a built-in name.
+
+   The vendor presets are dropped rather than deferred — see §4.9.6.
+
+A `[picks]` config section is the one piece §4.9 never grew: policies are
+keyword arguments to `set_picks` rather than settings. Worth adding when a
+study needs to record which policy produced a result, alongside §4.8's
+provenance stamping.
 
 Out of scope, and deliberately: writing every format back — `picks_to_quakeml`
 plus `Catalog.write` already covers what ObsPy can write, and a Snuffler writer
@@ -3411,10 +3427,15 @@ end-to-end proves the pipeline while the stakes are zero.
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
-7. **Which picker CSVs to ship presets for** (§4.9.6). PhaseNet, EQTransformer
-   and SeisBench each have several column layouts across versions, and the rule
-   is that a preset is written against a real output file rather than against
-   documentation. Which of them do you have output from?
+7. ~~**Which picker CSVs to ship presets for**~~ (§4.9.6). **Resolved: none.**
+   No picker output is available here, so by the rule that a preset must be
+   written against a real file, none ships. `CSVPickReader` takes a column
+   mapping instead. Reopen if PhaseNet, EQTransformer or SeisBench output turns
+   up — a preset is additive.
+8. **A NonLinLoc `.hyp` or an IMS/GSE bulletin**, to close the two unconfirmed
+   rows of §4.9.6. A round trip cannot reach them: ObsPy writes `NLLOC_OBS` and
+   reads `NLLOC_HYP`, and it writes no bulletin at all. One real file each would
+   settle both.
 
 ---
 

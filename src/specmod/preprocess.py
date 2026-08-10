@@ -165,7 +165,9 @@ def sensor_id(tr: Trace) -> str:
     return ".".join([tr.stats.network, tr.stats.station, tr.stats.location or "--"])
 
 
-def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
+def read_picks(
+    source: str | PathLike[str], *, format: str | None = None
+) -> dict[str, dict[str, Any]]:
     """Read picks as ``{"NET.STA.LOC": {"P": UTCDateTime, ...}}``.
 
     Accepts a Snuffler marker file or anything :func:`obspy.read_events`
@@ -177,7 +179,7 @@ def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
     keys on ``*.STA.*`` and matches no trace. :func:`set_picks` resolves
     against the sensors present instead.
     """
-    return pk.select_event(pk.read(source)).mapping()
+    return pk.select_event(pk.read(source, format=format)).mapping()
 
 
 def set_picks(
@@ -185,6 +187,7 @@ def set_picks(
     source: str | PathLike[str],
     emergency_ratio: float = 1.7,
     *,
+    format: str | None = None,
     event_id: str | None = None,
     on_ambiguous: pk.AmbiguousPolicy = "error",
     duplicates: pk.DuplicatePolicy = "prefer_reviewed",
@@ -192,8 +195,9 @@ def set_picks(
 ) -> None:
     """Attach ``p_time`` and ``s_time`` to every trace with a pick.
 
-    ``source`` is a Snuffler marker file or anything :func:`obspy.read_events`
-    parses — QuakeML, SC3ML, SEISAN Nordic, NonLinLoc, HypoDD, a bulletin.
+    ``source`` is a Snuffler marker file, a registered plugin's format, or
+    anything :func:`obspy.read_events` parses — QuakeML, SEISAN Nordic,
+    HypoDD, NonLinLoc, a bulletin. See ``docs/pick-formats.md``.
 
     Picks are matched per sensor rather than per channel, so a pick made on one
     component reaches that sensor's others, and a pick stating only part of an
@@ -209,7 +213,7 @@ def set_picks(
     Pass ``report=[]`` to receive the :class:`~specmod.picks.Resolution`.
     """
     picks = pk.resolve(
-        pk.select_event(pk.read(source), event_id=event_id),
+        pk.select_event(pk.read(source, format=format), event_id=event_id),
         [pk.SensorID.parse(sensor_id(tr)) for tr in st],
         on_ambiguous=on_ambiguous,
         duplicates=duplicates,
