@@ -2249,12 +2249,22 @@ numbers:
   from. Differentiating to acceleration multiplies by `2πf` and blows the
   high-frequency noise up instead.
 
-  `initial_guess` takes the spectral *peak* as the `f_c` guess, and for a Brune
-  source in **velocity** that is not a heuristic — it is exact. Velocity is
-  `2πf·Ω/(1+(f/f_c)²)`, whose maximum is at `f = f_c`; measured on a 20001-point
-  grid the peak lands at 7.999 Hz for a true 8.0. In displacement and
-  acceleration the spectrum is monotonic, so the "peak" is just whichever band
-  edge it was handed — 0.1 Hz and 100 Hz on the same grid.
+  Velocity is also the convenient domain, because **it peaks at `f_c`** — so
+  `initial_guess` taking the spectral peak is exact rather than approximate.
+  Maximising `f·[1 + (f/f_c)^{γn}]^{-1/γ}` puts the stationary point at
+  `(n − 1)·(f/f_c)^{γn} = 1`, which is `f = f_c` **whenever `n = 2`, for any
+  `γ`** — the corner's sharpness does not enter. So it holds for the whole
+  omega-squared family, not just Brune: measured on a 400001-point grid, both
+  registered sources peak at 8.0000 Hz for a true 8.0, `brune` (`γ=1`) and
+  `boatwright` (`γ=2`) alike.
+
+  That is worth knowing before a source model with `n ≠ 2` is registered,
+  because the guess silently stops being exact at that point — the peak moves
+  to `f_c·(n−1)^{−1/(γn)}`.
+
+  In displacement and acceleration the spectrum is monotonic over the band, so
+  the "peak" is just whichever edge it was handed — 0.1 Hz and 100 Hz on the
+  same grid.
 
   So `FitSpectra(spectra.to_motion("displacement"))` gets a guess at the low
   band edge and settles near it: `f_c` came back **1.6 instead of 8.0**, `Ω₀`
