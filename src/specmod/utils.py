@@ -112,7 +112,7 @@ def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]
     give one the other's picks.
 
     A flat mapping cannot express a partial identity or a second event; prefer
-    :func:`read_pyrocko_picks` and :func:`specmod.picks.resolve`.
+    :func:`read_pyrocko_picks` with :func:`specmod.picks.resolve`.
     """
     return read_pyrocko_picks(path).mapping()
 
@@ -135,9 +135,9 @@ def read_quakeml_picks(
     else — reviewed, preliminary, unset — is kept, matching how the Snuffler
     reader treats weights.
 
-    A flat mapping cannot express a partial identity or a second event, and a
-    multi-event source raises here rather than merging. Prefer
-    :func:`specmod.picks.read` and :func:`specmod.picks.resolve`.
+    A multi-event source raises rather than merging. A flat mapping cannot
+    express a partial identity or a second event; prefer
+    :func:`specmod.picks.read` with :func:`specmod.picks.resolve`.
     """
     catalog = source if isinstance(source, Catalog) else obspy.read_events(str(source))
     return select_event(from_catalog(catalog)).mapping()

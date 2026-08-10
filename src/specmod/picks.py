@@ -1,21 +1,13 @@
-"""Phase arrivals: what was picked, on which sensor, and which trace it reaches.
+"""Phase arrivals, and matching them to the sensors a stream carries.
 
-Reading a pick file is the easy half — ObsPy parses ten formats that carry
-arrivals. This module is the other half: turning what a format supplied into an
-arrival attached to the right trace, and failing loudly where that cannot be
-decided.
+:func:`read` returns one :class:`PickSet` per event. :func:`select_event`
+narrows a multi-event source to one. :func:`resolve` matches those picks
+against a set of :class:`SensorID`, returning a :class:`Resolution`.
 
-Three rules do the work, each replacing a silent wrong answer:
-
-* **Event selection.** A file may hold several events. One is chosen
-  explicitly; ambiguity raises rather than merging them.
-* **Sensor matching.** A pick carries as much identity as its format had. It
-  matches a trace when every field it *specifies* agrees, with more than one
-  match an error rather than a broadcast.
-* **Duplicate resolution.** Several picks for one sensor and phase are reduced
-  by a named policy, recorded in the resolution summary.
-
-See §4.9 of ``docs/REFACTOR_PLAN.md``.
+Three conditions have no single right answer and are therefore explicit: a
+source holding several events, a pick whose identity fits several sensors, and
+several picks for one sensor and phase. Each raises by default or takes a named
+policy. Design notes are in §4.9 of ``docs/REFACTOR_PLAN.md``.
 """
 
 from __future__ import annotations
@@ -58,15 +50,12 @@ AmbiguousPolicy = Literal["error", "broadcast", "skip"]
 class SensorID:
     """A sensor identity, possibly partial.
 
-    ``None`` means *the source did not say*, and matches anything. That is a
-    different claim from an empty string, which means *stated, and empty*, and
-    keeping them apart is what lets a pick carrying only a station code reach
-    the right trace instead of no trace at all.
+    ``None`` means the source did not state the field, and matches anything.
+    ``""`` means stated and empty, and matches only an empty field.
 
-    The asymmetry between the two optional fields is deliberate. An empty
-    network code is not a valid SEED network, so a format supplying one has
-    said nothing and it is read as ``None``; an empty location code is the
-    ordinary case for a single-sensor station, so it is kept as ``""``.
+    Readers apply that distinction asymmetrically: an empty network code is not
+    a valid SEED network and becomes ``None``, while an empty location code is
+    the ordinary single-sensor case and is kept as ``""``.
     """
 
     network: str | None
@@ -158,11 +147,11 @@ class PickSet:
     def mapping(
         self, *, duplicates: DuplicatePolicy = "prefer_reviewed"
     ) -> dict[str, dict[str, UTCDateTime]]:
-        """``{"NET.STA.LOC": {"P": UTCDateTime}}``, as the readers once returned.
+        """The picks as ``{"NET.STA.LOC": {"P": UTCDateTime}}``.
 
-        Groups on the pick's own identity without matching it against any
-        stream, so a partial identity keys on ``*`` and will not equal a
-        trace's key. :func:`resolve` is what reconciles the two.
+        Keyed on each pick's own identity, so an unstated field appears as
+        ``*`` and matches no trace. Use :func:`resolve` to match against a
+        stream.
         """
         out: dict[str, dict[str, UTCDateTime]] = {}
         for (sensor, phase), picks in _grouped(self.picks).items():
@@ -247,11 +236,11 @@ def select_event(
     near: UTCDateTime | None = None,
     tolerance_s: float = 60.0,
 ) -> PickSet:
-    """Choose one :class:`PickSet` from a file that may hold several.
+    """Choose one :class:`PickSet` from a source that may hold several.
 
-    With neither selector, the file must hold exactly one event. Merging them
-    is never the answer: a bulletin holds unrelated earthquakes, and combining
-    their arrivals produces a set that describes none of them.
+    Selects by ``event_id``, or by origin time within ``tolerance_s`` of
+    ``near``. With neither, the source must hold exactly one event. Raises
+    unless exactly one event is selected, naming those available.
     """
     if not sets:
         raise ValueError("no events in this source")
@@ -300,14 +289,16 @@ def resolve(
     is ``on_ambiguous``:
 
     ``error``
-        Raise, naming the candidates. The default, because two sensors at one
-        site see genuinely different arrivals and giving one the other's pick
-        is not recoverable downstream.
+        Raise, naming the candidates and the fields the pick left unstated.
+        The default.
     ``skip``
-        Leave the pick unattached and report it.
+        Leave the pick unattached, counted in :attr:`Resolution.ambiguous`.
     ``broadcast``
-        Attach to every match. Correct only where a site's sensors are known to
-        be co-located.
+        Attach to every match.
+
+    ``duplicates`` chooses between several picks for one sensor and phase:
+    ``prefer_reviewed`` (then earliest), ``earliest``, ``highest_weight``, or
+    ``error``.
     """
     # Deduplicated: a stream carries one trace per component, so the same
     # sensor arrives two or three times. Ambiguity is about distinct sensors —
@@ -422,9 +413,9 @@ def _pick_from_obspy(source: Any) -> Pick | None:
 def from_catalog(catalog: Catalog | ObsPyEvent) -> list[PickSet]:
     """Every event in an ObsPy catalogue, as one :class:`PickSet` each.
 
-    The input may come from any format :func:`obspy.read_events` understands,
-    which is what makes the standard roster — QuakeML, SC3ML, SEISAN Nordic,
-    NonLinLoc, HypoDD, IMS/GSE bulletins — readable without a parser here.
+    Phase hints are folded to ``P`` or ``S`` on their first letter, with the
+    original kept as ``raw_phase``. Picks with no ``P``/``S`` hint, with an
+    ``evaluation_status`` of ``rejected``, or with no station code are dropped.
     """
     events = list(catalog) if isinstance(catalog, Catalog) else [catalog]
 

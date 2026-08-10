@@ -173,11 +173,9 @@ def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
     :meth:`~specmod.datasets.EventDirectory.picks_file` does not have to know
     which format it got.
 
-    The mapping keys on each pick's *own* identity, so a format supplying no
-    network code keys on ``*.STA.*`` and matches no trace. That is a limit of
-    the flat shape, not of the reader: :func:`set_picks` goes through
-    :func:`specmod.picks.resolve`, which matches partial identities against the
-    sensors actually present.
+    Keyed on each pick's own identity, so a format supplying no network code
+    keys on ``*.STA.*`` and matches no trace. :func:`set_picks` resolves
+    against the sensors present instead.
     """
     return pk.select_event(pk.read(source)).mapping()
 
@@ -198,14 +196,17 @@ def set_picks(
     parses — QuakeML, SC3ML, SEISAN Nordic, NonLinLoc, HypoDD, a bulletin.
 
     Picks are matched per sensor rather than per channel, so a pick made on one
-    component reaches that sensor's others. A pick carrying only part of an
-    identity — most formats supply a bare station code — matches on the fields
-    it does state; a partial pick matching several sensors is an error unless
-    ``on_ambiguous`` says otherwise. ``event_id`` selects among the events in a
-    multi-event source, which is required rather than defaulted.
+    component reaches that sensor's others, and a pick stating only part of an
+    identity matches on the fields it does state. ``on_ambiguous`` and
+    ``duplicates`` are passed to :func:`specmod.picks.resolve`; ``event_id`` to
+    :func:`specmod.picks.select_event`, and is required for a multi-event
+    source.
 
-    Pass ``report=[]`` to receive the :class:`~specmod.picks.Resolution`, which
-    counts what was attached, unused, ambiguous and resolved by policy.
+    A trace whose P pick has no matching S gets one extrapolated at
+    ``p + (p - otime) * emergency_ratio``, unless that would place S before P,
+    in which case ``s_time`` is left unset and a warning is issued.
+
+    Pass ``report=[]`` to receive the :class:`~specmod.picks.Resolution`.
     """
     picks = pk.resolve(
         pk.select_event(pk.read(source), event_id=event_id),

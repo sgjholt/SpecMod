@@ -1,13 +1,8 @@
-"""Resolution: turning what a format supplied into an arrival on the right trace.
+"""Tests for :mod:`specmod.picks`.
 
-Three defects motivate this module, each measured against the code that
-preceded it and each pinned below (§4.9.1 of ``docs/REFACTOR_PLAN.md``):
-
-1. a pick carrying only a station code built a key that could never match a
-   trace, so a HypoDD phase file parsed cleanly and attached **nothing**;
-2. an empty network code and an absent one were spelled identically, so
-   nothing could tell "stated, and empty" from "not stated";
-3. a multi-event file collapsed to its last event without a warning.
+Covers sensor identity and matching, the three resolution rules — event
+selection, ambiguity, duplicates — and the conversion from an ObsPy catalogue.
+``TestHypoDDEndToEnd`` runs a real phase file through :func:`set_picks`.
 """
 
 from __future__ import annotations
