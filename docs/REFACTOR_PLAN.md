@@ -2108,7 +2108,8 @@ later ObsPy fixes it, at which point the row can move back up.
 
 The two "unconfirmed" rows are honest rather than pessimistic: nothing suggests
 they fail, but a round trip cannot reach them and a claim without a fixture is
-what this table exists to avoid.
+what this table exists to avoid. Closing them needs a real file of each, which
+is a **§7.1 item** rather than work anything waits on.
 
 The ML-picker CSVs are the one part of the roster with real work in it and no
 standard behind it. Column names differ between PhaseNet, EQTransformer,
@@ -2120,8 +2121,8 @@ and dated.
 checked against a real file is not shipped, and no such file is available here
 — so `CSVPickReader` ships with the mechanism and none of the guesses. Four
 lines of column mapping is what a user with a real file writes instead, and
-that is documented rather than hidden. If picker output turns up later, a
-preset is an additive change and the rule still applies to it.
+that is documented rather than hidden. Presets are a **§7.1 item for a later
+release**: additive, and the rule still applies to them.
 
 #### 4.9.7 Testing
 
@@ -2183,9 +2184,9 @@ reference:
    The vendor presets are dropped rather than deferred — see §4.9.6.
 
 A `[picks]` config section is the one piece §4.9 never grew: policies are
-keyword arguments to `set_picks` rather than settings. Worth adding when a
-study needs to record which policy produced a result, alongside §4.8's
-provenance stamping.
+keyword arguments to `set_picks` rather than settings. Listed in §7.1 — worth
+adding when a study needs to record which policy produced a result, alongside
+§4.8's provenance stamping.
 
 Out of scope, and deliberately: writing every format back — `picks_to_quakeml`
 plus `Catalog.write` already covers what ObsPy can write, and a Snuffler writer
@@ -3370,6 +3371,21 @@ anything worth releasing.** Publishing infrastructure is much easier to debug
 against a trivial package than against a finished one, and having `v0.2.0` go out
 end-to-end proves the pipeline while the stakes are zero.
 
+### 7.1 After 1.0
+
+Work that is designed but not done, and is **not** on the path to 1.0. Each
+entry says what blocks it, because in every case the blocker is an input that
+is not to hand rather than effort — and each is additive, so none of them
+changes anything shipped.
+
+| Item | Blocked on | Unblocked by |
+|---|---|---|
+| **Picker CSV presets** (§4.9.6) — named mappings for PhaseNet, EQTransformer, SeisBench, so those users write no column map | No such output is available, and §4.9.6's rule is that a preset written from documentation is a guess with a vendor's name on it | One real output file per tool and version. `CSVPickReader` already takes the mapping, so a preset is a dict and a test |
+| **Confirming NonLinLoc and the bulletins** (§4.9.6) — two roster rows marked unconfirmed | A round trip cannot reach them: ObsPy writes `NLLOC_OBS` but reads `NLLOC_HYP`, and writes no bulletin at all | One real `.hyp` and one IMS/GSE bulletin, added to the fixture corpus. Expected to pass as-is; the point is that the table should not claim what it has not measured |
+| **SeisComP picks** (§4.9.6) — SCML reads its origin and drops its picks and magnitudes | ObsPy 1.5.0's SCML↔QuakeML XSLT is asymmetric on `<pick>`; the writer emits them, the reader discards them | An upstream fix, which `test_scml_loses_its_picks_on_the_way_back` is written to detect — it fails when SCML starts working. Otherwise a specmod-side reader, which is a real piece of work and only worth it if someone needs SeisComP output |
+| **A `[picks]` config section** (§4.9.8) | Nothing; it is a judgement call | Wanting a study's resolution policies recorded in provenance rather than passed as keyword arguments. Sensible alongside §4.8's stamping |
+| **The fuller `acquire --verify`** (§5.2.3) — re-fetch and diff against the manifest | Needs the network, so it cannot be a test | Deciding it is worth a manual tool. `verify()` today answers "has this been touched", not "has the data centre revised its holdings" |
+
 ---
 
 ## 8. Decisions
@@ -3427,15 +3443,12 @@ end-to-end proves the pipeline while the stakes are zero.
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
-7. ~~**Which picker CSVs to ship presets for**~~ (§4.9.6). **Resolved: none.**
-   No picker output is available here, so by the rule that a preset must be
-   written against a real file, none ships. `CSVPickReader` takes a column
-   mapping instead. Reopen if PhaseNet, EQTransformer or SeisBench output turns
-   up — a preset is additive.
-8. **A NonLinLoc `.hyp` or an IMS/GSE bulletin**, to close the two unconfirmed
-   rows of §4.9.6. A round trip cannot reach them: ObsPy writes `NLLOC_OBS` and
-   reads `NLLOC_HYP`, and it writes no bulletin at all. One real file each would
-   settle both.
+7. ~~**Which picker CSVs to ship presets for**~~ (§4.9.6). **Resolved: none**,
+   and moved to §7.1. No picker output is available, so by the rule that a
+   preset must be written against a real file, none ships; `CSVPickReader`
+   takes a column mapping instead. The same answer moved the two unconfirmed
+   roster rows there: they need a real NonLinLoc or bulletin file, not a
+   decision. Nothing on the path to 1.0 waits on either.
 
 ---
 
