@@ -2217,12 +2217,34 @@ and are backend-independent:
 - `integrate ∘ differentiate ≈ identity` to within float tolerance.
 - Unit conversions round-trip; illegal conversions raise.
 
-**Tier 2 — synthetic end-to-end.** Generate a Brune spectrum with known
-`(Ω₀, f_c, t*)`, inverse-FFT to a synthetic seismogram, add noise, and run the
-whole pipeline. Assert parameter recovery within tolerance. This is the single
-most valuable test in the suite: it validates preprocessing, transform, SNR,
-binning and fitting together, and it is the only way to know the mtspec removal
-did not change the science.
+**Tier 2 — synthetic end-to-end.** ~~Generate a Brune spectrum…~~ **Landed**,
+as `tests/test_end_to_end.py`. A Brune spectrum with chosen `(Ω₀, f_c, t*)`
+becomes a velocity record, is buried in noise, and goes through cutting,
+transforming, bandwidth selection, binning and fitting. Recovery on three
+stations: `f_c` **7.71–8.01** against a true 8.0, `t*` **0.0196–0.0197**
+against 0.020, `Ω₀` within **0.07 in log10**.
+
+It is the only test that can catch an answer that has been *systematically
+wrong since the snapshot was taken* — the golden references pin that numbers do
+not move and say nothing about whether they are right.
+
+Two things came out of building it, both about the conventions rather than the
+numbers:
+
+- **The recovered plateau is biased ~5% low, and it is the window refinement.**
+  Trimming to the 1st and 99th percentiles of cumulative energy costs ~2% of
+  the record's duration, and amplitude scales with duration for a stationary
+  record; the rest is the taper. That is **0.03 in Mw** — negligible, but
+  one-directional, so it is asserted as a signed bias rather than absorbed
+  into a symmetric tolerance.
+- **The fit belongs on velocity, not displacement.** The model carries a motion
+  factor, so `llpsp` is the displacement plateau either way — but
+  `initial_guess` takes the spectral *peak* as the `f_c` guess, and a
+  displacement spectrum falls monotonically. Fitting the displacement set puts
+  the guess at the low band edge and the fit settles near it: `f_c` came back
+  **1.6 instead of 8.0**, and `Ω₀` 0.6 magnitude units low. Nothing warns. That
+  is a sharp edge on a public API, and a candidate for `initial_guess` to
+  either detect the motion or refuse it.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
 on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
