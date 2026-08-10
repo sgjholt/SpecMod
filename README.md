@@ -141,6 +141,20 @@ Every output records the configuration that produced it, a hash of it, and the
 SpecMod version, so a locally-overridden run is still reproducible from its
 outputs.
 
+## Documentation
+
+The full documentation — the pipeline with its equations, the estimator
+comparison, pick formats, and an API reference — builds with Sphinx:
+
+```bash
+uv pip install -e '.[docs]'
+sphinx-build -b html docs docs/_build/html
+```
+
+`docs/REFACTOR_PLAN.md` is excluded from the built site on purpose: it is a
+working document that records decisions and the measurements behind them, not
+documentation for using the package.
+
 ## Development
 
 ```sh
