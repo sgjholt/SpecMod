@@ -24,6 +24,11 @@ Copy the whole file over its counterpart. No merging, no partial application:
 | staged copy | destination |
 |---|---|
 | `ci/workflows/test.yml` | `.github/workflows/test.yml` |
+| `ci/workflows/docs.yml` | `.github/workflows/docs.yml` |
+
+`docs.yml` also needs Pages turning on once: **Settings → Pages → Source →
+GitHub Actions**. Without that the deploy step fails with a permissions error
+even though the build succeeded.
 
 A file here is the **intended** state, which is not necessarily the current
 one. `tools/check_ci_mirror.py` reports which of the two each pair is in, and

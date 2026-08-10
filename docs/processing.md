@@ -312,7 +312,7 @@ fixed increment and stopped at the first trial past the touch, with exactly the
 irreproducibility described above.
 
 Two departures from the legacy implementation are recorded in
-[REFACTOR_PLAN §4.5.3](REFACTOR_PLAN.md#453-rotate-ported-the-noise-registry-is-complete):
+[REFACTOR_PLAN §4.5.3](https://github.com/sgjholt/SpecMod/blob/main/docs/REFACTOR_PLAN.md):
 the solved angle, and taking the low/high split from the signal rather than the
 noise. Neither can move a published number — `ROT_METHOD = 1` was commented out
 on `master` and has never produced one.

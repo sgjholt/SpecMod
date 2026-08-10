@@ -67,12 +67,16 @@ dev = [
     "mypy>=1.11",
     "pre-commit>=3.7",
 ]
+# `sphinx-autodoc-typehints` was here and is not any more: measured on this
+# package it produced the same 367 documented objects as `sphinx.ext.autodoc`
+# with `autodoc_typehints = "description"`, while calling an API Sphinx 10
+# removes. `myst-nb` stays for the Phase 6 notebook pages, which are not built
+# yet — see `docs/conf.py`.
 docs = [
     "sphinx>=7.3",
     "pydata-sphinx-theme>=0.15",
     "myst-parser>=3.0",
     "myst-nb>=1.1",
-    "sphinx-autodoc-typehints>=2.2",
 ]
 tutorial = [ # for running the tutorial notebook, which is not part of the package
     "ipykernel>=7.0",
