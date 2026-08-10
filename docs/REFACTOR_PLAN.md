@@ -1250,7 +1250,7 @@ places, all written independently in the last week:
 - `staged._levels` splits `NET.STA.LOC.CHA` to let a selection pattern match
   at the station or channel level,
 - the tutorial does `ids[order[0]].split(".")[1]` to name a station,
-- `preprocess.set_picks_from_pyrocko` does
+- `preprocess.set_picks` does
   `".".join([tr.stats.network, tr.stats.station])` to build a lookup key.
 
 Three spellings of one idea, none of which can be given a type. And the bug in
@@ -1857,7 +1857,7 @@ rather than a question, and later studies that moved the defaults get their own
 files alongside it. No archaeology, and every study reproducible from a named
 file.
 
-#### 4.7.1 `_config_legacy.py` deleted — the flat dicts are gone
+#### 4.8.1 `_config_legacy.py` deleted — the flat dicts are gone
 
 `spectral.py` and `fitting.py` bound their settings at import from a
 hand-maintained module of literals (`cfg.SPECTRAL["ROT_METHOD"]` and eleven
@@ -1886,6 +1886,268 @@ One stale value found on the way: `SnrConfig.bandwidth_method` was typed
 a sign integral (§4.5.2) — a configuration value naming nothing the code would
 accept. Corrected to match `BANDWIDTH_SELECTORS`, and `bandwidth_percentile`,
 which only that method used, is removed.
+---
+
+### 4.9 Pick input: one contract, many formats
+
+**Status: specified, not built.** `read_picks` today dispatches on a filename
+suffix between two hand-written readers. This section is the roadmap item for
+making that a registry with a published contract, so that the common standards
+work out of the box and a lab with its own format can add it without forking.
+
+#### 4.9.1 ObsPy already owns the parsing — the gap is elsewhere
+
+The first thing to settle is how much of this is ours to write. Almost none of
+it. `obspy.read_events` sniffs and parses **19 event formats** at 1.5.0, of
+which these carry phase arrivals:
+
+`QUAKEML`, `SCML`/`SC3ML` (SeisComP), `NORDIC` (SEISAN S-files), `NLLOC_HYP`,
+`HYPODDPHA`, `IMS10BULLETIN`, `GSE2`, `MCHEDR`, `EVT`, `CSZ`.
+
+`read_quakeml_picks` already takes a `Catalog` rather than a path, so it does
+not care which of those produced it. **One delegate reader therefore covers the
+whole standard roster**, and the misleading name is the only thing between the
+current code and eight formats it can already read. There is no argument for
+hand-writing a NonLinLoc or SEISAN parser.
+
+What ObsPy does *not* do is everything between a `Catalog` and a `Stream` with
+`p_time`/`s_time` on it. That is where the defects are, and all three below are
+measured against the code as it stands, not hypothesised.
+
+**One. A pick with no network code can never match.** ObsPy fills
+`WaveformStreamID` with whatever the format carried, and most formats carry a
+station code alone. A three-line HypoDD phase file parses cleanly and yields
+`network_code=''`, `location_code=None`. `read_quakeml_picks` spells those
+`--` (`wid.network_code or "--"`), producing keys `--.AQ01.--`, while
+`sensor_id` builds `LV.AQ01.--` from the stream. String equality, so **every
+pick is dropped and `set_picks` reports nothing**: no exception, no warning, an
+empty stream downstream because nothing has an `s_time`.
+
+**Two. `or "--"` conflates "unspecified" with "empty".** A pick that genuinely
+carries an empty location code — the normal case for a single-sensor station —
+and a pick whose format has no location field at all are different claims, and
+resolving them needs that difference. Both currently become `--`.
+
+**Three. A multi-event file silently collapses to its last event.** The reader
+loops `for event in catalog: for pick in event.picks:` into one flat mapping.
+Two events five months apart, one shared sensor, and the second overwrites the
+first with no warning. Bulletins (`IMS10BULLETIN`, `GSE2`) are multi-event by
+construction, so this is the *normal* shape of the formats delegation would
+open up, not an edge case.
+
+None of the three is a parsing problem. Adding formats without fixing them
+converts a loud `KeyError` into eight quiet ways to analyse the wrong arrivals.
+
+#### 4.9.2 What a pick is
+
+The current record — `{"NET.STA.LOC": {"P": UTCDateTime}}` — is the smallest
+thing `set_picks` needs, and it discards everything a selection policy would
+use: uncertainty, polarity, weight or quality, evaluation mode and status,
+author, the channel it was picked on, and the original phase hint before it was
+folded to its first letter. Two picks for one phase are indistinguishable from
+one, so the reader cannot prefer the analyst-reviewed arrival over the
+automatic one — it takes whichever it saw last.
+
+```python
+@dataclass(frozen=True)
+class SensorID:
+    """A partial sensor identity. `None` means the source did not say."""
+    network: str | None
+    station: str
+    location: str | None
+
+@dataclass(frozen=True)
+class Pick:
+    sensor: SensorID
+    phase: str                      # "P" or "S", folded
+    time: UTCDateTime
+    raw_phase: str | None = None    # "Pg", "Sn", ... as written
+    uncertainty: float | None = None
+    polarity: str | None = None
+    weight: float | None = None
+    automatic: bool | None = None   # evaluation_mode, where the format has one
+    reviewed: bool | None = None    # evaluation_status
+    channel: str | None = None
+    author: str | None = None
+```
+
+A `PickSet` holds `list[Pick]` grouped by event, keeps the origin time and
+resource id where the format supplies them, and exposes `.mapping()` returning
+today's dict — so `set_picks` keeps working through the change and the golden
+reference is what proves nothing moved.
+
+#### 4.9.3 Resolution: three rules, each replacing a silent failure
+
+Resolution is the part with no ObsPy equivalent, and it is the substance of the
+work. Each rule is stated so that a wrong answer becomes an error rather than
+an empty result.
+
+**Event selection.** `PickSet.event(...)` chooses among the events in a file:
+by resource id, by nearest origin to a given time within a tolerance, or — the
+default — by requiring that the file hold exactly one. A multi-event file with
+no selector raises, naming the events. Fixes defect three.
+
+**Sensor matching.** A pick matches a trace when every field the pick
+*specifies* is equal to the trace's, `None` matching anything. So
+`(None, "AQ01", None)` matches `LV.AQ01.--` and resolution succeeds on a HypoDD
+file; `("LV", "AQ01", "00")` matches only the borehole instrument. Then:
+
+| Matching sensors | Behaviour |
+|---|---|
+| exactly one | attach |
+| none | the pick is unused; counted and reported in the summary |
+| more than one | **error**, naming the candidates and the field that would disambiguate |
+
+The ambiguous case is a station whose two sensors — surface and borehole — see
+genuinely different arrivals. Broadcasting a partial pick to both is the one
+outcome that must never happen quietly, and it is the reason the location code
+is in the key at all (§4.7). `on_ambiguous_sensor = "broadcast"` is available
+for callers who know their deployment has one sensor per site, but it is not
+the default. Fixes defects one and two.
+
+**Duplicate resolution.** Where a sensor and phase have more than one pick, a
+policy chooses: `prefer_reviewed` (analyst over automatic, then earliest) by
+default, or `earliest`, `highest_weight`, `error`. The choice is recorded in
+the summary rather than made invisibly.
+
+The resolution summary — picks read, attached, unused, ambiguous, duplicated —
+is returned, not printed. `set_picks` grows an optional `report` out-parameter
+so a script can assert on it; the tutorial prints it.
+
+#### 4.9.4 The reader contract and the registry
+
+Following §4.1 and `spreading.py`: a Protocol in `picks/base.py`, concrete
+readers in siblings, a `NAME -> class` dict and a `get_reader` factory in
+`picks/__init__.py`.
+
+```python
+class PickReader(Protocol):
+    name: str
+    suffixes: tuple[str, ...]      # hint only, never sufficient on its own
+    def can_read(self, source: str | PathLike[str]) -> bool: ...
+    def read(self, source: str | PathLike[str]) -> PickSet: ...
+```
+
+`can_read` sniffs: it may read the first few kilobytes, must not raise on
+binary or truncated input, and must be cheap. Suffix is a hint because it does
+not identify anything — `.xml` is QuakeML, SC3ML, StationXML or a spreadsheet
+export, and `.csv`, `.dat` and `.txt` say nothing at all.
+
+Format resolution is then: an explicit `format=` wins outright; otherwise every
+registered reader is offered the source and **exactly one claim is required**.
+Zero claims and several claims are both errors, each naming what was tried.
+Nothing is chosen by priority order — a tie means the sniffers are too loose
+and that is a bug to fix, not a coin to flip.
+
+#### 4.9.5 Plugins: two tiers, and prefer ObsPy's
+
+A third party has two ways in, and the right one depends on what they have.
+
+**If the format is an event file, register it with ObsPy.** ObsPy's own plugin
+system is entry points — group `obspy.plugin.event`, plus
+`obspy.plugin.event.<FORMAT>` carrying `readFormat` and `isFormat`. A format
+registered there is readable by `read_events`, which means SpecMod reads it
+through the delegate **with no SpecMod-side registration at all**, and the
+same parser serves every other ObsPy-based tool the lab runs. This is the
+recommended path and the documentation should say so first.
+
+**If it is not an event file, register it with SpecMod.** Picker CSVs,
+associator output, in-house arrival tables and marker files are not catalogues
+and do not belong in ObsPy's roster. Group `specmod.pick_readers`:
+
+```toml
+[project.entry-points."specmod.pick_readers"]
+my_lab_arrivals = "my_lab.picks:ArrivalTableReader"
+```
+
+Rules the loader must follow:
+
+- **Discovery is lazy.** Entry points are resolved on first use of the
+  registry, not at `import specmod`. A plugin must not add import cost to a
+  user who never reads a pick.
+- **A broken plugin is contained.** An entry point that fails to import warns,
+  naming the distribution, and is skipped. It cannot take the process down or
+  make the built-in formats unreadable.
+- **Built-ins cannot be shadowed.** A plugin claiming a registered name is an
+  error at load, not a silent override.
+- **`register_reader(cls)`** covers the notebook case, where there is no
+  installed distribution to hang an entry point on.
+- **Plugins are not exempt from the contract.** The suite in §4.9.7 is exported
+  so a plugin author can run it against their own reader.
+
+#### 4.9.6 Default roster
+
+| Format | Source | Status |
+|---|---|---|
+| QuakeML | ObsPy delegate | reading now; the shipped PNR picks |
+| SC3ML / SCML | ObsPy delegate | expected free with the delegate |
+| SEISAN Nordic | ObsPy delegate | expected free with the delegate |
+| NonLinLoc `.hyp` | ObsPy delegate | expected free with the delegate |
+| HypoDD `.pha` | ObsPy delegate | **parses today**; resolution is what blocks it |
+| IMS1.0 / GSE2 bulletin | ObsPy delegate | multi-event; needs §4.9.3 event selection |
+| Snuffler / Pyrocko markers | native | reading now |
+| PhaseNet / EQTransformer / SeisBench CSV | native | to write — see below |
+| Generic CSV with a column map | native | to write; the escape hatch |
+
+"Expected free" is a claim the fixture corpus settles, not one to take on
+trust — a format ObsPy parses may still put nothing useful in `waveform_id`,
+and that is exactly what the corpus is for. Each row is confirmed by a fixture
+or the row is corrected.
+
+The ML-picker CSVs are the one part of the roster with real work in it and no
+standard behind it. Column names differ between PhaseNet, EQTransformer,
+SeisBench and between versions of each, so the design is **one configurable CSV
+reader plus named presets**, not one reader per tool. Presets are written
+against real output files and dated; a preset that cannot be checked against a
+real file is not shipped. Given how much modern picking is done this way, this
+is the format most likely to matter to a new user and the least likely to be
+covered by anything else.
+
+#### 4.9.7 Testing
+
+One contract suite, parameterised over every registered reader, in the shape
+§4.1 already uses for estimators:
+
+- returns a `PickSet`; phases folded to `P`/`S`; times are `UTCDateTime`
+- `can_read` returns `False` — never raises — on binary input, an empty file, a
+  truncated file, and every *other* format's fixture
+- a reader claims its own fixture and no other; the corpus proves resolution is
+  unambiguous across the whole roster at once
+- round trip: `read(f)` → `picks_to_quakeml` → `read` → identical, which is the
+  same check that proved the PNR marker-to-QuakeML conversion lossless
+
+Then resolution tests independent of format: the HypoDD partial-key case as a
+regression test, the two-event collapse, the surface/borehole ambiguity, and
+each duplicate policy.
+
+Fixtures are small, hand-written, committed, and licensed — a few stations and
+a few arrivals each, not real bulletins. The tutorial dataset stays QuakeML.
+
+#### 4.9.8 Phasing and scope
+
+Three stages, each independently mergeable, none of which moves the golden
+reference:
+
+1. **Fix resolution against the two readers that exist.** `Pick`, `SensorID`,
+   `PickSet`, the three resolution rules, the summary. `set_picks` keeps its
+   signature and the golden reference is what proves the numbers did not move.
+   This is where the defects die, and it is worth doing on its own even if
+   nothing after it is built.
+2. **Registry, sniffing, and the ObsPy delegate.** `picks/` package, the
+   contract suite, the fixture corpus. The standard roster arrives here, in one
+   reader.
+3. **Plugins and the CSV readers.** Entry points, `register_reader`, the
+   configurable CSV reader and its presets, the how-to page — which leads with
+   "register with ObsPy if you can".
+
+Stage 1 has no dependencies and can land any time. Stages 2 and 3 want §4.8's
+config in place for `[picks]`, so they sit alongside Phase 5.
+
+Out of scope, and deliberately: writing every format back — `picks_to_quakeml`
+plus `Catalog.write` already covers what ObsPy can write, and a Snuffler writer
+is a plugin if anyone wants one. Also out: phase association, re-picking, and
+anything that changes an arrival time rather than reading it.
+
 ---
 
 ## 5. Testing strategy
@@ -2100,6 +2362,89 @@ is self-describing.
 `acquire`'s own tests must not hit the network either: mock the ObsPy client, or
 record cassettes. Its logic is config parsing, wildcard resolution, windowing and
 manifest generation — all testable against a fake client.
+
+**Built: `specmod.acquire`, the produce half.** `AcquisitionConfig` reads the
+TOML, `fetch()` writes an `EventDirectory` plus `manifest.json`, and `specmod
+fetch` exposes it. `datasets/pnr_2019.toml` is the worked example and describes
+the event already committed, so the shipped dataset is regenerable rather than
+merely present — a test asserts the config and `datasets.PNR_2019` still agree,
+since they are two statements of one hypocentre and can drift apart.
+
+The design constraints above are honoured and tested: waveforms are written raw
+with the response beside them, the wrapper stays thin, and **every network call
+goes through an injected `client`**, so all 24 tests drive a hand-written fake
+and none touches FDSN. The manifest carries the config verbatim, the resolved
+hypocentre, the channel list after wildcard expansion, both versions, the fetch
+timestamp and a SHA256 per file.
+
+Two smaller decisions worth recording. Radii are declared in **kilometres** and
+converted to degrees at the FDSN boundary, because a config in degrees is a
+config people get wrong; and an `eventid` matching zero or several events
+**raises** rather than taking the first, which would pick an event at random.
+
+**The event catalogue is named separately from the waveform archive**, which
+writing `datasets/magna_2020.toml` is what surfaced. Event ids are issued per
+catalogue: `uu60363602` is a USGS ComCat id and means nothing to IRIS, so a
+single `data_centre` could not express the Magna fetch at all. `[event]
+catalogue` names the service to resolve the id against, defaults to the
+waveform centre, and the manifest records both.
+
+**ObsPy's catalogue machinery, audited and now used.** The inventory side was
+always right — `read_inventory` for StationXML and `inv.get_channel_metadata`
+for coordinates, which is channel-level and epoch-aware rather than scraping
+station attributes. The **event** side was not used at all: `acquire` fetched a
+`Catalog`, read six floats off the preferred origin and magnitude, and dropped
+it. Origin uncertainties, non-preferred magnitudes, agency and evaluation
+status existed for one function call and were then unrecoverable.
+
+`acquire` now writes the catalogue as `event.xml` beside the data, and
+`Dataset.catalog()` reads it. `Event` stays as the typed four-value summary
+that `set_stream_distance` needs, but is no longer the only surviving record.
+
+**Picks moved to QuakeML**, with the Snuffler reader kept as an importer and
+the marker file kept as the provenance record. Two things came out of doing it:
+
+*The key is `NET.STA.LOC`, not the full SEED id.* An arrival is one sensor's
+observation and is shared across its components — on the shipped PNR file
+**all 15 stations** have P on `HHZ` and S on `HHN`, so keying by channel would
+leave every horizontal with no S. But the location code must survive, because
+that is what separates a borehole instrument from a surface one at the same
+site, and they do not see the same arrival. The previous `NET.STA` keying
+collapsed both; only the channel half of that was correct.
+
+*The conversion is lossless, and proven so rather than assumed.* The QuakeML
+round-trips to the same mapping as the marker file, a test asserts the two
+committed formats still agree, and every window in both golden references is
+unchanged — which is the real check, since the references are pick-derived.
+
+**Built: the consume half too.** `datasets.load_pnr_2019()` returns the event
+committed to this repository with no download and no network, because it is in
+the checkout — reaching for a URL to fetch data that is already present would
+be the wrong shape. Published datasets go through `datasets.load(name)`:
+`REGISTRY` maps a name to a URL, a SHA256 and the event it holds, pooch caches
+under `SPECMOD_DATA_DIR` or `pooch.os_cache("specmod")`, and the hash is
+checked on arrival.
+
+**Versioning is by registry name**, as planned: `magna_2020_v1` and `_v2` are
+separate entries, so a result pinned to v1 keeps fetching v1 after v2 exists.
+That is the whole reason pooch is here rather than a bare download.
+
+`load()` takes an injectable `downloader`, for the same reason `acquire.fetch`
+takes a `client`: pooch has no `file://` support, so a test cannot serve itself
+an archive without one. With it, the published path is exercised offline
+through pooch's real caching, hash check and `Untar` — including that a
+substituted archive is refused and that a second call does not download again.
+It also gives an operator behind an authenticating proxy somewhere to put it.
+
+**`REGISTRY` is empty**, and that is the honest state: there is no published
+artefact yet. Creating a `data-v1` release asset is a repository step, and the
+entry lands in the same change as the asset it points at — a `load_magna_2020()`
+that can only 404 would be worse than its absence.
+
+**Still ahead:** the fuller `--verify` that re-fetches and diffs against the
+manifest. `verify()` today re-hashes what is on disk, which answers "has this
+been touched" but not "has the data centre revised its holdings" — the question
+§5.2.2 is really about, and the one that needs the network.
 
 > **Concrete gotcha:** data artifacts want their own release tags (`data-v1`),
 > and release-please must be configured to ignore them or it will read `data-v1`
@@ -2480,7 +2825,7 @@ the fix *is* the record of what observable behaviour changed:
 | `cut_c` | `tafp * relps + s_start` is `float + UTCDateTime`, and `UTCDateTime` has no `__radd__`: `TypeError` on **every** input. The function had never run. | Operands reversed. It runs, and is tested. |
 | `cut_p` / `cut_s` | Un-chained `if`s on a free-text `time_after`, with the two functions spelling the relative mode differently (`"relative_time"` vs `"relative_ps"`). A typo — or the sibling's spelling — left the window end unbound, surfacing as `UnboundLocalError` from mid-function. | Validated up front against `TIME_AFTER_METHODS`; both functions accept both spellings; an unrecognised value raises naming itself. |
 | `get_noise_p` | Copied the whole input stream, then paired with `zip(..., strict=False)`, so traces the signal stream had lost came back **whole and unlinked** — full-length records presented as noise windows, no error, no warning. | `strict=True`. Positional pairing against a different-length stream is a wrong answer, not a short one. |
-| `set_picks_from_pyrocko` | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial config has an origin 18 minutes *after* its picks; a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
+| `set_picks` (then `set_picks_from_pyrocko`) | Emergency S pick `p + (p − otime)·ratio` was unchecked, so it only lands after P when the origin precedes the pick. The tutorial was then configured with an origin 18 minutes *after* its picks — see §4.7.1 — and a station missing an S pick there would have got S before P and a nonsense window. | Warns and leaves `s_time` unset, which is the pipeline's own idiom for "unusable" — callers already filter on it. |
 | `link_window_to_trace` | Recorded the *requested* window and never reconciled it with what `trim` delivered, so `wend - wstart` overstated every truncated noise trace. | Records both: `wstart`/`wend` are what the trace holds, `wstart_requested`/`wend_requested` what was asked for. All call sites link *after* the trim. |
 
 The last row is worth separating because it is not only a reporting bug.
@@ -2944,7 +3289,7 @@ Each phase ends green on CI and is independently mergeable.
 | **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
-| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty | 3 | 4–6 days |
+| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty; `picks/` per §4.9 — resolution first, then the registry, the ObsPy delegate and the plugin entry point | 3 | 4–6 days |
 | **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
 
 **Executing the tutorial was pulled forward out of Phase 6.** The `myst-nb`
@@ -3038,6 +3383,10 @@ end-to-end proves the pipeline while the stakes are zero.
 6. **Are Tables S1/S2 to hand?** The comparison needs only the Table S2 rows for
    the chosen broadband subset (§5.2.6), not all 11,226. If the supplement is not
    readily available, Figure 2 alone still supports the single-trace test.
+7. **Which picker CSVs to ship presets for** (§4.9.6). PhaseNet, EQTransformer
+   and SeisBench each have several column layouts across versions, and the rule
+   is that a preset is written against a real output file rather than against
+   documentation. Which of them do you have output from?
 
 ---
 

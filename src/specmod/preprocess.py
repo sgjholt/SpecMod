@@ -151,12 +151,45 @@ def get_station_loc_from_inventory(
     return meta["latitude"], meta["longitude"], meta["elevation"]
 
 
-def set_picks_from_pyrocko(
-    st: Stream, pyrock_file: str | PathLike[str], emergency_ratio: float = 1.7
+def sensor_id(tr: Trace) -> str:
+    """``NET.STA.LOC`` — the sensor a pick belongs to.
+
+    Not the channel: an arrival is one sensor's observation and is shared by
+    its components. Not the bare station either: a borehole and a surface
+    instrument differ only by location code, and they do not see the same
+    arrival.
+
+    An empty location code is written ``--``, matching how Snuffler marker
+    files spell it.
+    """
+    return ".".join([tr.stats.network, tr.stats.station, tr.stats.location or "--"])
+
+
+def read_picks(source: str | PathLike[str]) -> dict[str, dict[str, Any]]:
+    """Read picks from QuakeML or from a Snuffler marker file.
+
+    Dispatches on the suffix, so a caller holding a path from
+    :meth:`~specmod.datasets.EventDirectory.picks_file` does not have to know
+    which format it got. Both return the same ``{"NET.STA.LOC": {...}}``
+    mapping.
+    """
+    if str(source).endswith((".xml", ".quakeml")):
+        return ut.read_quakeml_picks(source)
+    return ut.read_pyrocko(source)
+
+
+def set_picks(
+    st: Stream, source: str | PathLike[str], emergency_ratio: float = 1.7
 ) -> None:
-    picks = ut.read_pyrocko(pyrock_file)
+    """Attach ``p_time`` and ``s_time`` to every trace with a pick.
+
+    ``source`` is QuakeML or a Snuffler marker file; :func:`read_picks`
+    dispatches on the suffix. Picks are matched per sensor — ``NET.STA.LOC`` —
+    so a pick made on one component reaches that sensor's other components.
+    """
+    picks = read_picks(source)
     for tr in st:
-        id = ".".join([tr.stats.network, tr.stats.station])
+        id = sensor_id(tr)
         try:
             tr.stats["p_time"] = picks[id]["P"]
         except KeyError:
@@ -180,6 +213,24 @@ def set_picks_from_pyrocko(
                 )
                 continue
             tr.stats["s_time"] = tr.stats["p_time"] + sdiff
+
+
+def set_picks_from_pyrocko(
+    st: Stream, pyrock_file: str | PathLike[str], emergency_ratio: float = 1.7
+) -> None:
+    """Deprecated alias for :func:`set_picks`.
+
+    Renamed because it no longer reads only Pyrocko: QuakeML is now the
+    preferred format and the old name says the opposite of what the function
+    does.
+    """
+    warnings.warn(
+        "set_picks_from_pyrocko is deprecated; use set_picks, which reads "
+        "QuakeML as well as Snuffler marker files.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    set_picks(st, pyrock_file, emergency_ratio)
 
 
 def basic_set_theoreticals(

@@ -341,9 +341,7 @@ def _picked_stream(otime_offset: float = 0.0) -> Any:
 class TestPicks:
     def test_both_phases_are_read_when_present(self, tmp_path: Path) -> None:
         st = _picked_stream()
-        pre.set_picks_from_pyrocko(
-            st, _picks_file(tmp_path, {"P": "00:00:10.0", "S": "00:00:20.0"})
-        )
+        pre.set_picks(st, _picks_file(tmp_path, {"P": "00:00:10.0", "S": "00:00:20.0"}))
         start = st[0].stats.starttime
         assert st[0].stats["p_time"] - start == pytest.approx(10.0)
         assert st[0].stats["s_time"] - start == pytest.approx(20.0)
@@ -352,7 +350,7 @@ class TestPicks:
         self, tmp_path: Path
     ) -> None:
         st = _picked_stream()
-        pre.set_picks_from_pyrocko(
+        pre.set_picks(
             st, _picks_file(tmp_path, {"P": "00:00:10.0"}), emergency_ratio=1.7
         )
         # S = P + (P - otime) * ratio = 10 + 10*1.7 = 27 s after the origin.
@@ -361,7 +359,7 @@ class TestPicks:
     def test_a_station_with_no_picks_at_all_is_left_alone(self, tmp_path: Path) -> None:
         st = _picked_stream()
         st[0].stats.station = "OTHER"
-        pre.set_picks_from_pyrocko(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
+        pre.set_picks(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
         assert "p_time" not in st[0].stats
         assert "s_time" not in st[0].stats
 
@@ -370,16 +368,27 @@ class TestPicks:
     ) -> None:
         # The emergency S pick is `p + (p - otime) * ratio`, which only lands
         # after P when the origin precedes the pick. Nothing used to check
-        # that. The tutorial is configured with an origin 18 minutes *after*
-        # its picks, so a station missing an S pick there would have got S
-        # before P — silently, and every window cut from it would be nonsense.
+        # that, and the tutorial was for a time configured with an origin 18
+        # minutes *after* its picks: a station missing an S pick there would
+        # have got S before P — silently, and every window cut from it would
+        # be nonsense.
         # The pipeline's own idiom for "unusable" is a trace without `s_time`,
         # and callers already filter on it, so that is what is left behind.
         st = _picked_stream(otime_offset=100.0)
         with pytest.warns(UserWarning, match="cannot be extrapolated"):
-            pre.set_picks_from_pyrocko(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
+            pre.set_picks(st, _picks_file(tmp_path, {"P": "00:00:10.0"}))
         assert "s_time" not in st[0].stats
         assert "p_time" in st[0].stats  # the P pick that was read is kept
+
+    def test_the_old_pyrocko_name_still_works_and_warns(self, tmp_path: Path) -> None:
+        st = _picked_stream()
+        with pytest.warns(DeprecationWarning, match="use set_picks"):
+            pre.set_picks_from_pyrocko(
+                st, _picks_file(tmp_path, {"P": "00:00:10.0", "S": "00:00:20.0"})
+            )
+        start = st[0].stats.starttime
+        assert st[0].stats["p_time"] - start == pytest.approx(10.0)
+        assert st[0].stats["s_time"] - start == pytest.approx(20.0)
 
 
 class TestStreamDistance:

@@ -21,6 +21,7 @@ import numpy as np
 import obspy
 import pandas as pd
 from matplotlib.dates import num2date
+from obspy.core.event import Catalog, Event, Pick, WaveformStreamID
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
@@ -47,7 +48,18 @@ def _to_datetime(value: Any) -> Any:
 
 
 def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]:
-    """Snuffler marker file to ``{"NET.STA": {"P": UTCDateTime, ...}}``."""
+    """Snuffler marker file to ``{"NET.STA.LOC": {"P": UTCDateTime, ...}}``.
+
+    Keyed **per sensor**, not per channel. An arrival is an observation of one
+    sensor, and the component it was picked on is incidental — on the shipped
+    PNR file every station has P on ``HHZ`` and S on ``HHN``, so keying by full
+    SEED id would leave the horizontals with no S at all.
+
+    The location code stays in the key, because that is what distinguishes two
+    sensors at one site. A surface and a borehole instrument share a station
+    name and see genuinely different arrivals; collapsing them would silently
+    give one the other's picks.
+    """
     pyrocko_map = {
         "^": ("P", "Pg", "u", "i"),
         "v": ("P", "Pg", "d", "i"),
@@ -66,10 +78,11 @@ def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]
         tid = fields[4].replace("..", ".--.").split(".")  # ensure locs are the same
         net = tid[0]
         name = tid[1]
+        loc = tid[2] if len(tid) > 2 else "--"
         time = "T".join(fields[1:3])
         des, _pt, _fm, _po = pyrocko_map[fields[8]]
         weight = int(fields[3])
-        ID = ".".join((net, name))
+        ID = ".".join((net, name, loc))
         if weight <= 3:
             try:
                 stations[ID].update({des: obspy.UTCDateTime(time)})
@@ -77,6 +90,75 @@ def read_pyrocko(path: str | PathLike[str]) -> dict[str, dict[str, UTCDateTime]]
                 stations.update({ID: {des: obspy.UTCDateTime(time)}})
 
     return stations
+
+
+def read_quakeml_picks(
+    source: str | PathLike[str] | Catalog,
+) -> dict[str, dict[str, UTCDateTime]]:
+    """QuakeML picks to ``{"NET.STA.LOC": {"P": UTCDateTime, ...}}``.
+
+    The same shape :func:`read_pyrocko` returns, so the two are
+    interchangeable at the call site. ``source`` is a path or an
+    ``obspy.core.event.Catalog``.
+
+    Phase hints are normalised to ``P`` or ``S`` on their first letter, which
+    folds ``Pg``/``Pn``/``Pb`` and their S counterparts together. That matches
+    what this pipeline does with them — it wants a direct arrival, and the
+    branch distinction is not something the windowing uses.
+
+    Picks with an ``evaluation_status`` of ``rejected`` are dropped. Anything
+    else — reviewed, preliminary, unset — is kept, matching how the Snuffler
+    reader treats weights.
+    """
+    catalog = source if isinstance(source, Catalog) else obspy.read_events(str(source))
+
+    picks: dict[str, dict[str, UTCDateTime]] = {}
+    for event in catalog:
+        for pick in event.picks:
+            hint = (pick.phase_hint or "").strip()
+            if not hint or hint[0].upper() not in ("P", "S"):
+                continue
+            if pick.evaluation_status == "rejected":
+                continue
+            wid = pick.waveform_id
+            key = ".".join(
+                (
+                    wid.network_code or "--",
+                    wid.station_code or "--",
+                    wid.location_code or "--",
+                )
+            )
+            picks.setdefault(key, {})[hint[0].upper()] = pick.time
+    return picks
+
+
+def picks_to_quakeml(
+    picks: dict[str, dict[str, UTCDateTime]],
+    *,
+    event_id: str | None = None,
+) -> Catalog:
+    """The inverse: a pick mapping as an ``obspy`` ``Catalog``.
+
+    Used to convert a Snuffler marker file to the standard format once, rather
+    than teaching every consumer both. The location code ``--`` is written back
+    as an empty string, which is what StationXML and miniSEED use.
+    """
+    event = Event(resource_id=event_id) if event_id else Event()
+    for key, phases in sorted(picks.items()):
+        net, sta, loc = key.split(".")
+        for phase, time in sorted(phases.items()):
+            event.picks.append(
+                Pick(
+                    time=time,
+                    phase_hint=phase,
+                    waveform_id=WaveformStreamID(
+                        network_code=net,
+                        station_code=sta,
+                        location_code="" if loc == "--" else loc,
+                    ),
+                )
+            )
+    return Catalog(events=[event])
 
 
 def plot_traces(
