@@ -26,6 +26,7 @@ jobs:
           fetch-depth: 0   # hatch-vcs derives the version from tags
       - uses: astral-sh/setup-uv@v5
       - run: uv python install 3.11
+      - run: uv venv # create a venv to install into
 
       # The package itself, not just the docs extra: autodoc imports every
       # module it documents, so a docs build is also an import check.

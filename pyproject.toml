@@ -236,6 +236,16 @@ filterwarnings = [
     "error::DeprecationWarning:specmod.*",
     # obspy 1.5 on py3.11 trips importlib.metadata's SelectableGroups warning.
     "ignore:SelectableGroups dict interface is deprecated:DeprecationWarning",
+    # matplotlib's mathtext calling pyparsing's camelCase API, which pyparsing
+    # 3.3 deprecates. Only the `floors` job sees it, and it drowns that job:
+    # 439 warnings against 4 elsewhere. Measured with pyparsing 3.3.2
+    # throughout — matplotlib 3.9.0, 3.9.4 and 3.10.0 each produce 328 of them
+    # in `test_io_and_plotting.py` alone, and 3.11.1 produces none. So it is
+    # fixed above the declared `matplotlib>=3.9` floor, and raising the floor
+    # to silence a warning that says nothing about this package would drop
+    # support for two matplotlib minors for cosmetics. Delete this line when
+    # the floor passes 3.11.
+    "ignore::pyparsing.warnings.PyparsingDeprecationWarning",
 ]
 
 [tool.coverage.run]
