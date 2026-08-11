@@ -134,11 +134,36 @@ RTOL = 1e-6
 #: 5e-2 was 12 orders of magnitude looser than anything measurable. Holding it
 #: there hides whatever the real difference was rather than describing it.
 #:
-#: **1e-3 is an experiment**, not a calibration: still 5e4 times looser than
-#: the worst perturbation response measured above, and tight enough that if
-#: the 1-2% residual survives, CI says so with the per-station detail
-#: ``_compare`` prints. If it passes everywhere, the entry can go.
-RTOL_BY_ESTIMATOR = {"cwt": 1e-3}
+#: **1e-3 was an experiment**, not a calibration, and it has now returned its
+#: answer: the residual is real. What one CI run showed, across six test jobs
+#: on the same commit:
+#:
+#: - It fails on **ubuntu 3.11 and 3.13** with the *same* 8 differences, the
+#:   same three windows, and the same magnitudes to three significant figures.
+#:   Deterministic, not flaky.
+#: - It **passes on ubuntu 3.12** and on macOS 3.11, 3.12 and 3.13, in that
+#:   same run. So it is not the OS, not the Python version, and not a package
+#:   version that tracks the Python version — it is which machine the job
+#:   landed on, which is what "that runner, not Linux" above suspected and
+#:   this is the same-run control for.
+#: - On the machine that disagrees, ``fft``, ``welch``, ``multitaper`` and
+#:   ``quadratic`` all still reproduce the reference exactly. Whatever it is,
+#:   it is in the CWT path and not in that machine's arithmetic generally.
+#: - Worst observed: 1.44e-2, on ``UR.AQ10.00.HHN bsnr``. Three of 28 windows
+#:   move at all (``LV.L007..HHN``, ``UR.AQ01.00.HHE``, ``UR.AQ10.00.HHN``).
+#:
+#: **2e-2 is a bound on that, not an explanation of it.** It is the worst
+#: observed difference with about 40% of headroom, and 2.5 times tighter than
+#: the 5e-2 it replaces — which is the most that can honestly be claimed while
+#: the mechanism is still unidentified and unreproducible on any box available
+#: to work on. A real regression in the CWT noise path smaller than 2% would
+#: pass here; the four estimators held at 1e-6 are what covers the pipeline
+#: those windows share.
+#:
+#: To take it further, the next measurement needs the failing machine: run the
+#: cwt path on it against a passing one, on the three named windows, and diff
+#: the noise arrays before binning rather than after.
+RTOL_BY_ESTIMATOR = {"cwt": 2e-2}
 
 QUANTILES = np.linspace(0.0, 1.0, 33)
 

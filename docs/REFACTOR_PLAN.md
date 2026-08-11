@@ -643,10 +643,42 @@ matching the reference environment exactly, every proposed mechanism fails:
 
 So the CWT is as stable as everything else, and `5e-2` was twelve orders of
 magnitude looser than anything reproducible — wide enough to hide the real
-difference rather than describe it. It is now **`1e-3`**, still 5e4 times
-looser than the worst measured response, as an experiment: if the residual is
-still there CI reports it with per-station detail, and if it is not the entry
-can go. Either outcome is worth more than the number that was there.
+difference rather than describe it. It was set to **`1e-3`** as an experiment:
+if the residual was still there CI would report it with per-station detail,
+and if it was not the entry could go. Either outcome is worth more than the
+number that was there.
+
+**The experiment's answer: the residual is real, and it is the machine.** One
+CI run, six test jobs, one commit:
+
+| Job | Result |
+|---|---|
+| ubuntu 3.11 | fails — 8 differences, 3 windows, worst 1.44e-2 |
+| ubuntu 3.13 | fails — the *same* 8, the same windows, the same magnitudes to 3 s.f. |
+| ubuntu 3.12 | passes |
+| macOS 3.11, 3.12, 3.13 | pass |
+
+Two things follow that the earlier round could not establish. It is
+deterministic rather than flaky, since two jobs on different Python versions
+produce identical numbers. And it is not the OS, not the Python version, and
+not a package version that tracks the Python version — a third ubuntu job in
+the same run agrees with the reference exactly. What is left is which machine
+the job landed on, which is what "it is that *runner*, not Linux" suspected
+and this is the same-run control for.
+
+The sharpest datum is the one that localises it: on the machine that
+disagrees, `fft`, `welch`, `multitaper` and `quadratic` all still reproduce
+the reference byte for byte. It is in the CWT path, not in that machine's
+arithmetic in general.
+
+The tolerance is now **`2e-2`** — the worst observed difference plus about 40%
+of headroom, and 2.5 times tighter than the `5e-2` it replaces. It is a bound
+on the residual, not an explanation of it, and it is labelled that way in the
+test: while the mechanism is unidentified and reproduces on no box available
+to work on, a bound with numbers behind it is the most that can honestly be
+claimed. Taking it further needs the failing machine — the cwt path run on it
+and on a passing one, diffing the three named windows' noise arrays *before*
+binning rather than after.
 
 **Measured after the fix**, end to end over all 28 windows: perturbing the
 input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
