@@ -162,6 +162,12 @@ class TestDetection:
         assert len(pk.read(_catalog())[0]) == 4
 
 
+@pytest.mark.filterwarnings(
+    # ObsPy's NORDIC writer, on a pick that carries no evaluation mode. It is
+    # third-party, it says nothing about what these tests assert, and it is
+    # matched by message so a different NORDIC warning would still surface.
+    "ignore:Evaluation mode None is not mappable:UserWarning"
+)
 class TestRoster:
     """What §4.9.6 claims, measured rather than assumed.
 

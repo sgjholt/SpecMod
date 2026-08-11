@@ -285,8 +285,19 @@ class TestFittingTheWrongMotionWarns:
     def test_the_warning_names_the_station_and_the_motion(self, measured: Any) -> None:
         from specmod.fitting import initial_guess  # noqa: PLC0415
 
-        with pytest.warns(UserWarning, match=r"XX\.S00\.\.HHN is in displacement"):
+        # One warning per station, not one for the set — otherwise a run over
+        # a mixed collection names whichever spectrum happened to be first.
+        # Asserting on all three also stops the two that `match=` does not
+        # select being re-emitted into pytest's warning summary.
+        with pytest.warns(UserWarning, match="is in displacement") as records:
             initial_guess(measured.to_motion("displacement"))
+
+        messages = [str(record.message) for record in records]
+        assert len(messages) == 3
+        for station in ("XX.S00..HHN", "XX.S01..HHN", "XX.S02..HHN"):
+            assert any(
+                f"{station} is in displacement" in message for message in messages
+            ), f"nothing warned about {station}"
 
     def test_velocity_is_silent(self, measured: Any) -> None:
         from specmod.fitting import initial_guess  # noqa: PLC0415
