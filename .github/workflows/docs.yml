@@ -1,0 +1,56 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Pages needs these; the default token is read-only for contents.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A second push while a deploy is in flight should win, not queue behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # hatch-vcs derives the version from tags
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.11
+
+      # The package itself, not just the docs extra: autodoc imports every
+      # module it documents, so a docs build is also an import check.
+      - run: uv pip install -e ".[docs,io]"
+
+      - name: Build
+        # No -W. Intersphinx resolves seven inventories over the network and
+        # warns when one is briefly unreachable, which would turn a third
+        # party's downtime into a red build. A genuinely broken build exits
+        # non-zero on its own.
+        run: uv run sphinx-build -b html docs docs/_build/html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  deploy:
+    # Only main deploys. A pull request builds, which is what catches a broken
+    # reference before it lands, and stops there.
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
