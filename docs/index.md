@@ -70,6 +70,16 @@ print(fits.table[["id", "llpsp", "fc", "ts"]])
 : What is built, what is being worked on, and what 1.0 will mean. Stages, not
   dates.
 
+## Working on SpecMod
+
+[Developer guide](development.md)
+: Quick start, the repository mapped, the daily loop, every tool and check, and
+  where development stops and releasing begins.
+
+[Documentation workflow](documentation.md)
+: Building the site locally, previewing a pull request's build, what the
+  official site is, and how versions would work.
+
 ## Two things worth knowing early
 
 **Units are typed.** A spectrum carries its ground-motion domain and amplitude
@@ -90,6 +100,8 @@ one either way.
 processing
 choosing_a_transform
 pick-formats
+development
+documentation
 releasing-data
 releasing
 roadmap

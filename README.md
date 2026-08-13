@@ -164,12 +164,18 @@ documentation for using the package.
 
 ```sh
 uv venv && uv pip install -e ".[dev]"
+pre-commit install                 # both hook types; not optional
 pytest                             # test suite
 pytest --without-optional-extras   # as a default install and CI see it
 ruff check src/ tests/ tools/      # lint
 ruff format src/ tests/ tools/
 mypy                               # strict on the rewritten modules
 ```
+
+[`docs/development.md`](docs/development.md) is the full guide — the repository
+mapped, every tool and CI check, the branch and commit conventions, and where
+development stops and releasing begins. [`AGENTS.md`](AGENTS.md) is the short
+version that binds AI coding sessions.
 
 Run `--without-optional-extras` before pushing. A development environment
 with `specmod[multitaper]` installed will pass tests that a default install
