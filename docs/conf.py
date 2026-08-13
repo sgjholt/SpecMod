@@ -18,7 +18,11 @@ from importlib.metadata import PackageNotFoundError, version
 
 project = "SpecMod"
 author = "James Holt"
-copyright = "2026, James Holt"
+#: Sphinx substitutes `%Y` with the build year, so this does not need editing
+#: — and it honours `SOURCE_DATE_EPOCH`, so a reproducible build stamps the
+#: source date rather than the day it happened to run. 2020 is the year in
+#: `LICENSE` and the year the history starts.
+copyright = "2020-%Y, James Holt"
 
 try:
     release = version("specmod")
