@@ -1,0 +1,47 @@
+# Read the Docs build configuration.
+#
+# Read the Docs publishes the documentation; GitHub Actions only checks that it
+# builds. The reason for the split is versions: this package is alpha and users
+# are told to pin an exact version, so the documentation for a release has to
+# stay readable after the trunk has moved on. Read the Docs keeps one build per
+# tag, a `stable` pointing at the newest, and a `latest` from `main`, with a
+# version switcher between them — and it builds pull requests to their own
+# throwaway URL.
+#
+# Schema: https://docs.readthedocs.com/platform/stable/config-file/v2.html
+
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.11" # the version CI's lint, typecheck and docs jobs use
+  jobs:
+    post_checkout:
+      # Read the Docs clones shallow and without tags, to save time. hatch-vcs
+      # derives the version from `git describe`, and `docs/conf.py` reads it
+      # back through importlib.metadata — so without these the sidebar reads
+      # the fallback 0.0.0 on every build, including tagged ones.
+      # `|| true` because a repository that is already complete makes
+      # --unshallow exit non-zero, which would fail the build.
+      - git fetch --unshallow || true
+      - git fetch --tags || true
+
+sphinx:
+  configuration: docs/conf.py
+  # Deliberately off, for the same reason the CI job has no `-W`: intersphinx
+  # resolves seven inventories over the network and warns whenever one of them
+  # is briefly unreachable. That would make a third party's downtime a failed
+  # documentation build. A genuinely broken build still exits non-zero.
+  fail_on_warning: false
+
+python:
+  install:
+    - method: pip
+      path: .
+      extra_requirements:
+        # `io` alongside `docs` because autodoc imports every module it
+        # documents, and `specmod.io` imports h5py and pyarrow. Without it the
+        # API reference loses those pages to import errors.
+        - docs
+        - io

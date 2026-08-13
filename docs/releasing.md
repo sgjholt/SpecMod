@@ -146,8 +146,13 @@ breaking commits and `bump-minor-pre-major`, the version it proposes is
 - **The version is real**: `python -c "import specmod; print(specmod.__version__)"`
   from that install prints the tag without its `v`, not a `.postN.devN`.
 - **Zenodo**: a new DOI under the concept DOI, with `CITATION.cff`'s metadata.
-- **Docs**: `docs.yml` deploys from `main`, so the site updates on the release
-  PR merge rather than on the tag.
+- **Docs**: Read the Docs builds the new tag as its own version and moves
+  `stable` onto it. Two things to check the first few times: that the tag was
+  activated (an automation rule does it, see
+  [Documentation workflow](documentation.md#read-the-docs-setup)), and that the
+  new version's sidebar shows the release number rather than `0.0.0` — the
+  latter means the shallow-clone fix in `.readthedocs.yaml` did not take.
+  `latest` moved earlier, when the release PR merged.
 
 If the `publish` job fails after the release exists — a transient PyPI error,
 say — re-run that job from the Actions UI. Do not re-run `release-please`

@@ -27,14 +27,16 @@ Copy the whole file over its counterpart. No merging, no partial application:
 | `ci/workflows/docs.yml` | `.github/workflows/docs.yml` |
 | `ci/workflows/release.yml` | `.github/workflows/release.yml` |
 
-Two of them need a repository setting turning on as well, once each, and
-neither can be done from a commit:
+One of them needs a repository setting turning on as well, and it cannot be
+done from a commit:
 
-- `docs.yml` — **Settings → Pages → Source → GitHub Actions**. Without it the
-  deploy step fails with a permissions error even though the build succeeded.
 - `release.yml` — **Settings → Actions → General → Allow GitHub Actions to
   create and approve pull requests**. Without it release-please fails with
   `GitHub Actions is not permitted to create or approve pull requests`.
+
+`docs.yml` needs nothing: it builds the site as a check and publishes nothing.
+Read the Docs publishes, and its setup lives in
+[`docs/documentation.md`](../docs/documentation.md).
 
 `release.yml` needs four more one-time steps before it can publish anything —
 a `pypi` environment, a trusted publisher registered on PyPI, the Zenodo

@@ -3165,8 +3165,8 @@ existing only in the config file.
 
 ### 6.3 Documentation (Sphinx)
 
-**Built**, in `docs/conf.py` and `ci/workflows/docs.yml`. What follows is the
-plan as written, annotated with what building it changed.
+**Built**, in `docs/conf.py`, `.readthedocs.yaml` and `ci/workflows/docs.yml`.
+What follows is the plan as written, annotated with what building it changed.
 
 - **Sphinx** with `pydata-sphinx-theme` (the NumPy/SciPy/ObsPy house style —
   familiar to this audience, good API-reference layout).
@@ -3249,8 +3249,32 @@ turned out fine.
   fitting) → **Theory** (the normalisation conventions, one page, with the
   Parseval contract stated explicitly) → Tutorial → API reference → Migration
   guide from 0.x → Changelog. Built so far: an index, the four existing prose
-  pages plus `notes/`, `releasing.md`, `roadmap.md`, and the API reference.
-  Theory, tutorial and migration pages are Phase 6.
+  pages plus `notes/`, `releasing.md`, `roadmap.md`, `development.md`,
+  `documentation.md`, and the API reference. Theory, tutorial and migration
+  pages are Phase 6.
+
+**Published by Read the Docs, not GitHub Pages.** The plan said Pages, and
+Pages was built first; it was replaced before anything was deployed, which is
+the cheapest moment to change a decision like this. The reason is versions.
+`actions/deploy-pages` publishes an artefact that *becomes* the whole site, so
+every deploy replaces everything — one site, always showing `main`. That is
+incompatible with telling alpha users to pin an exact version, because the
+documentation they need is then never the documentation they get. Keeping
+history on Pages means either accumulating directories on a `gh-pages` branch
+or rebuilding every tag on every deploy; Read the Docs does versions per tag, a
+`stable` alias, a switcher, cross-version search and per-pull-request previews
+without any of that machinery.
+
+What stays in CI is the `docs` job, reduced to a build check. It is worth
+keeping for two reasons that survive the move: it does not depend on a third
+party being up, and autodoc imports every module it documents, so it is an
+import check as much as a docs check.
+
+One trap, recorded because it is silent rather than loud: Read the Docs clones
+shallow and without tags, and `hatch-vcs` derives the version from
+`git describe`. Without the `post_checkout` unshallow in `.readthedocs.yaml`
+every build reports the `0.0.0` fallback in the sidebar — including tagged
+ones, which is exactly where it would be believed.
 
 `roadmap.md` is this section's §7 restated for a reader rather than for
 whoever is doing the work: stages, no durations, and no phase numbers. The
@@ -3327,7 +3351,7 @@ which is what the delta from 0.1.1 actually is.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `test.yml` | PR, push | `lint` (ruff check + format), `typecheck` (mypy), `test` matrix 3.11/3.12/3.13 × ubuntu/macos (pytest + coverage → Codecov), `floors` (`--resolution lowest-direct`, see §6.6). Five job names, not one matrix — the row used to describe them as a single matrix step |
-| `docs.yml` | PR, push | `sphinx-build` (no `-W`, see §6.3); on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
+| `docs.yml` | PR, push | `sphinx-build` (no `-W`, see §6.3), as a check only — Read the Docs publishes. Also an import check, since autodoc imports every module it documents |
 | `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
 | `release.yml` | push to `main` | `release-please` maintains the release PR and creates tag + GitHub Release on merge; a gated `publish` job then builds from the tag and uploads to PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
 
@@ -3346,7 +3370,7 @@ event as the PyPI upload. Branch protection on `main`: require `test`, `docs`
 and `build` green.
 
 Six repository settings have to be turned on by hand before a release can
-happen — Pages, Actions-may-open-PRs, the `pypi` environment, the PyPI trusted
+happen — Actions-may-open-PRs, the `pypi` environment, the PyPI trusted
 publisher, the Zenodo webhook, and branch protection. None of them is
 expressible in a commit, so they are written down in `docs/releasing.md`
 instead of being remembered.
@@ -3544,7 +3568,7 @@ Each phase ends green on CI and is independently mergeable.
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
-| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → GH Pages~~ ✅; ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. All three workflows are staged in `ci/` and need copying across, and six repository settings have to be turned on by hand: `docs/releasing.md` lists them. Parallel with 2 | 1 | 1–2 days |
+| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → a published site~~ ✅ — Read the Docs rather than GH Pages, for versions (§6.3); ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. All three workflows are staged in `ci/` and need copying across, and six repository settings have to be turned on by hand: `docs/releasing.md` lists them. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
 | **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/` ✅; ~~`Fitting.py` → `fitting/`~~ ✅ — `base`/`guess`/`spectrum`/`event`, 745 lines to four modules of 30–300, public names unchanged; models as objects ✅; `io/`; `viz/`; non-mutating operations; mypy override list → empty ✅; `picks/` per §4.9 ✅ | 3 | 4–6 days |

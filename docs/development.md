@@ -262,7 +262,7 @@ request.
 | `floors` | `test.yml` | installs the *declared minimum* versions and runs the suite |
 | `notebook` | `test.yml` | executes the tutorial notebook |
 | `build` | `build.yml` | sdist + wheel, `twine check`, install-from-wheel smoke test |
-| `docs` | `docs.yml` | builds the site; deploys to Pages from `main` only |
+| `docs` | `docs.yml` | builds the site as a check; publishing is Read the Docs' job |
 | `release` | `release.yml` | the release PR, and publishing — see below |
 
 Two of those are worth understanding before you read a failure from them:
