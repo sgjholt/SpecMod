@@ -98,8 +98,10 @@ surprise.
 
 ### Historic versions
 
-**Today there is one site and it tracks `main`.** To read the documentation for
-a released version you have to build it from its tag:
+**Today there is one site and it tracks `main`.** Every merge overwrites it, so
+someone pinned to `0.2.0` — which the alpha notice tells them to be — reads
+documentation for code they do not have. To read the docs for a released
+version they have to build it themselves from the tag:
 
 ```sh
 git worktree add /tmp/docs-v0.2.0 v0.2.0
@@ -107,33 +109,54 @@ uv pip install -e '/tmp/docs-v0.2.0[docs]'
 sphinx-build -b html /tmp/docs-v0.2.0/docs /tmp/docs-v0.2.0/_build
 ```
 
-This matters more than usual here, because the package is alpha and users are
-told to pin an exact version — so the documentation they need is not the
-documentation they get. Two credible ways to fix it:
+The shape of the fix is the familiar one, as on
+[scikit-learn](https://scikit-learn.org): one directory per version, a
+`stable` that points at the newest release, a `dev` built from the trunk, and
+a dropdown in the header to move between them.
 
-**Deploy into versioned subdirectories.** On a release, build the tag and
-deploy to `/<version>/` while `main` keeps deploying to the root; add a version
-dropdown. The theme supports one directly: `html_theme_options["switcher"]`
-takes a `json_url` pointing at a `switcher.json` listing the versions and a
-`version_match` naming the current one (verified against pydata-sphinx-theme
-0.20.0's own validation code). No new service and no new dependency; the cost
-is workflow logic and a `switcher.json` that has to be kept correct.
+| Path | Built from | For |
+|---|---|---|
+| `/stable/` | the newest `v*` tag | the default a link should point at |
+| `/dev/` | `main` | what is coming, and what contributors read |
+| `/0.2/`, `/0.3/`, … | each release tag | anyone pinned to that version |
+| `/` | a redirect to `/stable/` | — |
 
-**[Read the Docs](https://docs.readthedocs.io).** Versioning per tag and
-branch, a version switcher, server-side search and per-pull-request preview
-builds, all native. The cost is a second service, a `.readthedocs.yaml`, and
-the canonical URL moving off `github.io`.
+The dropdown itself is already supported by the theme and needs no new
+dependency: `html_theme_options["switcher"]` takes a `json_url` pointing at a
+`switcher.json` that lists the versions, plus a `version_match` naming the
+current one. Checked against pydata-sphinx-theme 0.20.0's own validation code
+rather than assumed.
 
-There is also [sphinx-multiversion](https://holzhaus.github.io/sphinx-multiversion/),
-which builds every tag into subdirectories from one checkout. It works and it
-keeps everything on GitHub Pages, but weigh the maintenance: 0.2.4, released
-October 2024, four years after the previous release, one maintainer.
+**The part that is not obvious: the current deploy cannot do this.**
+`actions/deploy-pages` publishes an artefact that *becomes* the whole site, so
+each deployment replaces everything that was there. Directories do not
+accumulate. Adding versions therefore means choosing one of two models:
+
+- **Accumulate on a `gh-pages` branch.** Each build is committed into its own
+  directory on a branch that Pages serves, so a version is built once — at
+  release — and then frozen exactly as it was. This is what
+  [sphinx-multiversion](https://holzhaus.github.io/sphinx-multiversion/) and
+  most projects do. The cost: Pages' source setting moves from *GitHub Actions*
+  back to *deploy from a branch*, and the published site becomes real state in
+  the repository rather than a pure function of `main`.
+- **Rebuild every version on every deploy.** Keeps the current Actions-based
+  Pages source and holds no state — the site is always exactly what the tags
+  say. The cost is build time growing with each release, and a worse failure
+  mode: an old tag has to keep building against whatever its dependencies
+  resolve to years later, and when it stops, it takes the whole deploy with it.
+
+**Accumulating on `gh-pages` is the better trade here**, precisely because
+historic documentation *should* be frozen at what it said when that version
+shipped. Rebuilding 0.2's docs in 2027 does not make them more true.
+
+The alternative to building any of it: **[Read the Docs](https://docs.readthedocs.io)**
+does versioning per tag and branch, the switcher, server-side search across
+versions, and per-pull-request previews, all natively. The cost is a second
+service, a `.readthedocs.yaml`, and the canonical URL moving off `github.io`.
 
 **Recommendation:** do it at the first release, not before — there is nothing
-to keep historic until a `v*` tag exists. If per-PR previews are wanted too,
-Read the Docs gets both for one setup; if the priority is keeping everything in
-this repository and on GitHub Pages, versioned subdirectories plus the theme's
-switcher is a contained change to `docs.yml`.
+to keep historic until a `v*` tag exists, and until then `/dev/` and `/stable/`
+would be the same build under two names.
 
 ### Per-pull-request preview URLs
 
