@@ -3,6 +3,33 @@
 Grouped by what a run does in order: get the data, cut it, transform it, fit
 it, write it out.
 
+**If you are writing a package on top of SpecMod, start with
+[`specmod.api`](#the-stable-surface) instead.** It is a small, frozen subset of
+what follows, and the only part that carries a compatibility promise — the rest
+of this page documents internals that move between `0.x` releases. See
+[`CONTRIBUTING.md`](https://github.com/sgjholt/SpecMod/blob/main/CONTRIBUTING.md)
+for the exact scope of that promise.
+
+## The stable surface
+
+```{eval-rst}
+.. automodule:: specmod.api
+   :exclude-members: AmplitudeKind, Config, InternalError, InvalidInputError,
+                     MissingBackendError, Motion, ResolvedConfig, SpecModError,
+                     Spectrum, SpectrumPair, config_hash, load_config,
+                     make_window, window_correction
+.. automodule:: specmod.exceptions
+```
+
+The names excluded above are re-exports, documented at the path they are
+defined — `Spectrum` and `SpectrumPair` under [Spectra](#spectra), `Config`
+and `load_config` under [Configuration](#configuration), `make_window` and
+`window_correction` under [Transforms](#transforms). Documenting them twice
+gives every cross-reference to them two targets and makes all of them
+ambiguous, which is the same trap package-level `automodule` set earlier on
+this page. `specmod.api.__all__` is the authoritative list, and
+`tests/test_api_surface.py` asserts it.
+
 Packages are documented at the path you import from — `specmod.picks.PickSet`,
 not `specmod.picks.base.PickSet`. Documenting both the package and its
 submodules gave every re-exported name two targets and made every

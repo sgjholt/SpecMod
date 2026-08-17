@@ -21,6 +21,13 @@ class ModelResult:
     #: the shipped default, never does. `stderr` on every parameter is then
     #: `None`, and that is a property of the method rather than a failed fit.
     errorbars: bool
+    #: The covariance matrix over the *varied* parameters, in their order, or
+    #: `None` under a minimiser that estimates none — the same condition
+    #: `errorbars` reports. Its axes are not `params`, which may also hold
+    #: fixed ones.
+    covar: NDArray[np.float64] | None
+    #: Number of data points the fit actually used.
+    ndata: int
     def fit_report(self, **kwargs: Any) -> str: ...
     def eval(self, params: Parameters | None = ..., **kwargs: Any) -> Any: ...
 

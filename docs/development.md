@@ -23,6 +23,7 @@ This page is the hub. The three companions are
 | Understand versions and releases | [Development versus release](#development-versus-release) |
 | Preview or publish docs | [Documentation workflow](documentation.md) |
 | Use Claude or Codex on this repo | [Working with agents](#working-with-agents) |
+| Build a package on top of SpecMod | [The stable surface](#the-stable-surface) |
 
 ## Quick start
 
@@ -358,6 +359,40 @@ on once and cannot be expressed in a commit, is in
   `magna_2020_v1` and `magna_2020_v2` are separate entries, so a published
   result pinned to v1 keeps fetching v1 forever. Nothing revises an entry in
   place.
+
+## The stable surface
+
+`specmod.api` is a small re-export module, and the only part of SpecMod that
+carries a compatibility promise: one minor release of `DeprecationWarning`
+before anything on it is removed or changes signature, even while the package
+is `0.x`. Everything else may move in any release.
+
+It exists for downstream packages. SpecMod's internals are still being
+refactored; a package that imports `specmod.core` or `specmod.fitting` directly
+takes on that churn, and one that imports `specmod.api` does not.
+
+Five properties hold across the surface, and they are enforced by
+`tests/test_api_surface.py` rather than promised in prose: **path-free**
+(nothing on it opens a file — a consumer that stores its data on S3 has to be
+able to hand in arrays), **deterministic**, **non-mutating**, **quiet** (no
+`print`), and **typed errors** rooted at `SpecModError`, distinguishing a
+caller's bad input from a missing optional backend from an internal bug.
+
+Adding an export is a compatibility obligation, and the procedure is in
+[`CONTRIBUTING.md`](https://github.com/sgjholt/SpecMod/blob/main/CONTRIBUTING.md).
+
+The audit that established what could go on it — path coupling, hidden state,
+determinism, and what one multitaper estimate actually costs — is in
+[Audit: what `specmod.api` found in core](notes/api_audit.md). Two of its
+findings are open defects in core rather than in the surface: an import-time
+config read in `fitting/base.py`, and nine `print()` calls on paths a caller
+reaches.
+
+```{toctree}
+:hidden:
+
+notes/api_audit
+```
 
 ## Working with agents
 
