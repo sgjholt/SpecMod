@@ -384,9 +384,12 @@ Adding an export is a compatibility obligation, and the procedure is in
 The audit that established what could go on it — path coupling, hidden state,
 determinism, and what one multitaper estimate actually costs — is in
 [Audit: what `specmod.api` found in core](notes/api_audit.md). Two of its
-findings are open defects in core rather than in the surface: an import-time
-config read in `fitting/base.py`, and nine `print()` calls on paths a caller
-reaches.
+findings were defects in core rather than in the surface, both since fixed and
+both now guarded package-wide by `tests/test_ambient_state.py`: **no module
+reads configuration at import time**, and **no module prints**. Those two
+properties are worth knowing before adding code — a config read at module
+level freezes the working directory the process started in, and a `print` is
+invisible to a caller capturing logs.
 
 ```{toctree}
 :hidden:

@@ -13,6 +13,8 @@ station codes; it is replaced by the acquisition layer in REFACTOR_PLAN §5.2.
 from __future__ import annotations
 
 import contextlib
+import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import matplotlib
@@ -25,6 +27,10 @@ from obspy.core.event import Catalog, Event, WaveformStreamID
 from obspy.core.event import Pick as ObsPyPick
 
 from specmod.picks import PickSet, SnufflerReader, from_catalog, select_event
+
+#: See the note in `specmod.fitting.event`: diagnostics go here, and nothing in
+#: this package configures logging on a caller's behalf.
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
@@ -247,7 +253,7 @@ def plot_traces(
         fig.savefig(save)
         fig.clear()
         plt.close(fig)
-        print("deleted td fig")
+        logger.debug("closed the time-domain figure after saving to %s", save)
 
 
 def stream_distance_sort(st: Stream, dist_met: str = "repi") -> Stream:
@@ -260,7 +266,11 @@ def stream_distance_sort(st: Stream, dist_met: str = "repi") -> Stream:
     try:
         st = obspy.Stream(sorted(st, key=lambda x: x.stats[dist_met]))
     except KeyError:
-        print("WARNING: No distance info, stream not sorted by distance.")
+        warnings.warn(
+            f"No {dist_met!r} on these traces, so the stream is returned "
+            "unsorted. Set distances with `preprocess.set_stream_distance`.",
+            stacklevel=2,
+        )
 
     return st.copy()
 

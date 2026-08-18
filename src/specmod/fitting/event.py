@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -9,7 +11,7 @@ import pandas as pd
 
 from .. import config as cfg
 from ..tables import read_table, write_table
-from .base import PLOT_COLUMNS, SpectraLike
+from .base import SpectraLike, plot_columns
 from .guess import fittable_signal, initial_guess
 from .spectrum import FitSpectrum
 
@@ -18,6 +20,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from pathlib import Path
 
 __all__ = ["FitSpectra"]
+
+
+#: Per-station progress goes here rather than to stdout. A library must not
+#: configure logging for its host, so there is no `basicConfig` anywhere in
+#: this package: a caller that wants to see these calls `logging.basicConfig`
+#: itself, and one that does not is not written to by surprise.
+logger = logging.getLogger(__name__)
 
 
 class FitSpectra:
@@ -69,7 +78,11 @@ class FitSpectra:
     def get_fit(self, id: str) -> FitSpectrum | None:
         if id.upper() in self.models:
             return self.models[id.upper()]
-        print(f"WARNING: {id.upper()} not in group of available fits.")
+        warnings.warn(
+            f"{id.upper()} is not among the fitted stations "
+            f"({', '.join(sorted(self.models)) or 'none'}); returning None.",
+            stacklevel=2,
+        )
         return None
 
     def fit_spectra(self, weight_method: str | None = None, **kwargs: Any) -> None:
@@ -97,10 +110,12 @@ class FitSpectra:
                     mod.fit_mod(weights=1 / mod.mod_freq, **kwargs)
                 else:
                     mod.fit_mod(**kwargs)
-            except ValueError as msg:
-                print(msg)
-                print("-" * 40)
-                print(f"Skipping {name}")
+            except ValueError as error:
+                # `logging`, not `warnings`, and the difference matters here:
+                # warnings are deduplicated per code location by default, so a
+                # run that skipped twenty stations would report one. Each skip
+                # is a station missing from the results and has to be visible.
+                logger.warning("skipping %s: %s", name, error)
 
         self.__set_fit_models_to_spectrum()
         self.__generate_group_fit_table()
@@ -162,11 +177,14 @@ class FitSpectra:
         if id in self.models:
             self.models[id].reset()
         else:
-            print(f"WARNING: {id} not in available channels.")
+            warnings.warn(
+                f"{id} is not among the fitted stations; nothing was reset.",
+                stacklevel=2,
+            )
 
     def quick_vis(self, save: str | None = None) -> None:
         rows = self.__num_rows()
-        fig, axes = plt.subplots(rows, PLOT_COLUMNS, figsize=(17, int(rows * 5)))
+        fig, axes = plt.subplots(rows, plot_columns(), figsize=(17, int(rows * 5)))
         # `strict=False`: the grid is rounded up to whole rows, so there are
         # more axes than models by construction.
         for ax, mod in zip(axes.flatten(), self.models.values(), strict=False):
@@ -203,8 +221,11 @@ class FitSpectra:
 
     def __check_wm(self, wm: str) -> str:
         if wm not in ["log", "none"]:
-            print(f"WARNING: did not recognise weight method {wm}.")
-            print("Setting to none...")
+            warnings.warn(
+                f"Unknown weight method {wm!r}; expected 'log' or 'none'. "
+                "Falling back to 'none'.",
+                stacklevel=3,
+            )
             wm = "none"
         return wm
 
@@ -257,7 +278,7 @@ class FitSpectra:
 
     def __num_rows(self) -> int:
         count = len(self)
-        cols = PLOT_COLUMNS
+        cols = plot_columns()
         if count % cols > 0:
             return int((cols * (int(count / cols) + 1)) / cols)
         return int(count / cols)

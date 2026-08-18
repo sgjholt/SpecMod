@@ -74,20 +74,33 @@ use it.
 
 ## 4. Hidden global or module-level state
 
-Four instances. Three are benign and one is not.
+Four instances. Three are benign; the fourth was not, and is fixed.
 
-**A module-level config read, at import time.** `fitting/base.py` line 26:
+**A module-level config read, at import time — fixed.** `fitting/base.py`
+had:
 
 ```python
 PLOT_COLUMNS = cfg.load_config().config.viz.plot_columns
 ```
 
 `load_config()` with no arguments resolves against the *current working
-directory* and the environment. So importing `specmod.fitting` reads whatever
-`specmod.toml` happens to be next to the process, once, and freezes it for the
-lifetime of the interpreter. Two jobs in one worker with different project
-directories get the first one's value. This is the only genuine replay hazard
-found, and it is the exact pattern §2.3 of the refactor plan set out to remove.
+directory* and the environment. At module level that answer is frozen for the
+life of the interpreter, so two jobs in one worker with different project
+directories both get the first one's value. Reproduced before fixing:
+importing from a project whose `specmod.toml` said `plot_columns = 5`, then
+moving to one that resolves to 3, left the constant at 5.
+
+It is now `fitting.plot_columns()`, resolved per call; the old name still
+imports and emits a `DeprecationWarning` naming the replacement and the
+release it goes in. `tests/test_ambient_state.py` parses **every** module in
+the package and fails on a module-level `load_config()` anywhere, because this
+is the kind of defect that comes back one file at a time.
+
+That test found nothing else — but only after its own first version was
+wrong. It used `ast.walk`, which descends into method bodies, and flagged
+three modules that read configuration perfectly properly at call time. The
+walk now stops at a function body while still checking default arguments and
+decorators, which *do* run at import and are where this would hide next.
 
 **Implicit config reads at call time**, in twelve places including
 `fitting/event.py`, `fitting/guess.py`, `fitting/spectrum.py`, `pipeline.py`
@@ -112,11 +125,22 @@ required rather than recommended.
 
 Not asked for, but found while looking, and both affect a consumer:
 
-**Nine `print()` calls** in `fitting/event.py` and `utils.py`, on paths a
-caller reaches — an unrecognised weight method, a station that failed to fit, a
-missing id. A service capturing logs per job gets nothing, and a CLI writing to
-a pipe gets its output corrupted. `specmod.api` does not currently route
-through any of them, but `FitSpectra` does.
+**Nine `print()` calls — fixed** in `fitting/event.py` and `utils.py`, on
+paths a caller reaches: an unrecognised weight method, a station that failed
+to fit, a missing id. A service capturing logs per job got nothing from them,
+and a CLI writing to a pipe got its output corrupted.
+
+Each became a `warnings.warn` or a module-logger call, and which one is not a
+matter of taste. **`warnings` deduplicates by code location**, so the
+per-station failure inside `fit_spectra`'s loop would report the first station
+and silently drop the rest — and a station that could not be fitted is missing
+from the results, so that is precisely the line that must not collapse. That
+site logs; the caller-actionable ones warn. Nothing calls `logging.basicConfig`
+anywhere in the package: a library that configures logging decides formatting
+and destination for its host process.
+
+The same package-wide test asserts no module calls `print` at all. The count
+is now zero across `src/specmod`, `cli.py` included — it uses `click.echo`.
 
 **Uncertainty depends on the minimiser, and the default provides none.**
 `[fitting] method` ships as `powell`, which estimates no covariance matrix, so
