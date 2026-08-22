@@ -628,6 +628,58 @@ failing checks to one, and the survivor was `cwt` alone, disagreeing by 1-2%
 on four stations. Small enough to look like tolerance, but it was another
 branch — the "already touching" guard inside the lift.
 
+**The `cwt` residual, measured.** After those four, `cwt` was still held at
+`rtol = 5e-2` on CI for a disagreement nobody could explain. Measured on a box
+matching the reference environment exactly, every proposed mechanism fails:
+
+| Hypothesis | Measurement | Verdict |
+|---|---|---|
+| Linux disagrees with a Linux-generated reference | `cwt` reproduces it to **3.8e-16** here | it is that *runner*, not Linux |
+| A remaining discontinuity in the `cwt` path | 1e-13 in moves the noise 8.7e-14 out, **no step, all 28 windows** | linear; so 1-2% out needs 1-2% *in*, which floating point cannot supply |
+| A sample sitting on a bin edge | closest `cwt` sample is **5.7e-4 of a bin** from an interior edge; `fft` 1.4e-6 | not fragile, and `fft` is the fragile one |
+| The window differs on CI | one sample fewer moves `fft` noise **8.5%** and `cwt` **3.6%** | ruled out — `fft` would disagree first, and it agrees exactly |
+| Quantile fragility from short arrays (51 vs 109) | 1e-15 moves `cwt`'s worst quantile **2.4e-14**, `fft`'s 5.1e-13 | `cwt` is the *more* stable of the two |
+| PyWavelets, or threading | the estimator is hand-written; the transform is a batched `numpy.fft.ifft` | neither applies |
+
+So the CWT is as stable as everything else, and `5e-2` was twelve orders of
+magnitude looser than anything reproducible — wide enough to hide the real
+difference rather than describe it. It was set to **`1e-3`** as an experiment:
+if the residual was still there CI would report it with per-station detail,
+and if it was not the entry could go. Either outcome is worth more than the
+number that was there.
+
+**The experiment's answer: the residual is real, and it is the machine.** One
+CI run, six test jobs, one commit:
+
+| Job | Result |
+|---|---|
+| ubuntu 3.11 | fails — 8 differences, 3 windows, worst 1.44e-2 |
+| ubuntu 3.13 | fails — the *same* 8, the same windows, the same magnitudes to 3 s.f. |
+| ubuntu 3.12 | passes |
+| macOS 3.11, 3.12, 3.13 | pass |
+
+Two things follow that the earlier round could not establish. It is
+deterministic rather than flaky, since two jobs on different Python versions
+produce identical numbers. And it is not the OS, not the Python version, and
+not a package version that tracks the Python version — a third ubuntu job in
+the same run agrees with the reference exactly. What is left is which machine
+the job landed on, which is what "it is that *runner*, not Linux" suspected
+and this is the same-run control for.
+
+The sharpest datum is the one that localises it: on the machine that
+disagrees, `fft`, `welch`, `multitaper` and `quadratic` all still reproduce
+the reference byte for byte. It is in the CWT path, not in that machine's
+arithmetic in general.
+
+The tolerance is now **`2e-2`** — the worst observed difference plus about 40%
+of headroom, and 2.5 times tighter than the `5e-2` it replaces. It is a bound
+on the residual, not an explanation of it, and it is labelled that way in the
+test: while the mechanism is unidentified and reproduces on no box available
+to work on, a bound with numbers behind it is the most that can honestly be
+claimed. Taking it further needs the failing machine — the cwt path run on it
+and on a passing one, diffing the three named windows' noise arrays *before*
+binning rather than after.
+
 **Measured after the fix**, end to end over all 28 windows: perturbing the
 input by 1e-15 moves the noise by 1.8e-11 and **no band edge at all**. The
 response is linear. The golden reference's exact noise comparison, which had
@@ -2237,14 +2289,42 @@ numbers:
   record; the rest is the taper. That is **0.03 in Mw** — negligible, but
   one-directional, so it is asserted as a signed bias rather than absorbed
   into a symmetric tolerance.
-- **The fit belongs on velocity, not displacement.** The model carries a motion
-  factor, so `llpsp` is the displacement plateau either way — but
-  `initial_guess` takes the spectral *peak* as the `f_c` guess, and a
-  displacement spectrum falls monotonically. Fitting the displacement set puts
-  the guess at the low band edge and the fit settles near it: `f_c` came back
-  **1.6 instead of 8.0**, and `Ω₀` 0.6 magnitude units low. Nothing warns. That
-  is a sharp edge on a public API, and a candidate for `initial_guess` to
-  either detect the motion or refuse it.
+- **The fit is done in the sensor's natural units** — velocity for these
+  instruments — and that is a general rule rather than a quirk of this
+  pipeline. The model carries a motion factor, so `llpsp` is the displacement
+  plateau whichever domain is fitted; what changes is the record being fitted
+  and the noise on it.
+
+  Converting first is not a neutral change of view. Integrating to
+  displacement divides by `2πf`, which implicitly low-passes: it damps
+  high-frequency noise, but it also destroys the feature the guess is read
+  from. Differentiating to acceleration multiplies by `2πf` and blows the
+  high-frequency noise up instead.
+
+  Velocity is also the convenient domain, because **it peaks at `f_c`** — so
+  `initial_guess` taking the spectral peak is exact rather than approximate.
+  Maximising `f·[1 + (f/f_c)^{γn}]^{-1/γ}` puts the stationary point at
+  `(n − 1)·(f/f_c)^{γn} = 1`, which is `f = f_c` **whenever `n = 2`, for any
+  `γ`** — the corner's sharpness does not enter. So it holds for the whole
+  omega-squared family, not just Brune: measured on a 400001-point grid, both
+  registered sources peak at 8.0000 Hz for a true 8.0, `brune` (`γ=1`) and
+  `boatwright` (`γ=2`) alike.
+
+  That is worth knowing before a source model with `n ≠ 2` is registered,
+  because the guess silently stops being exact at that point — the peak moves
+  to `f_c·(n−1)^{−1/(γn)}`.
+
+  In displacement and acceleration the spectrum is monotonic over the band, so
+  the "peak" is just whichever edge it was handed — 0.1 Hz and 100 Hz on the
+  same grid.
+
+  So `FitSpectra(spectra.to_motion("displacement"))` got a guess at the bottom
+  of the band and settled near it: `f_c` came back **1.6 instead of 8.0**, `Ω₀`
+  0.6 magnitude units low, with nothing warning. The design was right and the
+  silence was not, so `initial_guess` now warns when the spectrum's motion is
+  not one the peak means anything in. `FittableView` grew a `motion` property
+  to make that possible — it reads through to the pair like the rest, and a
+  fitter has to know the domain for exactly this reason.
 
 **Tier 3 — golden/regression.** Run the *current* code on the tutorial event and
 on Magna (§5.2.4), and snapshot `freq`, `amp`, `bsnr`, `ubfreqs` and the fit
@@ -3085,17 +3165,49 @@ existing only in the config file.
 
 ### 6.3 Documentation (Sphinx)
 
+**Built**, in `docs/conf.py`, `.readthedocs.yaml` and `ci/workflows/docs.yml`.
+What follows is the plan as written, annotated with what building it changed.
+
 - **Sphinx** with `pydata-sphinx-theme` (the NumPy/SciPy/ObsPy house style —
   familiar to this audience, good API-reference layout).
 - `myst-parser` so prose pages can stay Markdown; `myst-nb` to execute and render
   the tutorial notebook as a docs page, which makes the tutorial a **tested**
-  artefact rather than a snapshot that silently rots.
-- `autodoc` + `napoleon` (numpydoc style) + `sphinx-autodoc-typehints`, so
-  signatures come from the annotations rather than being hand-maintained.
-- `intersphinx` to numpy, scipy, obspy, lmfit, matplotlib.
+  artefact rather than a snapshot that silently rots. `myst-nb` waits for
+  Phase 6; until then `docs/notebooks/` is excluded, because copying an
+  unexecuted notebook into the site is worse than leaving it out.
+- `autodoc` + `napoleon` (numpydoc style), signatures coming from the
+  annotations rather than being hand-maintained. **Not**
+  `sphinx-autodoc-typehints`, which this line named until it was measured:
+  with `autodoc_typehints = "description"` the built-in extension produced the
+  same 367 documented objects, while the third-party one calls an API Sphinx
+  10 removes and emits a deprecation warning per module. Dropped, after
+  checking rather than assuming — removing a dependency that was quietly doing
+  work would have been a bad trade.
+- `intersphinx` to python, numpy, scipy, pandas, matplotlib, obspy and lmfit.
 - `sphinx.ext.doctest` — the units/normalisation examples in §4.2 and §4.4 are
-  exactly the kind of thing that should be executable in the docs.
-**The equations in `docs/` do not render today, and building this is the fix.**
+  exactly the kind of thing that should be executable in the docs. Not turned
+  on yet; the examples have to be written as doctests first.
+
+Four things the first build found, each fixed rather than tolerated:
+
+- **Ambiguous cross-references.** Documenting a package *and* its submodules
+  gave every re-exported name two targets, so `PickSet`, `SensorID`,
+  `Resolution` and `FitSpectra` were all ambiguous. Packages are now documented
+  at the path you import from.
+- **A link into `REFACTOR_PLAN.md`**, which is excluded on purpose — it is a
+  working document, not documentation. `processing.md` now links to it on
+  GitHub instead.
+- **`notes/` was excluded on that same reasoning, and that was wrong.**
+  `choosing_a_transform.md` links to `notes/window_position.md` for a per-trace
+  table, which makes it documentation. Now built, and reachable through a
+  hidden toctree on the page that cites it.
+- **`HOLT_2019_UTAH` broke autodoc.** It is a callable dataclass instance
+  documented as module data, and autodoc's signature formatter raises on it
+  where `inspect.signature` handles it fine. Excluded, with the value written
+  out in prose.
+
+**The equations in `docs/` did not render before this, and building it was the
+fix.**
 `processing.md` and `choosing_a_transform.md` are written in LaTeX with
 `$...$` and `$$...$$`, which is what MyST's `dollarmath` extension reads — and
 that extension does not exist yet, because neither does the Sphinx build. The
@@ -3103,35 +3215,73 @@ only renderer these files currently meet is GitHub's, whose math support is
 both newer and weaker, so the equations that state the Parseval contract and
 the window refinement are being read as literal dollar signs and backslashes.
 
-Two things to do when this section is built rather than before, since neither
-is verifiable without a renderer to check against:
+Two things were listed here to do at build time, since neither was verifiable
+without a renderer to check against. Measured against the built site:
 
-- Turn on `myst_enable_extensions = ["dollarmath", "amsmath"]`. Without
-  `dollarmath` MyST does not read `$...$` at all, so adding Sphinx without it
-  would change nothing.
-- Fix the syntax that is wrong independently of the renderer. A scan finds one
-  display block in `processing.md` without a blank line before it and one
-  spanning multiple lines, both of which break under MyST as well as GitHub.
-  The 26 inline expressions containing underscores are the other risk: on
-  GitHub the emphasis parser can reach them before the math parser does.
+- **`dollarmath` was necessary, `amsmath` was not.** `myst_enable_extensions`
+  turns on `dollarmath` (plus `colon_fence`, `deflist` and `substitution`).
+  `amsmath` covers bare `\begin{align}` outside `$` delimiters, and there are
+  none — the one `\begin{cases}` in `processing.md` sits inside `$$` and
+  renders without it.
+- **The syntax predicted to break does not.** The prediction was one display
+  block without a preceding blank line, one spanning two lines, and 26 inline
+  expressions containing underscores. Built: `processing.html` and
+  `choosing_a_transform.html` contain **no** literal `$` at all and 120 math
+  nodes between them, the two-line block and the `cases` block included. The
+  risk was real on GitHub's renderer; MyST's parses all of it.
 
-Worth stating the general point, because it is the same shape as §6.6. Prose
+The general point stands anyway, because it is the same shape as §6.6: prose
 that has never been rendered is prose that has never been checked. These files
-have been edited a dozen times in this refactor against a renderer nobody has
-run.
+were edited a dozen times in this refactor against a renderer nobody had run,
+and running it found four separate faults (above) even though the equations
+turned out fine.
 
-- `sphinx-build -W` (warnings as errors) in CI: a broken cross-reference fails
-  the build. **Not** an undocumented public symbol, which is what this line
-  used to claim — `-W` promotes warnings that Sphinx already emits, and
-  autodoc emits none for a symbol it was never asked to document. Catching
-  that needs `sphinx.ext.coverage` with `coverage_show_missing_items`, or
-  `nitpicky` for unresolved references. Worth having; it is a different
-  setting, and writing it as a property of `-W` would have meant discovering
-  the gap only after trusting it.
+- **No `sphinx-build -W`**, though this line asked for it twice. `-W` promotes
+  warnings Sphinx emits — and intersphinx emits one whenever any of the seven
+  inventories is briefly unreachable, which makes a third party's downtime a
+  red build. That is flakiness, not a check; a genuinely broken build exits
+  non-zero on its own. (The line before that claimed `-W` fails on an
+  undocumented public symbol, which it does not: autodoc emits no warning for
+  a symbol it was never asked to document. That needs `sphinx.ext.coverage`
+  with `coverage_show_missing_items`, or `nitpicky` for unresolved references.
+  Still worth having, and still a different setting.)
 - Structure: Getting started → User guide (preprocessing, transforms, SNR,
   fitting) → **Theory** (the normalisation conventions, one page, with the
   Parseval contract stated explicitly) → Tutorial → API reference → Migration
-  guide from 0.x → Changelog.
+  guide from 0.x → Changelog. Built so far: an index, the four existing prose
+  pages plus `notes/`, `releasing.md`, `roadmap.md`, `development.md`,
+  `documentation.md`, and the API reference. Theory, tutorial and migration
+  pages are Phase 6.
+
+**Published by Read the Docs, not GitHub Pages.** The plan said Pages, and
+Pages was built first; it was replaced before anything was deployed, which is
+the cheapest moment to change a decision like this. The reason is versions.
+`actions/deploy-pages` publishes an artefact that *becomes* the whole site, so
+every deploy replaces everything — one site, always showing `main`. That is
+incompatible with telling alpha users to pin an exact version, because the
+documentation they need is then never the documentation they get. Keeping
+history on Pages means either accumulating directories on a `gh-pages` branch
+or rebuilding every tag on every deploy; Read the Docs does versions per tag, a
+`stable` alias, a switcher, cross-version search and per-pull-request previews
+without any of that machinery.
+
+What stays in CI is the `docs` job, reduced to a build check. It is worth
+keeping for two reasons that survive the move: it does not depend on a third
+party being up, and autodoc imports every module it documents, so it is an
+import check as much as a docs check.
+
+One trap, recorded because it is silent rather than loud: Read the Docs clones
+shallow and without tags, and `hatch-vcs` derives the version from
+`git describe`. Without the `post_checkout` unshallow in `.readthedocs.yaml`
+every build reports the `0.0.0` fallback in the sidebar — including tagged
+ones, which is exactly where it would be believed.
+
+`roadmap.md` is this section's §7 restated for a reader rather than for
+whoever is doing the work: stages, no durations, and no phase numbers. The
+durations here are estimates that have already been wrong; publishing them on
+the site would turn an estimate into a promise. It says explicitly that the
+stages become milestones against released versions once there are releases to
+anchor them to.
 
 The theory page matters more than usual here. The units question that prompted
 this refactor is not obvious from the code, and if the conventions are only
@@ -3149,8 +3299,8 @@ version string is ever committed, so there is nothing to forget to bump and no
 **Version *decision* — `release-please` (GitHub Action).** It parses
 [Conventional Commits](https://www.conventionalcommits.org) since the last
 release, works out the SemVer bump, and opens a standing "release PR" carrying
-the generated `CHANGELOG.md`. Merging that PR creates the tag; the tag triggers
-publication. Nothing is released until a human merges.
+the generated `CHANGELOG.md`. Merging that PR creates the tag and the GitHub
+Release. Nothing is released until a human merges.
 
 That human gate is the reason to prefer `release-please` over
 `python-semantic-release` (which tags on every qualifying push to `main`)
@@ -3160,22 +3310,70 @@ mint a citable version of the software. Use `python-semantic-release` only if yo
 would rather have zero-touch releases and accept that.
 
 This does impose Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`,
-`feat!:` for breaking) on commit messages, enforced by a `commitlint` pre-commit
-hook. It is a small discipline and it is what makes the changelog automatic.
+`feat!:` for breaking) on commit messages. The convention is followed by hand:
+there is no `commitlint` hook, and this paragraph claimed one until §6.6 went
+looking. It is a small discipline and it is what makes the changelog automatic.
+
+**Built, in `release-please-config.json` and `ci/workflows/release.yml`.**
+Three settings there are load-bearing, and each was chosen against a measured
+consequence rather than a default:
+
+- **`include-component-in-tag: false`.** Left on, release-please tags
+  `specmod-v0.2.0`, which `pyproject.toml`'s `--match v[0-9]*` does not
+  describe and its `tag_regex` does not parse. The wheel would then be built
+  as `0.1.1.postN.devN` and uploaded under that name, which PyPI does not let
+  you take back. `tests/test_release_config.py` asserts the two formats agree;
+  `tools/check_built_version.py` re-checks the artefact between the build and
+  the upload, because a configuration test cannot see a build.
+- **`bump-minor-pre-major: true`.** The history holds two breaking commits
+  (`30b4e89`, `628d36d`). Without this, either one proposes `1.0.0` — a
+  version that says the API has stopped moving, with a DOI attached.
+- **Explicit `changelog-sections`.** The default preset hides `refactor`,
+  `docs`, `build`, `test`, `ci`, `style` and `chore`. Over this repository's
+  146 conventional commits that prints 73 and drops 73, so a release that is
+  mostly refactoring would ship an almost empty changelog. `refactor`, `docs`
+  and `build` are shown.
+
+The `simple` release type is what suits a project with no version string to
+update: its only other updater targets `version.txt` with `createIfMissing:
+false`, so with no such file it writes the changelog and nothing else. Checked
+in release-please's source rather than assumed, since a strategy that created
+a second source of truth for the version would defeat `hatch-vcs`.
+
+The manifest starts at `0.1.1` — the version the Magna paper cites, and the
+last one this code had. There are no tags in the repository at all, so that is
+a statement about history rather than something derived; the first release PR
+therefore proposes `0.2.0` and carries the whole refactor as its changelog,
+which is what the delta from 0.1.1 actually is.
 
 ### 6.5 CI (GitHub Actions)
 
 | Workflow | Trigger | Does |
 |---|---|---|
 | `test.yml` | PR, push | `lint` (ruff check + format), `typecheck` (mypy), `test` matrix 3.11/3.12/3.13 × ubuntu/macos (pytest + coverage → Codecov), `floors` (`--resolution lowest-direct`, see §6.6). Five job names, not one matrix — the row used to describe them as a single matrix step |
-| `docs.yml` | PR, push | `sphinx-build -W`; on `main`, deploy to GitHub Pages. Builds on PRs too, so doc breakage is caught before merge |
+| `docs.yml` | PR, push | `sphinx-build` (no `-W`, see §6.3), as a check only — Read the Docs publishes. Also an import check, since autodoc imports every module it documents |
 | `build.yml` | PR, push | sdist + wheel, `twine check`, install-from-wheel smoke test in a clean env (catches missing package data) |
-| `release-please.yml` | push to `main` | maintains the release PR; creates tag + GitHub Release on merge |
-| `publish.yml` | GitHub Release published | PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
+| `release.yml` | push to `main` | `release-please` maintains the release PR and creates tag + GitHub Release on merge; a gated `publish` job then builds from the tag and uploads to PyPI via Trusted Publishing (OIDC — no long-lived token in secrets) |
 
-Zenodo is wired to the GitHub Release webhook, so the DOI is minted from the same
+**That last row was two workflows until it was built.** The plan had
+`publish.yml` triggered by `release: published`, which never fires:
+release-please creates the release with the default `GITHUB_TOKEN`, and per
+GitHub's documentation "events triggered by the `GITHUB_TOKEN` will not create
+a new workflow run". The fix is either a personal access token in secrets —
+the one thing Trusted Publishing exists to avoid — or putting the publish job
+in the same workflow, gated on release-please's `release_created` output.
+The second, so the token count stays at zero.
+
+Zenodo is unaffected by that restriction, because it listens to the release
+*webhook* rather than running a workflow: the DOI is still minted from the same
 event as the PyPI upload. Branch protection on `main`: require `test`, `docs`
 and `build` green.
+
+Six repository settings have to be turned on by hand before a release can
+happen — Actions-may-open-PRs, the `pypi` environment, the PyPI trusted
+publisher, the Zenodo webhook, and branch protection. None of them is
+expressible in a commit, so they are written down in `docs/releasing.md`
+instead of being remembered.
 
 **Versioning policy.** SemVer. Stay on `0.x` for the whole refactor — breaking
 changes are expected and permitted in minor bumps there, so no deprecation cycle
@@ -3213,6 +3411,8 @@ been audited once is worth more than one that reads confidently throughout.
 | "Conventional Commits, **`commitlint`-enforced**" (§7) | No `commitlint` hook. The convention is followed by hand. §7 corrected. |
 | "`sphinx-build -W` … an **undocumented public symbol** fails the build" | `-W` promotes warnings Sphinx emits; autodoc emits none for a symbol it was never asked to document. Needs `sphinx.ext.coverage` or `nitpicky`. §6.3 corrected. |
 | `test.yml` "matrix … → ruff, mypy, pytest" | Five jobs, not one matrix: `lint`, `typecheck`, `test`, `floors`, plus `build.yml`. §6.5 corrected. |
+| "`commitlint`-enforced" again, in §6.4 | The §7 instance was corrected and this one was left standing, in the same document. §6.4 corrected. |
+| `publish.yml` "GitHub Release published → PyPI" | It would never have run. release-please creates the release with the default `GITHUB_TOKEN`, and events triggered by that token do not start a workflow. The publish job moved into `release.yml`, gated on `release_created`. §6.5 corrected. |
 
 **A claim whose mechanism is absent but whose property holds — for a different
 reason, which matters:**
@@ -3368,10 +3568,10 @@ Each phase ends green on CI and is independently mergeable.
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
-| **2b. Release plumbing** | Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx; `docs.yml` → GH Pages; release-please + `publish.yml` (PyPI Trusted Publishing); Zenodo webhook. Parallel with 2 | 1 | 1–2 days |
+| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → a published site~~ ✅ — Read the Docs rather than GH Pages, for versions (§6.3); ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. All three workflows are staged in `ci/` and need copying across, and six repository settings have to be turned on by hand: `docs/releasing.md` lists them. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
-| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/`; `Fitting.py` → `fitting/`; models as objects; `io/`; `viz/`; non-mutating operations; mypy override list → empty; `picks/` per §4.9 — resolution first, then the registry, the ObsPy delegate and the plugin entry point | 3 | 4–6 days |
+| **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/` ✅; ~~`Fitting.py` → `fitting/`~~ ✅ — `base`/`guess`/`spectrum`/`event`, 745 lines to four modules of 30–300, public names unchanged; models as objects ✅; `io/`; `viz/`; non-mutating operations; mypy override list → empty ✅; `picks/` per §4.9 ✅ | 3 | 4–6 days |
 | **6. Ship** | Full docs content, tutorial rewritten as an executed `myst-nb` page with no `os.chdir`, 0.1→1.0 "what changed" page, **1.0 release** | 4, 5 | 2–3 days |
 
 **Executing the tutorial was pulled forward out of Phase 6.** The `myst-nb`

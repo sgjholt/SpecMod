@@ -600,3 +600,9 @@ normalize_to_variance = true    # mtspec's convention
 
 The first of those is unverified — see `docs/REFACTOR_PLAN.md` §5.2.5. The
 0.1.1 re-run tests it directly.
+
+```{toctree}
+:hidden:
+
+notes/window_position
+```

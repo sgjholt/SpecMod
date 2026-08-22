@@ -7,12 +7,17 @@ SpecMod estimates source parameters — long-period spectral level Ω, corner
 frequency `f_c`, and the attenuation operator `t*` — by fitting a Brune-type
 source model to direct-phase spectra.
 
-> **Status: under active reconstruction.**
-> The package is mid-refactor. The modern layers (`specmod.config`,
-> `specmod.core`, `specmod.transforms`) are built and tested; the older
-> pipeline modules still carry pre-refactor behaviour and are being replaced
-> stage by stage. Expect breaking changes at every `0.x` release until the API
-> settles at 1.0. See [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md).
+> **Status: alpha, and under active reconstruction.**
+> The package is pre-1.0 and mid-refactor. The modern layers
+> (`specmod.config`, `specmod.core`, `specmod.transforms`, `specmod.picks`,
+> `specmod.fitting`) are built and tested; the older pipeline modules still
+> carry pre-refactor behaviour and are being replaced stage by stage. Expect
+> breaking changes at every `0.x` release until the API settles at 1.0 — they
+> land in minor bumps by design, with no deprecation cycle. Pin an exact
+> version for anything you intend to publish.
+> [`docs/roadmap.md`](docs/roadmap.md) says which stages are done and what 1.0
+> will mean; [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) is the working
+> document behind it.
 
 ## Installation
 
@@ -141,16 +146,36 @@ Every output records the configuration that produced it, a hash of it, and the
 SpecMod version, so a locally-overridden run is still reproducible from its
 outputs.
 
+## Documentation
+
+The full documentation — the pipeline with its equations, the estimator
+comparison, pick formats, and an API reference — builds with Sphinx:
+
+```bash
+uv pip install -e '.[docs]'
+sphinx-build -b html docs docs/_build/html
+```
+
+`docs/REFACTOR_PLAN.md` is excluded from the built site on purpose: it is a
+working document that records decisions and the measurements behind them, not
+documentation for using the package.
+
 ## Development
 
 ```sh
 uv venv && uv pip install -e ".[dev]"
+pre-commit install                 # both hook types; not optional
 pytest                             # test suite
 pytest --without-optional-extras   # as a default install and CI see it
 ruff check src/ tests/ tools/      # lint
 ruff format src/ tests/ tools/
 mypy                               # strict on the rewritten modules
 ```
+
+[`docs/development.md`](docs/development.md) is the full guide — the repository
+mapped, every tool and CI check, the branch and commit conventions, and where
+development stops and releasing begins. [`AGENTS.md`](AGENTS.md) is the short
+version that binds AI coding sessions.
 
 Run `--without-optional-extras` before pushing. A development environment
 with `specmod[multitaper]` installed will pass tests that a default install
@@ -177,6 +202,15 @@ python tools/measure_docs.py check    # fail if any table is stale
 published number fails the suite rather than quietly leaving the prose wrong.
 Measurements that read `tutorial/data/events/` are slower and opt-in via `--field`;
 refresh those by hand after changing an estimator.
+
+### Releasing
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org),
+which is what makes the changelog and the version automatic: `release-please`
+opens a standing release pull request, and merging it creates the tag, the
+GitHub Release, the PyPI upload and the Zenodo DOI. Nothing is released until
+that merge. See [`docs/releasing.md`](docs/releasing.md), which also lists the
+repository settings that have to be turned on once.
 
 ## References
 

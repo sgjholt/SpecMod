@@ -492,6 +492,16 @@ class FittableView:
     def passes(self) -> bool:
         return self.pair.passes
 
+    @property
+    def motion(self) -> Motion:
+        """The ground-motion domain the arrays are in.
+
+        Read through like the rest, because a fitter has to know it: the
+        initial guess for ``fc`` is the frequency of the spectral peak, and
+        that is the corner only in velocity.
+        """
+        return self.pair.signal.motion
+
 
 @dataclass(frozen=True)
 class SpectrumSet:

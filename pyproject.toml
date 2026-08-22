@@ -67,12 +67,16 @@ dev = [
     "mypy>=1.11",
     "pre-commit>=3.7",
 ]
+# `sphinx-autodoc-typehints` was here and is not any more: measured on this
+# package it produced the same 367 documented objects as `sphinx.ext.autodoc`
+# with `autodoc_typehints = "description"`, while calling an API Sphinx 10
+# removes. `myst-nb` stays for the Phase 6 notebook pages, which are not built
+# yet — see `docs/conf.py`.
 docs = [
     "sphinx>=7.3",
     "pydata-sphinx-theme>=0.15",
     "myst-parser>=3.0",
     "myst-nb>=1.1",
-    "sphinx-autodoc-typehints>=2.2",
 ]
 tutorial = [ # for running the tutorial notebook, which is not part of the package
     "ipykernel>=7.0",
@@ -232,6 +236,16 @@ filterwarnings = [
     "error::DeprecationWarning:specmod.*",
     # obspy 1.5 on py3.11 trips importlib.metadata's SelectableGroups warning.
     "ignore:SelectableGroups dict interface is deprecated:DeprecationWarning",
+    # matplotlib's mathtext calling pyparsing's camelCase API, which pyparsing
+    # 3.3 deprecates. Only the `floors` job sees it, and it drowns that job:
+    # 439 warnings against 4 elsewhere. Measured with pyparsing 3.3.2
+    # throughout — matplotlib 3.9.0, 3.9.4 and 3.10.0 each produce 328 of them
+    # in `test_io_and_plotting.py` alone, and 3.11.1 produces none. So it is
+    # fixed above the declared `matplotlib>=3.9` floor, and raising the floor
+    # to silence a warning that says nothing about this package would drop
+    # support for two matplotlib minors for cosmetics. Delete this line when
+    # the floor passes 3.11.
+    "ignore::pyparsing.warnings.PyparsingDeprecationWarning",
 ]
 
 [tool.coverage.run]

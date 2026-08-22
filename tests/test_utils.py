@@ -211,13 +211,18 @@ class TestStreamDistanceSort:
         assert [tr.stats["repi"] for tr in st] == [30.0, 10.0], "input was mutated"
 
     def test_a_stream_without_distances_comes_back_unsorted(self) -> None:
+        """And says so. It used to `print` the fact, which is invisible to a
+        caller capturing logs and corrupts a CLI writing to a pipe — the
+        stream coming back in input order is otherwise indistinguishable from
+        a stream that was already in distance order."""
         st = obspy.Stream(
             [
                 obspy.Trace(np.zeros(10), header={"station": "B"}),
                 obspy.Trace(np.zeros(10), header={"station": "A"}),
             ]
         )
-        got = ut.stream_distance_sort(st)
+        with pytest.warns(UserWarning, match="returned unsorted"):
+            got = ut.stream_distance_sort(st)
         assert [tr.stats.station for tr in got] == ["B", "A"]
 
 

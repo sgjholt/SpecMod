@@ -12,6 +12,7 @@ not move; they say nothing about whether the numbers are right. See §5, tier 2.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -141,12 +142,19 @@ def measured() -> Any:
 def recovered(measured: Any) -> Any:
     """The fit table.
 
-    Fitted on **velocity**, which is the pipeline's convention: the model
-    carries a motion factor, so ``llpsp`` is the displacement plateau either
-    way. Fitting the displacement set instead makes `initial_guess` useless —
-    it takes the spectral peak as the ``fc`` guess, and a displacement spectrum
-    falls monotonically, so the guess lands at the low band edge and the fit
-    settles near it.
+    Fitted in the motion the sensor recorded — velocity. The model carries a
+    motion factor, so ``llpsp`` is the displacement plateau whichever domain is
+    fitted, but converting first is not a neutral change of view: integrating
+    to displacement implicitly low-passes, and differentiating to acceleration
+    amplifies high-frequency noise.
+
+    Velocity is also the convenient domain: it peaks at ``fc``, so
+    ``initial_guess`` taking the spectral peak is exact rather than
+    approximate. That holds for any omega-squared source — both registered
+    models — since the stationary point of ``f * [1 + (f/fc)**(g*n)]**(-1/g)``
+    sits at ``f = fc`` whenever ``n == 2``, whatever the corner sharpness
+    ``g``. In displacement the spectrum is monotonic, so the peak is whichever
+    band edge it was handed.
     """
     from specmod.fitting import FitSpectra  # noqa: PLC0415
 
@@ -259,3 +267,67 @@ class TestTheSyntheticIsWhatItClaims:
         freq = np.array([40.0, 80.0])
         amp = _brune_displacement_fas(freq) * np.exp(np.pi * freq * TRUE_TSTAR)
         assert amp[0] / amp[1] == pytest.approx(4.0, rel=0.05)
+
+
+class TestFittingTheWrongMotionWarns:
+    """The one silent failure this exercise turned up, now audible.
+
+    `FitSpectra(spectra.to_motion("displacement"))` is a natural thing to
+    write and used to return `fc` 1.6 against a true 8.0 with nothing said.
+    """
+
+    def test_a_displacement_spectrum_warns(self, measured: Any) -> None:
+        from specmod.fitting import initial_guess  # noqa: PLC0415
+
+        with pytest.warns(UserWarning, match="the corner only in velocity"):
+            initial_guess(measured.to_motion("displacement"))
+
+    def test_the_warning_names_the_station_and_the_motion(self, measured: Any) -> None:
+        from specmod.fitting import initial_guess  # noqa: PLC0415
+
+        # One warning per station, not one for the set — otherwise a run over
+        # a mixed collection names whichever spectrum happened to be first.
+        # Asserting on all three also stops the two that `match=` does not
+        # select being re-emitted into pytest's warning summary.
+        with pytest.warns(UserWarning, match="is in displacement") as records:
+            initial_guess(measured.to_motion("displacement"))
+
+        messages = [str(record.message) for record in records]
+        assert len(messages) == 3
+        for station in ("XX.S00..HHN", "XX.S01..HHN", "XX.S02..HHN"):
+            assert any(
+                f"{station} is in displacement" in message for message in messages
+            ), f"nothing warned about {station}"
+
+    def test_velocity_is_silent(self, measured: Any) -> None:
+        from specmod.fitting import initial_guess  # noqa: PLC0415
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            guesses = initial_guess(measured)
+        assert len(guesses) == 3
+
+    def test_the_guess_it_warns_about_is_the_one_that_ruins_the_fit(
+        self, measured: Any
+    ) -> None:
+        """Why it is worth a warning: the guess lands on the low band edge.
+
+        The contrast is the point, not the precision. Peak-equals-corner is
+        exact for the noiseless model; on a measured spectrum the argmax
+        wanders, so velocity gives a guess in the right neighbourhood — a
+        starting point, which is all it has to be. Displacement gives one an
+        order of magnitude out, and the fit does not recover from it.
+        """
+        from specmod.fitting import initial_guess  # noqa: PLC0415
+
+        with pytest.warns(UserWarning, match="the corner only in velocity"):
+            displacement = initial_guess(measured.to_motion("displacement"))
+        velocity = initial_guess(measured)
+
+        for id, guess in displacement.items():
+            # Measured on these three stations: displacement guesses 0.71,
+            # 2.12 and 1.02 against velocity's 6.47, 7.83 and 5.72, for a true
+            # 8.0. Bounding each side is the contrast; a ratio between them
+            # would only be a brittle way of saying the same.
+            assert guess["fc"] < TRUE_FC / 3.0
+            assert velocity[id]["fc"] == pytest.approx(TRUE_FC, rel=0.35)

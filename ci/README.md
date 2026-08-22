@@ -24,6 +24,31 @@ Copy the whole file over its counterpart. No merging, no partial application:
 | staged copy | destination |
 |---|---|
 | `ci/workflows/test.yml` | `.github/workflows/test.yml` |
+| `ci/workflows/docs.yml` | `.github/workflows/docs.yml` |
+| `ci/workflows/release.yml` | `.github/workflows/release.yml` |
+
+One of them needs a repository setting turning on as well, and it cannot be
+done from a commit:
+
+- `release.yml` — **Settings → Actions → General → Allow GitHub Actions to
+  create and approve pull requests**. Without it release-please fails with
+  `GitHub Actions is not permitted to create or approve pull requests`.
+
+`docs.yml` needs nothing: it builds the site as a check and publishes nothing.
+Read the Docs publishes, and its setup lives in
+[`docs/documentation.md`](../docs/documentation.md).
+
+`release.yml` needs four more one-time steps before it can publish anything —
+a `pypi` environment, a trusted publisher registered on PyPI, the Zenodo
+webhook, and branch protection. They are listed in
+[`docs/releasing.md`](../docs/releasing.md). Until they are done the workflow
+opens a release pull request and stops there, which is inert rather than
+wrong.
+
+**The PyPI trusted publisher names this file.** It is registered against the
+workflow filename `release.yml`, matched from the OIDC token, so renaming the
+workflow breaks authentication at upload time. Rename both in the same
+sitting or not at all.
 
 A file here is the **intended** state, which is not necessarily the current
 one. `tools/check_ci_mirror.py` reports which of the two each pair is in, and

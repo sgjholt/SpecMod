@@ -1,3 +1,9 @@
+# `pre-commit install` wires only the pre-commit stage by default, which left
+# the commit-msg hook below inert in every clone that ran the documented setup
+# — including the one that then committed three session links. Naming the
+# stages here means one `pre-commit install` installs both.
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
   # CI runs `uvx ruff` unpinned, so it always gets the newest release. Keep
   # this rev at that newest release or CI will fail on rules this does not have.
