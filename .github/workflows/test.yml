@@ -24,11 +24,6 @@ jobs:
         run: uvx ruff@0.16.1 check --output-format=github src/ tests/ tools/
       - name: ruff format
         run: uvx ruff@0.16.1 format --check src/ tests/ tools/
-      # ci/workflows/ holds copies of these files, because a Claude Code
-      # session's token cannot push to .github/workflows/. This fails when a
-      # staged change has not been copied across. See ci/README.md.
-      - name: ci mirror is in sync
-        run: uv run --no-project python tools/check_ci_mirror.py
 
   typecheck:
     runs-on: ubuntu-latest

@@ -27,23 +27,19 @@ bump.
 
 ## One-time setup
 
-Six things, none of which can be done from a commit. Until they are done the
+Five things, none of which can be done from a commit. Until they are done the
 release workflow is inert rather than wrong — it opens a release PR and stops.
 
-1. **Copy the workflow into place.** `ci/workflows/release.yml` →
-   `.github/workflows/release.yml`. See [`ci/README.md`](https://github.com/sgjholt/SpecMod/blob/main/ci/README.md)
-   for why the file is staged rather than pushed.
-
-2. **Let Actions open pull requests.** Settings → Actions → General →
+1. **Let Actions open pull requests.** Settings → Actions → General →
    Workflow permissions → tick *Allow GitHub Actions to create and approve pull
    requests*. Without it release-please fails with `GitHub Actions is not
    permitted to create or approve pull requests`.
 
-3. **Create the `pypi` environment.** Settings → Environments → New
+2. **Create the `pypi` environment.** Settings → Environments → New
    environment → `pypi`. Add required reviewers here if you want a second
    human gate on the upload itself.
 
-4. **Register the trusted publisher on PyPI.** On the project page (or, for
+3. **Register the trusted publisher on PyPI.** On the project page (or, for
    the first ever upload, under *Publishing* → *Add a new pending publisher*):
 
    | Field | Value |
@@ -57,12 +53,12 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    that actually runs. If the workflow is ever renamed, this has to be changed
    in the same sitting or the upload fails authentication.
 
-5. **Turn on the Zenodo webhook.** Log into Zenodo with GitHub, find `SpecMod`
+4. **Turn on the Zenodo webhook.** Log into Zenodo with GitHub, find `SpecMod`
    in the repository list, and flip the switch. It takes effect for releases
    made *after* it is on, so do it before the first release rather than after.
    `CITATION.cff` supplies the metadata.
 
-6. **Require the checks on `main`.** Branch protection → *Require status
+5. **Require the checks on `main`.** Branch protection → *Require status
    checks to pass* → add exactly three: **`ci`**, **`docs`**, **`build`**.
 
    Those are job names, not workflow names, and only these three are stable:

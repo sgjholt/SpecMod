@@ -231,11 +231,3 @@ Any table that came from a measurement is generated, not typed. Edit
 `tools/measure_docs.py` and run `python tools/measure_docs.py write`;
 `tests/test_docs_are_current.py` fails if a table drifts from what the code
 does. See the [Developer guide](development.md#the-tools-scripts).
-
-## Changing the docs workflow
-
-`docs.yml` cannot be pushed by an AI coding session — no `workflows` token
-permission — so the intended file lives at `ci/workflows/docs.yml` and is
-copied across by hand. The `lint` job fails while the two differ, in **either**
-direction: if you fix the live workflow in the web editor, copy it back into
-`ci/`. See [The `ci/` mirror](development.md#the-ci-mirror).

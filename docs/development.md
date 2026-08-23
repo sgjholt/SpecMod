@@ -19,7 +19,6 @@ This page is the hub. The three companions are
 | Understand a tool or a check | [Tooling reference](#tooling-reference) |
 | Write or fix a test | [Testing](#testing) |
 | Read a CI failure | [What CI runs](#what-ci-runs) |
-| Change a workflow file | [The `ci/` mirror](#the-ci-mirror) |
 | Understand versions and releases | [Development versus release](#development-versus-release) |
 | Preview or publish docs | [Documentation workflow](documentation.md) |
 | Use Claude or Codex on this repo | [Working with agents](#working-with-agents) |
@@ -79,7 +78,6 @@ src/specmod/          the package
   cli.py              the `specmod` command
 tests/                the suite, plus tests/golden/ reference numbers
 tools/                repository scripts, each with a CI job or test behind it
-ci/workflows/         staged copies of .github/workflows (see below)
 docs/                 this site
   REFACTOR_PLAN.md    the working document — not part of the built site
 datasets/             dataset definitions for `specmod fetch`
@@ -87,15 +85,12 @@ tutorial/             the tutorial notebook and its data
 stubs/                hand-written ObsPy type stubs
 ```
 
-Two files that are not what they look like:
+One file that is not what it looks like:
 
 - **`docs/REFACTOR_PLAN.md`** is a working document, deliberately excluded from
   the built site. It records decisions, the measurements behind them, and an
   audit (§6.6) of claims in it that turned out to be false. When something here
   says "why", that is usually where the long answer is.
-- **`ci/workflows/`** holds complete copies of the live GitHub Actions
-  workflows. See [The `ci/` mirror](#the-ci-mirror).
-
 ## The daily loop
 
 ```sh
@@ -170,7 +165,6 @@ standard-library-only unless noted.
 
 | Script | Does | Enforced by |
 |---|---|---|
-| `check_ci_mirror.py` | staged workflows match the live ones | `lint` job |
 | `check_floors.py` | the installed versions really are the declared minimums | `floors` job |
 | `check_built_version.py` | the built wheel's version is the tag | `publish` job |
 | `make_golden.py` | regenerates `tests/golden/*.json` | run by hand, deliberately |
@@ -295,27 +289,6 @@ name and nothing named `docs` at all.
 **`docs`** deliberately does **not** use `-W`. Intersphinx resolves seven
 inventories over the network and warns whenever one is briefly unreachable;
 turning a third party's downtime into a red build is flakiness, not a check.
-
-## The `ci/` mirror
-
-`ci/workflows/*.yml` holds complete, ready-to-paste copies of
-`.github/workflows/*.yml`. The reason is narrow: the GitHub App token used by
-AI coding sessions has no `workflows` permission, so a push touching
-`.github/workflows/` is rejected. Rather than describe an edit in a comment and
-hope it is applied correctly, the intended file is committed in full.
-
-To apply one, copy the whole file over its counterpart — no merging, no partial
-application. `tools/check_ci_mirror.py` runs in the `lint` job and fails while
-a pair differs, so a staged change that has not been copied across shows up as
-a red build rather than being forgotten. **That failure is the reminder.** It
-clears the moment the files match.
-
-The mirror is the *intended* state, which is not always the current one — in
-either direction. If you fix a workflow through the GitHub web editor, copy it
-back into `ci/` so the next person staging a change starts from the working
-version.
-
-Full detail in [`ci/README.md`](https://github.com/sgjholt/SpecMod/blob/main/ci/README.md).
 
 ## Development versus release
 

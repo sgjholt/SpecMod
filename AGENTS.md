@@ -41,14 +41,21 @@ to generate `CHANGELOG.md`. See
 - Say *why*, with the measurement if there was one. The history is the record
   of what was checked; a message that only restates the diff wastes it.
 
-## You cannot push workflow files
+## Workflow files need a permission you may not have
 
-A GitHub App token has no `workflows` permission, so any push touching
-`.github/workflows/` is rejected outright. Write the intended file to
-`ci/workflows/<name>.yml` instead and say in the PR that it needs copying
-across. `tools/check_ci_mirror.py` runs in the `lint` job and fails until the
-copy is made — that failure is the reminder, not a fault.
-See [`ci/README.md`](ci/README.md).
+`.github/workflows/` is editable directly, but only when the session's GitHub
+App token carries the `workflows` permission. Without it the push is rejected
+outright:
+
+```
+refusing to allow a GitHub App to create or update workflow
+`.github/workflows/test.yml` without `workflows` permission
+```
+
+That is a loud failure, not a silent one. If you meet it, say so and ask for
+the permission — do not reintroduce a parallel copy of the workflows to work
+around it. There used to be one, in `ci/`, and keeping two versions of every
+workflow in step cost more than the problem it solved.
 
 ## Verify before reporting
 
@@ -59,7 +66,6 @@ pytest -m "not dataset and not notebook"     # the suite CI runs
 pytest --without-optional-extras             # what a default install sees
 ruff check src/ tests/ tools/ && ruff format --check src/ tests/ tools/
 mypy
-python tools/check_ci_mirror.py
 sphinx-build -b html docs docs/_build/html   # if docs/ changed
 ```
 
