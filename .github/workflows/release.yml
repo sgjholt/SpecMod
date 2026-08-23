@@ -36,7 +36,7 @@ jobs:
           # failure to point at. v0.2.0 shipped only because the PR was closed
           # and reopened by hand, which re-fires the event from a real account.
           #
-          # RELEASE_PLEASE_TOKEN is a fine-grained PAT (contents + pull
+          # RELEASE_PLEASE_TOKEN_SPECMOD is a fine-grained PAT (contents + pull
           # requests, write) so the PR is opened by a user and CI runs on it
           # normally. It is *not* a PyPI credential — the upload below still
           # authenticates by OIDC, so the number of publishing secrets is
@@ -45,21 +45,27 @@ jobs:
           # The fallback keeps the workflow working in a fork or before the
           # secret exists; it degrades to the blocked-PR behaviour, not to a
           # broken run.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN_SPECMOD || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
   # Deliberately in this workflow rather than a separate publish.yml keyed on
-  # `release: published`, which is what §6.5 of the plan used to describe.
-  # release-please creates the release with the default GITHUB_TOKEN, and
-  # per GitHub's docs "events triggered by the GITHUB_TOKEN will not create a
-  # new workflow run" — so that publish workflow would never fire. The
-  # alternative is a personal access token in secrets, which is the one thing
-  # Trusted Publishing exists to avoid. Gating on the action's own output
-  # keeps the token count at zero.
+  # `release: published`, which is what §6.5 of the plan used to describe. That
+  # workflow could not fire at all while release-please ran on GITHUB_TOKEN,
+  # so this job gates on the action's own `release_created` output instead.
   #
-  # Zenodo is unaffected: it listens to the release *webhook*, which is not
-  # subject to that restriction, so the DOI is still minted from the release.
+  # With RELEASE_PLEASE_TOKEN_SPECMOD the release is created by a PAT, which
+  # *does* start workflow runs, so a separate publish.yml would now work. Still
+  # not worth splitting: one workflow is one concurrency group and one place to
+  # read, with no race between two runs when two merges land together. The
+  # `release_created` gate is also exact, where an event key would fire on any
+  # release — including one created by hand.
+  #
+  # Note the PAT is not a publishing credential: the upload below authenticates
+  # by OIDC, so the number of secrets that can push to PyPI is still zero.
+  #
+  # Zenodo is unaffected either way: it listens to the release *webhook*, which
+  # is not subject to the token restriction, so the DOI is minted regardless.
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'

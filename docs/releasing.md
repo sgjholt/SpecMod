@@ -30,7 +30,7 @@ bump.
 Six things, none of which can be done from a commit. Until they are done the
 release workflow is inert rather than wrong — it opens a release PR and stops.
 
-1. **Mint `RELEASE_PLEASE_TOKEN`.** Settings → Developer settings →
+1. **Mint `RELEASE_PLEASE_TOKEN_SPECMOD`.** Settings → Developer settings →
    Personal access tokens → Fine-grained tokens → *Generate new token*.
 
    | Field | Value |
@@ -41,7 +41,7 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    | Expiration | up to 366 days — see the renewal note below |
 
    Then Settings → Secrets and variables → Actions → *New repository secret*,
-   named exactly `RELEASE_PLEASE_TOKEN`.
+   named exactly `RELEASE_PLEASE_TOKEN_SPECMOD`.
 
    This is what makes the release PR run CI. Without it the PR is opened by
    `GITHUB_TOKEN`, which starts no workflow runs at all, so the three required
@@ -57,9 +57,9 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
 
 2. **Let Actions open pull requests.** Settings → Actions → General →
    Workflow permissions → tick *Allow GitHub Actions to create and approve pull
-   requests*. Only needed as a fallback — with `RELEASE_PLEASE_TOKEN` set the
-   PR is opened by a user, not by Actions — but leave it on so the workflow
-   still works if the token lapses.
+   requests*. Only needed as a fallback — with `RELEASE_PLEASE_TOKEN_SPECMOD`
+   set, the PR is opened by a user, not by Actions — but leave it on so the
+   workflow still works if the token lapses.
 
 3. **Create the `pypi` environment.** Settings → Environments → New
    environment → `pypi`.
@@ -105,8 +105,8 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    because of step 1. This page previously said GitHub *holds* the runs on a
    `github-actions[bot]` pull request until a maintainer approves them, and
    that is not what happens: no runs are created, there is nothing to approve,
-   and the PR sits blocked with an empty check list. `RELEASE_PLEASE_TOKEN` is
-   what makes this paragraph true.
+   and the PR sits blocked with an empty check list.
+   `RELEASE_PLEASE_TOKEN_SPECMOD` is what makes this paragraph true.
 
 ## What a version number means while this is 0.x
 
@@ -148,9 +148,9 @@ all when release-please ran on the default `GITHUB_TOKEN`, because "events
 triggered by the `GITHUB_TOKEN` will not create a new workflow run". So the
 publish job gates on release-please's own `release_created` output instead.
 
-`RELEASE_PLEASE_TOKEN` removes that constraint — a release created by a PAT
-*does* start workflow runs — so a separate `publish.yml` would now work. It is
-still not worth splitting: one workflow means one `concurrency` group, one
+`RELEASE_PLEASE_TOKEN_SPECMOD` removes that constraint — a release created by
+a PAT *does* start workflow runs — so a separate `publish.yml` would now work.
+It is still not worth splitting: one workflow means one `concurrency` group, one
 place to read, and no dependency on the ordering of two runs that would race
 whenever two merges land together. The `release_created` gate is also exact,
 where an event key would fire on any release including one made by hand.
@@ -212,9 +212,9 @@ created the release.
 
 Not a red check — *no checks at all*, an empty list, and the PR blocked
 because the three required ones never reported. This means release-please fell
-back to `GITHUB_TOKEN`: either `RELEASE_PLEASE_TOKEN` is unset, or it expired,
-or its repository access no longer covers `SpecMod`. Renew it (one-time setup,
-step 1); nothing in the repository needs changing.
+back to `GITHUB_TOKEN`: either `RELEASE_PLEASE_TOKEN_SPECMOD` is unset, or it
+expired, or its repository access no longer covers `SpecMod`. Renew it
+(one-time setup, step 1); nothing in the repository needs changing.
 
 To unblock the release PR that is already open, without waiting for a new
 commit: **close it and immediately reopen it.** That re-fires
