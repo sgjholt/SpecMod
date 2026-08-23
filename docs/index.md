@@ -24,8 +24,8 @@ treat everything here as provisional until the API settles at 1.0:
 
 What will *not* change silently: the units conventions and the Parseval
 contract are pinned by tests, and the golden references fail loudly rather
-than drifting. The [roadmap](roadmap.md) says which stages are done and what
-1.0 will mean.
+than drifting. The [roadmap](roadmap.md) says what has shipped, in which
+version, and what 1.0 will mean.
 :::
 
 ```python
@@ -67,8 +67,8 @@ print(fits.table[["id", "llpsp", "fc", "ts"]])
   settings that have to be turned on once.
 
 [Roadmap](roadmap.md)
-: What is built, what is being worked on, and what 1.0 will mean. Stages, not
-  dates.
+: What has shipped and in which version, what is being worked on, and what 1.0
+  will mean. Milestones, not dates.
 
 ## Working on SpecMod
 
