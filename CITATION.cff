@@ -7,6 +7,13 @@ authors:
     given-names: James
 repository-code: "https://github.com/sgjholt/SpecMod"
 license: MIT
+identifiers:
+  # The concept DOI, which always resolves to the newest release. Zenodo also
+  # mints a version DOI per release; cite that one instead when reproducibility
+  # matters and you need the reader to land on the exact version you ran.
+  - type: doi
+    value: "10.5281/zenodo.22071455"
+    description: "Concept DOI — resolves to the latest release."
 keywords:
   - seismology
   - spectral modelling
