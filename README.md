@@ -168,6 +168,13 @@ Every output records the configuration that produced it, a hash of it, and the
 SpecMod version, so a locally-overridden run is still reproducible from its
 outputs.
 
+The published Magna results were produced with **0.1.1**, which predates this
+refactor. That code is preserved unchanged on the
+[`master`](https://github.com/sgjholt/SpecMod/tree/master) branch, which is
+protected and frozen; `main` is the trunk now. `0.1.1` was never tagged or
+published to PyPI, so the branch is the reference — there is no release to
+install. Read it there when you need to see exactly what the paper ran.
+
 ## Documentation
 
 The full documentation — the pipeline with its equations, the estimator
