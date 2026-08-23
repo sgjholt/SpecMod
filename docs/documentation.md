@@ -78,25 +78,55 @@ python -m http.server -d preview 8000
 
 ## Read the Docs setup
 
-One-time, at the point the first version is published. None of it can be done
-from a commit; all of it is on <https://readthedocs.org>.
+One-time. None of it can be done from a commit.
 
-1. **Import the project.** Log in with GitHub, *Import a Project*, pick
-   `sgjholt/SpecMod`. The slug chosen here becomes the URL —
-   `https://<slug>.readthedocs.io` — so it is worth getting right first time.
-2. **Check it found the config.** `.readthedocs.yaml` is in the repository
-   root and is read automatically; the first build's log says which
-   configuration file it used. If it did not find one, Read the Docs falls back
-   to defaults that will not install this package.
-3. **Turn on pull request builds.** *Admin → Settings → Advanced settings →
-   Build pull requests for this project*. Without it there are no previews.
-4. **Add an automation rule for tags.** *Admin → Automation Rules → Add rule*,
+**Install the GitHub App first.** This is the step to get right, because the
+alternative looks like it works and does not. Read the Docs has moved from an
+OAuth connection to a GitHub App, and the App is what subscribes to the events
+— *"No need to create webhooks on your repositories. The GitHub App subscribes
+to all required events when you install it."*
+
+1. **Install the Read the Docs GitHub App** — from Read the Docs under
+   *Settings → Connected Services*, or directly at
+   <https://github.com/apps/readthedocs>. Grant it `sgjholt/SpecMod`; *only
+   select repositories* is enough and is the point of the App. It asks for read
+   access to code, and **read and write to checks, commit statuses and pull
+   requests** — that write access is what puts the preview link on a pull
+   request.
+2. **Create the project**, or connect an existing one. *Add project* and search
+   for the repository. If the project already exists — imported by URL, say —
+   installing the App does not link it retroactively: go to *Settings* and pick
+   the repository from the **Connected repository** dropdown.
+3. **Check the first build found the config.** `.readthedocs.yaml` is in the
+   repository root and is read automatically; the build log names the
+   configuration file it used. If it found none, Read the Docs falls back to
+   defaults that will not install this package.
+4. **Turn on pull request builds.** *Admin → Settings → Advanced settings →
+   Build pull requests for this project*.
+5. **Add an automation rule for tags.** *Admin → Automation Rules → Add rule*,
    version type **Tag**, action **Activate version**, matching `^v.*`. New
-   releases then publish themselves; without a rule each tag has to be
-   activated by hand before anyone can read it.
-5. **Set the default version to `stable`** once a tag exists. *Admin →
+   releases then publish themselves; without a rule each tag is built and then
+   left unpublished until someone activates it by hand.
+6. **Set the default version to `stable`** once a tag exists. *Admin →
    Settings → Default version*. Until then it is `latest`, which is correct
    while there are no releases.
+
+**Do not add a webhook by hand.** It is possible, it delivers `200`s, and it
+will still leave the feature half-built: a manual webhook can trigger a build,
+but without the App's write access to commit statuses there is nothing able to
+post the preview back onto the pull request. Read the Docs' own error in that
+state — *"Unable to attach webhook to this project"* — points at permissions
+rather than at the App, which is what makes it worth writing down. If a manual
+webhook already exists, delete it once the App is installed, or every push
+fires two triggers.
+
+**How to know it actually worked.** The error banner disappearing proves
+little; it is dismissible and is only raised when Read the Docs tries to attach
+a webhook, which it no longer needs to do. In increasing order of conclusiveness:
+the *Connected repository* field survives a page reload; a build starts on its
+own after a push to `main`; and a `docs/readthedocs.org` check appears on a
+pull request with a preview link. The last one is the real proof, because it is
+the part only the App can do.
 
 The build configuration itself is
 [`.readthedocs.yaml`](https://github.com/sgjholt/SpecMod/blob/main/.readthedocs.yaml).
