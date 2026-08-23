@@ -207,7 +207,7 @@ def test_does_not_bias_a_corner_frequency_low() -> None:
     fail independently and a regression is easier to localise.
 
     A lightly-tapered FFT recovers ``f_c`` better than either multitaper
-    variant; see docs/choosing_a_transform.md.
+    variant; see docs/choosing-a-transform.md.
     """
 
     def fit_fc(spectrum: object) -> float:

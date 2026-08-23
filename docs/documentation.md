@@ -161,8 +161,8 @@ excluded from it on purpose: it is a working document, written for whoever is
 doing the refactor, recording decisions and the evidence behind them. Link to
 it on GitHub rather than adding it to the build.
 
-`docs/notes/` **is** included, which was a correction: `choosing_a_transform.md`
-links to `notes/window_position.md` for a per-trace table, and a page another
+`docs/notes/` **is** included, which was a correction: `choosing-a-transform.md`
+links to `notes/window-position.md` for a per-trace table, and a page another
 page depends on is documentation whatever its folder is called.
 
 ### Adding a page
@@ -174,14 +174,14 @@ page depends on is documentation whatever its folder is called.
    direct link.
 
 If a page is a supporting note rather than a top-level one, put it in a hidden
-toctree on the page that cites it — that is how `notes/window_position.md` is
-attached to `choosing_a_transform.md`:
+toctree on the page that cites it — that is how `notes/window-position.md` is
+attached to `choosing-a-transform.md`:
 
 ````markdown
 ```{toctree}
 :hidden:
 
-notes/window_position
+notes/window-position
 ```
 ````
 

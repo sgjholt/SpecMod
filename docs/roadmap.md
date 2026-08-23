@@ -52,7 +52,7 @@ Konno–Ohmachi smoothing and log-binning as separate, composable steps. The
 demoted to an optional legacy backend rather than being the only path.
 
 What each estimator does to real data is measured in
-[Choosing a transform](choosing_a_transform.md); the differences are large
+[Choosing a transform](choosing-a-transform.md); the differences are large
 enough to matter to a magnitude.
 
 ### 5. Wavelets ✅

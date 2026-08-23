@@ -58,7 +58,7 @@ Adaptive and flat weighting agree to within 1% on every trace here, which is
 what should happen: the residual is taper shape, and both use the same tapers.
 A discrepancy between them on real windows would point at a weighting bug, not
 at the tapers — see the σ² units gotcha in
-[`../choosing_a_transform.md`](../choosing_a_transform.md).
+[`../choosing-a-transform.md`](../choosing-a-transform.md).
 
 ## Consequences taken
 

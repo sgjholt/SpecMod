@@ -523,7 +523,7 @@ def test_variance_normalisation_does_not_fix_the_plateau() -> None:
     centre = float(np.median(est.estimate(transient_at(0.50), DT).band(*band).amp))
     assert edge != pytest.approx(centre, rel=0.05), (
         "if these agree, variance normalisation has become a full fix and the "
-        "documentation in docs/choosing_a_transform.md needs revisiting"
+        "documentation in docs/choosing-a-transform.md needs revisiting"
     )
 
 

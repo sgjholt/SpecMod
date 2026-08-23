@@ -50,7 +50,7 @@ print(fits.table[["id", "llpsp", "fc", "ts"]])
   is, how the noise is compared against it, and what the bandwidth selector
   does.
 
-[Choosing a transform](choosing_a_transform.md)
+[Choosing a transform](choosing-a-transform.md)
 : What each estimator does to your data, measured. The choices here change
   recovered amplitude by factors of three on real windows, which is about 0.3
   magnitude units.
@@ -98,7 +98,7 @@ one either way.
 :hidden:
 
 processing
-choosing_a_transform
+choosing-a-transform
 pick-formats
 development
 documentation

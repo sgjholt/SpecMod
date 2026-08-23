@@ -373,7 +373,7 @@ Adding an export is a compatibility obligation, and the procedure is in
 
 The audit that established what could go on it — path coupling, hidden state,
 determinism, and what one multitaper estimate actually costs — is in
-[Audit: what `specmod.api` found in core](notes/api_audit.md). Two of its
+[Audit: what `specmod.api` found in core](notes/api-audit.md). Two of its
 findings were defects in core rather than in the surface, both since fixed and
 both now guarded package-wide by `tests/test_ambient_state.py`: **no module
 reads configuration at import time**, and **no module prints**. Those two
@@ -384,7 +384,7 @@ invisible to a caller capturing logs.
 ```{toctree}
 :hidden:
 
-notes/api_audit
+notes/api-audit
 ```
 
 ## Working with agents

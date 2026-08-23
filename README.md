@@ -82,9 +82,9 @@ scalogram.qc()               # concentration, coda balance, resolved bandwidth
 Which estimator to use, and what each one does to your data — including
 measured position-dependence and the variance-normalisation convention `mtspec`
 used — is set out in
-[`docs/choosing_a_transform.md`](docs/choosing_a_transform.md), with a
+[`docs/choosing-a-transform.md`](docs/choosing-a-transform.md), with a
 worked walkthrough in
-[`docs/notebooks/choosing_a_transform.ipynb`](docs/notebooks/choosing_a_transform.ipynb).
+[`docs/notebooks/choosing-a-transform.ipynb`](docs/notebooks/choosing-a-transform.ipynb).
 
 ### Why the units are typed
 

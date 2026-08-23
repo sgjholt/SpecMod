@@ -3198,7 +3198,7 @@ Four things the first build found, each fixed rather than tolerated:
   working document, not documentation. `processing.md` now links to it on
   GitHub instead.
 - **`notes/` was excluded on that same reasoning, and that was wrong.**
-  `choosing_a_transform.md` links to `notes/window_position.md` for a per-trace
+  `choosing-a-transform.md` links to `notes/window-position.md` for a per-trace
   table, which makes it documentation. Now built, and reachable through a
   hidden toctree on the page that cites it.
 - **`HOLT_2019_UTAH` broke autodoc.** It is a callable dataclass instance
@@ -3208,7 +3208,7 @@ Four things the first build found, each fixed rather than tolerated:
 
 **The equations in `docs/` did not render before this, and building it was the
 fix.**
-`processing.md` and `choosing_a_transform.md` are written in LaTeX with
+`processing.md` and `choosing-a-transform.md` are written in LaTeX with
 `$...$` and `$$...$$`, which is what MyST's `dollarmath` extension reads — and
 that extension does not exist yet, because neither does the Sphinx build. The
 only renderer these files currently meet is GitHub's, whose math support is
@@ -3226,7 +3226,7 @@ without a renderer to check against. Measured against the built site:
 - **The syntax predicted to break does not.** The prediction was one display
   block without a preceding blank line, one spanning two lines, and 26 inline
   expressions containing underscores. Built: `processing.html` and
-  `choosing_a_transform.html` contain **no** literal `$` at all and 120 math
+  `choosing-a-transform.html` contain **no** literal `$` at all and 120 math
   nodes between them, the two-line block and the `cases` block included. The
   risk was real on GitHub's renderer; MyST's parses all of it.
 
