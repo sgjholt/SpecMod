@@ -9,6 +9,17 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.2.1](https://github.com/sgjholt/SpecMod/compare/v0.2.0...v0.2.1) (2026-08-23)
+
+
+### Documentation
+
+* add the Zenodo DOI to the README and the citation metadata ([8a89884](https://github.com/sgjholt/SpecMod/commit/8a89884f654b14bf5eb9ed8a32d10dc22d5e5fb4))
+* PyPI and docs badges, and an install section for people who are not us ([d444397](https://github.com/sgjholt/SpecMod/commit/d44439762214b93fd8eef3f64745570b3b8be2b0))
+* repoint the 0.2.0 changelog link, which 404s ([f1bbe31](https://github.com/sgjholt/SpecMod/commit/f1bbe3143ca3ca6dd58f584546e716d2170a790a))
+* say where the code behind the publication lives ([ae7e906](https://github.com/sgjholt/SpecMod/commit/ae7e906209a87844cf2106a826be5111a6ef2036))
+* turn the roadmap's stages into milestones against versions ([b933e69](https://github.com/sgjholt/SpecMod/commit/b933e69d219a54e4a7db894797a507a3bb24e31c))
+
 ## [0.2.0](https://github.com/sgjholt/SpecMod/compare/master...v0.2.0) (2026-08-23)
 
 
