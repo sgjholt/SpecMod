@@ -27,9 +27,12 @@ anything you intend to publish. See
 
 ## Shipped in v0.2.0
 
-The version before this one, `0.1.1`, is the pre-refactor code the Magna paper
-cites. Everything below is the delta, which is why the first changelog is
-enormous and correctly so.
+The version before this one, `0.1.1`, is the pre-refactor code that produced
+the published Magna results. It is preserved unchanged on the
+[`master`](https://github.com/sgjholt/SpecMod/tree/master) branch, which is
+protected and frozen — it was never tagged or published to PyPI, so that
+branch is the only reference to it. Everything below is the delta between it
+and v0.2.0, which is why the first changelog is enormous and correctly so.
 
 ### An installable package
 
