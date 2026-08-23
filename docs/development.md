@@ -262,6 +262,7 @@ request.
 | `test` | `test.yml` | pytest on 3.11/3.12/3.13 × ubuntu/macOS, coverage to Codecov from one cell |
 | `floors` | `test.yml` | installs the *declared minimum* versions and runs the suite |
 | `notebook` | `test.yml` | executes the tutorial notebook |
+| `ci` | `test.yml` | succeeds only if every job above did. **This is what branch protection requires** — see below |
 | `build` | `build.yml` | sdist + wheel, `twine check`, install-from-wheel smoke test |
 | `docs` | `docs.yml` | builds the site as a check; publishing is Read the Docs' job |
 | `release` | `release.yml` | the release PR, and publishing — see below |
@@ -274,6 +275,22 @@ never have worked: `lmfit>=1.2` with `numpy>=2.0` (lmfit below 1.3 calls
 `np.asfarray`, removed in NumPy 2), and `scipy>=1.13` silently breaking the
 quadratic multitaper. If you raise or add a dependency, this is the job that
 tells you whether the floor you wrote is real.
+
+**`ci` exists so branch protection has one name to require.** Required status
+checks match *job* names, and a matrix job reports one check per cell —
+`test (ubuntu-latest, 3.11)` and five more — so requiring "the test workflow"
+means listing ten names that change whenever the matrix does. `ci` depends on
+all of them and is required in their place, alongside `docs` and `build`.
+
+Two details in it are not decoration. It runs `if: always()`, because a job
+whose dependency failed is *skipped*, and **GitHub treats a skipped required
+check as satisfied** — so without that line branch protection would go green
+over a red build. And it counts `skipped` as a failure, because nothing in this
+workflow is conditionally skipped, so a skip means something upstream broke.
+
+Job names are also why `docs.yml`'s job is called `docs` rather than `build`:
+it collided with `build.yml`'s job, leaving two unrelated checks sharing one
+name and nothing named `docs` at all.
 
 **`docs`** deliberately does **not** use `-W`. Intersphinx resolves seven
 inventories over the network and warns whenever one is briefly unreachable;

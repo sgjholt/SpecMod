@@ -62,9 +62,20 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    made *after* it is on, so do it before the first release rather than after.
    `CITATION.cff` supplies the metadata.
 
-6. **Require the checks on `main`.** Branch protection → require the status
-   checks from `test.yml`, `docs.yml` and `build.yml`. The release pull request
-   is an ordinary pull request and goes through them like any other.
+6. **Require the checks on `main`.** Branch protection → *Require status
+   checks to pass* → add exactly three: **`ci`**, **`docs`**, **`build`**.
+
+   Those are job names, not workflow names, and only these three are stable:
+   `ci` is an aggregator that fails unless every job in `test.yml` succeeded,
+   so the six `test (os, version)` matrix checks do not need naming and the
+   list survives a matrix change. Requiring `test` or the workflow names
+   instead matches nothing, and a required check that never reports blocks
+   every merge.
+
+   The release pull request is an ordinary pull request and goes through them
+   like any other — including the approval step, since GitHub holds workflow
+   runs on pull requests opened by `github-actions[bot]` until a maintainer
+   approves them.
 
 ## What a version number means while this is 0.x
 

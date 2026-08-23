@@ -17,7 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  # The job name is what branch protection matches, not the workflow name.
+  # This was `build`, which collided with build.yml's job of the same name and
+  # left two unrelated checks sharing one name — and no check called `docs` for
+  # a required-checks list to name.
+  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
