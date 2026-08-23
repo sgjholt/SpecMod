@@ -1,5 +1,7 @@
 # SpecMod
 
+[![PyPI](https://img.shields.io/pypi/v/specmod.svg)](https://pypi.org/project/specmod/)
+[![Documentation](https://readthedocs.org/projects/specmod/badge/?version=stable)](https://specmod.readthedocs.io/en/stable/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22071455.svg)](https://doi.org/10.5281/zenodo.22071455)
 
 A Python toolbox for processing and modelling seismic spectra, following the
@@ -26,16 +28,34 @@ source model to direct-phase spectra.
 Requires Python 3.11 or newer.
 
 ```sh
+pip install specmod
+```
+
+While this is `0.x`, pin the exact version in anything you intend to publish:
+`pip install specmod==<version>`, taking the current one from the badge above.
+The reason is in the status note — `0.x` releases move names and numbers, and
+the pin plus the configuration stamp each output carries are together what
+make a run reproducible.
+
+To work on SpecMod rather than with it, clone the repository and install it
+editable with the test and lint tooling:
+
+```sh
 pip install -e ".[dev]"
 ```
 
-Optional extras:
+Optional extras, installable as `pip install "specmod[multitaper]"` or in
+combination — `pip install "specmod[multitaper,wavelet]"`:
 
 | Extra | Adds |
 |---|---|
+| `io` | `h5py` and `pyarrow` — needed to save or load spectra, as HDF5 for arrays and Parquet for tables |
 | `multitaper` | Prieto's `multitaper` package — jackknife confidence intervals, F-test for spectral lines |
 | `wavelet` | PyWavelets, for wavelet families beyond the built-in Morlet |
 | `mcmc` | `emcee`, for Markov-chain Monte Carlo parameter search |
+
+`io` is the one most people want: without it SpecMod computes and plots
+normally, but `specmod.io` raises on the first save telling you to install it.
 
 No Fortran compiler is needed. Multitaper estimation is implemented natively on
 SciPy's DPSS tapers, so the historical `mtspec` dependency — Fortran source with
