@@ -1,5 +1,7 @@
 # SpecMod
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22071455.svg)](https://doi.org/10.5281/zenodo.22071455)
+
 A Python toolbox for processing and modelling seismic spectra, following the
 method of Edwards *et al.* (2010).
 
@@ -15,9 +17,9 @@ source model to direct-phase spectra.
 > breaking changes at every `0.x` release until the API settles at 1.0 — they
 > land in minor bumps by design, with no deprecation cycle. Pin an exact
 > version for anything you intend to publish.
-> [`docs/roadmap.md`](docs/roadmap.md) says which stages are done and what 1.0
-> will mean; [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) is the working
-> document behind it.
+> [`docs/roadmap.md`](docs/roadmap.md) says what has shipped, in which version,
+> and what 1.0 will mean; [`docs/REFACTOR_PLAN.md`](docs/REFACTOR_PLAN.md) is
+> the working document behind it.
 
 ## Installation
 
