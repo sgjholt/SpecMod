@@ -1,6 +1,15 @@
 # Changelog
 
-## [0.2.0](https://github.com/sgjholt/SpecMod/compare/v0.1.1...v0.2.0) (2026-08-23)
+<!-- The 0.2.0 heading below is edited by hand, and is the only entry that is.
+release-please generated `compare/v0.1.1...v0.2.0`, which 404s: 0.1.1 predates
+this repository's tagging and was never tagged, so there is nothing at that
+ref. It is preserved on the frozen `master` branch instead, and comparing
+against that branch is the same diff under a name that resolves. Only the first
+release could have this problem — every later one has a real predecessor tag —
+so leave subsequent headings as generated. release-please only prepends to this
+file, so this edit survives. -->
+
+## [0.2.0](https://github.com/sgjholt/SpecMod/compare/master...v0.2.0) (2026-08-23)
 
 
 ### ⚠ BREAKING CHANGES
