@@ -27,19 +27,52 @@ bump.
 
 ## One-time setup
 
-Five things, none of which can be done from a commit. Until they are done the
+Six things, none of which can be done from a commit. Until they are done the
 release workflow is inert rather than wrong — it opens a release PR and stops.
 
-1. **Let Actions open pull requests.** Settings → Actions → General →
+1. **Mint `RELEASE_PLEASE_TOKEN`.** Settings → Developer settings →
+   Personal access tokens → Fine-grained tokens → *Generate new token*.
+
+   | Field | Value |
+   |---|---|
+   | Repository access | Only select repositories → `SpecMod` |
+   | Contents | Read and write |
+   | Pull requests | Read and write |
+   | Expiration | up to 366 days — see the renewal note below |
+
+   Then Settings → Secrets and variables → Actions → *New repository secret*,
+   named exactly `RELEASE_PLEASE_TOKEN`.
+
+   This is what makes the release PR run CI. Without it the PR is opened by
+   `GITHUB_TOKEN`, which starts no workflow runs at all, so the three required
+   checks never report and the PR is blocked with nothing to fix. The token
+   never touches PyPI — the upload authenticates by OIDC — so this does not
+   reintroduce a publishing secret.
+
+   **It expires.** When it does, the symptom is the old one returning: a
+   release PR with no checks on it. Renew the token and update the secret;
+   nothing in the repository changes. A GitHub App token via
+   `actions/create-github-app-token` avoids the expiry entirely and is the
+   better answer if this becomes annoying.
+
+2. **Let Actions open pull requests.** Settings → Actions → General →
    Workflow permissions → tick *Allow GitHub Actions to create and approve pull
-   requests*. Without it release-please fails with `GitHub Actions is not
-   permitted to create or approve pull requests`.
+   requests*. Only needed as a fallback — with `RELEASE_PLEASE_TOKEN` set the
+   PR is opened by a user, not by Actions — but leave it on so the workflow
+   still works if the token lapses.
 
-2. **Create the `pypi` environment.** Settings → Environments → New
-   environment → `pypi`. Add required reviewers here if you want a second
-   human gate on the upload itself.
+3. **Create the `pypi` environment.** Settings → Environments → New
+   environment → `pypi`.
 
-3. **Register the trusted publisher on PyPI.** On the project page (or, for
+   Required reviewers here are optional, and worth thinking about before
+   adding: they hold the `publish` job at `waiting` until a human approves the
+   deployment, and **that approval cannot be given from the GitHub mobile
+   app** — the button exists only on the web UI and the REST API. Merging the
+   release PR is already a deliberate human act, and
+   `tools/check_built_version.py` is what actually prevents a wrong version
+   reaching PyPI, so the reviewer gate buys less than it looks like it does.
+
+4. **Register the trusted publisher on PyPI.** On the project page (or, for
    the first ever upload, under *Publishing* → *Add a new pending publisher*):
 
    | Field | Value |
@@ -53,12 +86,12 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    that actually runs. If the workflow is ever renamed, this has to be changed
    in the same sitting or the upload fails authentication.
 
-4. **Turn on the Zenodo webhook.** Log into Zenodo with GitHub, find `SpecMod`
+5. **Turn on the Zenodo webhook.** Log into Zenodo with GitHub, find `SpecMod`
    in the repository list, and flip the switch. It takes effect for releases
    made *after* it is on, so do it before the first release rather than after.
    `CITATION.cff` supplies the metadata.
 
-5. **Require the checks on `main`.** Branch protection → *Require status
+6. **Require the checks on `main`.** Branch protection → *Require status
    checks to pass* → add exactly three: **`ci`**, **`docs`**, **`build`**.
 
    Those are job names, not workflow names, and only these three are stable:
@@ -68,10 +101,12 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    instead matches nothing, and a required check that never reports blocks
    every merge.
 
-   The release pull request is an ordinary pull request and goes through them
-   like any other — including the approval step, since GitHub holds workflow
-   runs on pull requests opened by `github-actions[bot]` until a maintainer
-   approves them.
+   The release pull request goes through them like any other — but only
+   because of step 1. This page previously said GitHub *holds* the runs on a
+   `github-actions[bot]` pull request until a maintainer approves them, and
+   that is not what happens: no runs are created, there is nothing to approve,
+   and the PR sits blocked with an empty check list. `RELEASE_PLEASE_TOKEN` is
+   what makes this paragraph true.
 
 ## What a version number means while this is 0.x
 
@@ -108,13 +143,20 @@ To skip a release, do not merge the PR. It stays open and keeps accruing.
 ## Things that are the way they are for a reason
 
 **The publish job is in `release.yml`, not a separate `publish.yml`.** The
-obvious design — a workflow keyed on `release: published` — never fires.
-release-please creates the release with the default `GITHUB_TOKEN`, and
-"events triggered by the `GITHUB_TOKEN` will not create a new workflow run".
-The workaround is a personal access token in secrets, which is the one thing
-Trusted Publishing exists to avoid, so the publish job gates on
-release-please's own `release_created` output instead. Zenodo is unaffected:
-it listens to the release *webhook*, which is not subject to that restriction.
+obvious design — a workflow keyed on `release: published` — could not fire at
+all when release-please ran on the default `GITHUB_TOKEN`, because "events
+triggered by the `GITHUB_TOKEN` will not create a new workflow run". So the
+publish job gates on release-please's own `release_created` output instead.
+
+`RELEASE_PLEASE_TOKEN` removes that constraint — a release created by a PAT
+*does* start workflow runs — so a separate `publish.yml` would now work. It is
+still not worth splitting: one workflow means one `concurrency` group, one
+place to read, and no dependency on the ordering of two runs that would race
+whenever two merges land together. The `release_created` gate is also exact,
+where an event key would fire on any release including one made by hand.
+
+Zenodo was never affected either way: it listens to the release *webhook*,
+which is not subject to the token restriction.
 
 **`include-component-in-tag` is `false`.** Left on, the tag is
 `specmod-v0.2.0`, which `pyproject.toml`'s `--match v[0-9]*` does not describe
@@ -165,3 +207,18 @@ If the `publish` job fails after the release exists — a transient PyPI error,
 say — re-run that job from the Actions UI. Do not re-run `release-please`
 expecting a second attempt: `release_created` is only true on the run that
 created the release.
+
+## When the release PR has no checks on it
+
+Not a red check — *no checks at all*, an empty list, and the PR blocked
+because the three required ones never reported. This means release-please fell
+back to `GITHUB_TOKEN`: either `RELEASE_PLEASE_TOKEN` is unset, or it expired,
+or its repository access no longer covers `SpecMod`. Renew it (one-time setup,
+step 1); nothing in the repository needs changing.
+
+To unblock the release PR that is already open, without waiting for a new
+commit: **close it and immediately reopen it.** That re-fires
+`pull_request.reopened` from your account rather than from the token, and the
+checks run. It is the same trick that got `v0.2.0` out, and it is safe — the
+`autorelease: pending` label survives, so release-please still recognises the
+merge as a release, and no history is touched.

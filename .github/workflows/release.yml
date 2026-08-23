@@ -28,6 +28,24 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
+          # A pull request opened with the default GITHUB_TOKEN starts no
+          # workflow runs at all — "events triggered by the GITHUB_TOKEN will
+          # not create a new workflow run". The release PR therefore arrived
+          # with *zero* checks, and since `ci`, `docs` and `build` are required
+          # on main, it could never satisfy them: permanently blocked, with no
+          # failure to point at. v0.2.0 shipped only because the PR was closed
+          # and reopened by hand, which re-fires the event from a real account.
+          #
+          # RELEASE_PLEASE_TOKEN is a fine-grained PAT (contents + pull
+          # requests, write) so the PR is opened by a user and CI runs on it
+          # normally. It is *not* a PyPI credential — the upload below still
+          # authenticates by OIDC, so the number of publishing secrets is
+          # still zero. See docs/releasing.md for how to mint and renew it.
+          #
+          # The fallback keeps the workflow working in a fork or before the
+          # secret exists; it degrades to the blocked-PR behaviour, not to a
+          # broken run.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
