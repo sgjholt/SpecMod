@@ -1,7 +1,7 @@
 """Two properties the package has to hold everywhere, not just where fixed.
 
 Both were found by auditing for what a long-lived process would do with this
-library — see ``docs/notes/api_audit.md`` — and both are the kind of defect
+library — see ``docs/notes/api-audit.md`` — and both are the kind of defect
 that reappears one file at a time. So each is checked by walking the package
 rather than by testing the one site that had it.
 

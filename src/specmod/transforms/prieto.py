@@ -48,7 +48,7 @@ energy *by construction*, whatever the taper weighting did. It is therefore not
 an independent check that the estimate is sound, and it means this backend is
 immune to the position-dependent energy bias described in
 :mod:`specmod.transforms.multitaper` — but only for total energy, not for the
-shape of the spectrum. See ``docs/choosing_a_transform.md``.
+shape of the spectrum. See ``docs/choosing-a-transform.md``.
 """
 
 from __future__ import annotations

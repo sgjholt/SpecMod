@@ -19,7 +19,6 @@ This page is the hub. The three companions are
 | Understand a tool or a check | [Tooling reference](#tooling-reference) |
 | Write or fix a test | [Testing](#testing) |
 | Read a CI failure | [What CI runs](#what-ci-runs) |
-| Change a workflow file | [The `ci/` mirror](#the-ci-mirror) |
 | Understand versions and releases | [Development versus release](#development-versus-release) |
 | Preview or publish docs | [Documentation workflow](documentation.md) |
 | Use Claude or Codex on this repo | [Working with agents](#working-with-agents) |
@@ -79,7 +78,6 @@ src/specmod/          the package
   cli.py              the `specmod` command
 tests/                the suite, plus tests/golden/ reference numbers
 tools/                repository scripts, each with a CI job or test behind it
-ci/workflows/         staged copies of .github/workflows (see below)
 docs/                 this site
   REFACTOR_PLAN.md    the working document — not part of the built site
 datasets/             dataset definitions for `specmod fetch`
@@ -87,15 +85,12 @@ tutorial/             the tutorial notebook and its data
 stubs/                hand-written ObsPy type stubs
 ```
 
-Two files that are not what they look like:
+One file that is not what it looks like:
 
 - **`docs/REFACTOR_PLAN.md`** is a working document, deliberately excluded from
   the built site. It records decisions, the measurements behind them, and an
   audit (§6.6) of claims in it that turned out to be false. When something here
   says "why", that is usually where the long answer is.
-- **`ci/workflows/`** holds complete copies of the live GitHub Actions
-  workflows. See [The `ci/` mirror](#the-ci-mirror).
-
 ## The daily loop
 
 ```sh
@@ -170,7 +165,6 @@ standard-library-only unless noted.
 
 | Script | Does | Enforced by |
 |---|---|---|
-| `check_ci_mirror.py` | staged workflows match the live ones | `lint` job |
 | `check_floors.py` | the installed versions really are the declared minimums | `floors` job |
 | `check_built_version.py` | the built wheel's version is the tag | `publish` job |
 | `make_golden.py` | regenerates `tests/golden/*.json` | run by hand, deliberately |
@@ -262,6 +256,7 @@ request.
 | `test` | `test.yml` | pytest on 3.11/3.12/3.13 × ubuntu/macOS, coverage to Codecov from one cell |
 | `floors` | `test.yml` | installs the *declared minimum* versions and runs the suite |
 | `notebook` | `test.yml` | executes the tutorial notebook |
+| `ci` | `test.yml` | succeeds only if every job above did. **This is what branch protection requires** — see below |
 | `build` | `build.yml` | sdist + wheel, `twine check`, install-from-wheel smoke test |
 | `docs` | `docs.yml` | builds the site as a check; publishing is Read the Docs' job |
 | `release` | `release.yml` | the release PR, and publishing — see below |
@@ -275,30 +270,25 @@ never have worked: `lmfit>=1.2` with `numpy>=2.0` (lmfit below 1.3 calls
 quadratic multitaper. If you raise or add a dependency, this is the job that
 tells you whether the floor you wrote is real.
 
+**`ci` exists so branch protection has one name to require.** Required status
+checks match *job* names, and a matrix job reports one check per cell —
+`test (ubuntu-latest, 3.11)` and five more — so requiring "the test workflow"
+means listing ten names that change whenever the matrix does. `ci` depends on
+all of them and is required in their place, alongside `docs` and `build`.
+
+Two details in it are not decoration. It runs `if: always()`, because a job
+whose dependency failed is *skipped*, and **GitHub treats a skipped required
+check as satisfied** — so without that line branch protection would go green
+over a red build. And it counts `skipped` as a failure, because nothing in this
+workflow is conditionally skipped, so a skip means something upstream broke.
+
+Job names are also why `docs.yml`'s job is called `docs` rather than `build`:
+it collided with `build.yml`'s job, leaving two unrelated checks sharing one
+name and nothing named `docs` at all.
+
 **`docs`** deliberately does **not** use `-W`. Intersphinx resolves seven
 inventories over the network and warns whenever one is briefly unreachable;
 turning a third party's downtime into a red build is flakiness, not a check.
-
-## The `ci/` mirror
-
-`ci/workflows/*.yml` holds complete, ready-to-paste copies of
-`.github/workflows/*.yml`. The reason is narrow: the GitHub App token used by
-AI coding sessions has no `workflows` permission, so a push touching
-`.github/workflows/` is rejected. Rather than describe an edit in a comment and
-hope it is applied correctly, the intended file is committed in full.
-
-To apply one, copy the whole file over its counterpart — no merging, no partial
-application. `tools/check_ci_mirror.py` runs in the `lint` job and fails while
-a pair differs, so a staged change that has not been copied across shows up as
-a red build rather than being forgotten. **That failure is the reminder.** It
-clears the moment the files match.
-
-The mirror is the *intended* state, which is not always the current one — in
-either direction. If you fix a workflow through the GitHub web editor, copy it
-back into `ci/` so the next person staging a change starts from the working
-version.
-
-Full detail in [`ci/README.md`](https://github.com/sgjholt/SpecMod/blob/main/ci/README.md).
 
 ## Development versus release
 
@@ -383,7 +373,7 @@ Adding an export is a compatibility obligation, and the procedure is in
 
 The audit that established what could go on it — path coupling, hidden state,
 determinism, and what one multitaper estimate actually costs — is in
-[Audit: what `specmod.api` found in core](notes/api_audit.md). Two of its
+[Audit: what `specmod.api` found in core](notes/api-audit.md). Two of its
 findings were defects in core rather than in the surface, both since fixed and
 both now guarded package-wide by `tests/test_ambient_state.py`: **no module
 reads configuration at import time**, and **no module prints**. Those two
@@ -394,7 +384,7 @@ invisible to a caller capturing logs.
 ```{toctree}
 :hidden:
 
-notes/api_audit
+notes/api-audit
 ```
 
 ## Working with agents

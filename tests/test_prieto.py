@@ -165,7 +165,7 @@ def test_position_independence_from_the_baked_in_normalisation() -> None:
 
     mtspec applied the same rescaling, so the position-dependent energy bias
     documented for the native estimator is very likely absent from results
-    produced before this refactor. See docs/choosing_a_transform.md.
+    produced before this refactor. See docs/choosing-a-transform.md.
     """
     rng = np.random.default_rng(1)
     burst = rng.normal(0.0, 1e-6, 200)

@@ -12,9 +12,17 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.1
     hooks:
+      # Scoped to match CI, which runs `ruff ... src/ tests/ tools/`. Without
+      # this the hook lints everything staged and CI lints three directories,
+      # so a commit touching `docs/notebooks/` or `stubs/` is blocked by rules
+      # nothing else enforces — and the notebook builder legitimately contains
+      # long markdown lines and mathematical unicode that `RUF001` reads as
+      # ambiguous. Widen both together or neither.
       - id: ruff-check
         args: [--fix]
+        files: ^(src|tests|tools)/
       - id: ruff-format
+        files: ^(src|tests|tools)/
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

@@ -47,7 +47,7 @@ extensions = [
 #: for whoever is doing the refactor and records decisions and their evidence.
 #: `notebooks/` is built by Phase 6 with myst-nb; until then the `.ipynb` files
 #: would be copied in without being executed, which is worse than leaving them
-#: out. `notes/` *is* included: `choosing_a_transform.md` links to it for a
+#: out. `notes/` *is* included: `choosing-a-transform.md` links to it for a
 #: per-trace table, so excluding it broke that link.
 exclude_patterns = [
     "_build",

@@ -24,11 +24,6 @@ jobs:
         run: uvx ruff@0.16.1 check --output-format=github src/ tests/ tools/
       - name: ruff format
         run: uvx ruff@0.16.1 format --check src/ tests/ tools/
-      # ci/workflows/ holds copies of these files, because a Claude Code
-      # session's token cannot push to .github/workflows/. This fails when a
-      # staged change has not been copied across. See ci/README.md.
-      - name: ci mirror is in sync
-        run: uv run --no-project python tools/check_ci_mirror.py
 
   typecheck:
     runs-on: ubuntu-latest
@@ -107,3 +102,29 @@ jobs:
       - run: uv venv
       - run: uv pip install -e ".[dev,tutorial]"
       - run: uv run pytest -m notebook -q
+
+  # One check to require in branch protection, instead of ten — and stable when
+  # the matrix changes, which the six `test (os, version)` names are not.
+  #
+  # `if: always()` is load-bearing. Without it a failing dependency *skips* this
+  # job rather than failing it, and GitHub treats a skipped required check as
+  # satisfied — so branch protection would go green on a red build. Running
+  # always, and failing explicitly on any non-success, is what closes that.
+  #
+  # `skipped` counts as a failure here on purpose: nothing above is
+  # conditionally skipped, so a skip means something upstream went wrong.
+  ci:
+    if: always()
+    needs: [lint, typecheck, test, floors, notebook]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report what every job did
+        run: echo '${{ toJSON(needs) }}'
+      - name: Fail unless all of them succeeded
+        if: >-
+          contains(needs.*.result, 'failure')
+          || contains(needs.*.result, 'cancelled')
+          || contains(needs.*.result, 'skipped')
+        run: |
+          echo "::error::a required job did not succeed; see the report above"
+          exit 1

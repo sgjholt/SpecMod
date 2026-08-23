@@ -37,7 +37,7 @@ subtle: the choices in this notebook change recovered amplitude by factors of
 three on real seismic windows, which is roughly 0.3 magnitude units.
 
 This notebook is the long form of
-[`choosing_a_transform.md`](choosing_a_transform.md). Work through it once
+[`choosing-a-transform.md`](choosing-a-transform.md). Work through it once
 before picking an estimator for real analysis.
 
 **What you will end up knowing**
@@ -534,7 +534,7 @@ the arrival lands nearer the middle.
 A quarter of these windows sit below 20%, where the taper envelope costs the
 most energy. On these same 28 windows the worst trace recovers 0.56 of its true
 energy under either weighting, against 0.79 for a lightly-tapered FFT — see
-`docs/notes/window_position.md`.
+`docs/notes/window-position.md`.
 """)
 
 md("""
@@ -672,7 +672,9 @@ nb = {
     "nbformat_minor": 5,
 }
 
-out = pathlib.Path("/home/user/SpecMod/docs/notebooks/choosing_a_transform.ipynb")
+# Relative to this script, not to whoever happened to run it: the path was
+# hardcoded to one machine's checkout, so the script only worked there.
+out = pathlib.Path(__file__).resolve().parent / "choosing-a-transform.ipynb"
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(nb, indent=1) + "\n")
 print(

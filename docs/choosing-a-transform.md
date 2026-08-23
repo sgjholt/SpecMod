@@ -202,7 +202,7 @@ front-loaded. At larger distance the window opens well before S, so the arrival
 lands nearer the middle.
 
 **Practical consequence: near-source stations are the ones at risk.** Full
-per-trace table in [`notes/window_position.md`](notes/window_position.md).
+per-trace table in [`notes/window-position.md`](notes/window-position.md).
 
 ---
 
@@ -604,5 +604,5 @@ The first of those is unverified — see `docs/REFACTOR_PLAN.md` §5.2.5. The
 ```{toctree}
 :hidden:
 
-notes/window_position
+notes/window-position
 ```

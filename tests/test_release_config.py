@@ -28,7 +28,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "release-please-config.json"
 MANIFEST = ROOT / ".release-please-manifest.json"
-WORKFLOW = ROOT / "ci" / "workflows" / "release.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 
 
 @pytest.fixture(scope="module")
@@ -110,7 +110,12 @@ class TestTheVersionItWillPropose:
 
 class TestTheWorkflowUsesTheseFiles:
     """A rename here is silent: release-please falls back to its defaults and
-    releases with none of the settings above."""
+    releases with none of the settings above.
+
+    Reads the live workflow. It used to read a staged copy under ``ci/``,
+    which existed because an agent token could not push ``.github/workflows/``;
+    that copy is gone, and this reads the file that actually runs.
+    """
 
     @pytest.mark.parametrize("path", [CONFIG, MANIFEST])
     def test_the_workflow_names_the_config_files(self, path: Path) -> None:

@@ -3165,7 +3165,7 @@ existing only in the config file.
 
 ### 6.3 Documentation (Sphinx)
 
-**Built**, in `docs/conf.py`, `.readthedocs.yaml` and `ci/workflows/docs.yml`.
+**Built**, in `docs/conf.py`, `.readthedocs.yaml` and `.github/workflows/docs.yml`.
 What follows is the plan as written, annotated with what building it changed.
 
 - **Sphinx** with `pydata-sphinx-theme` (the NumPy/SciPy/ObsPy house style —
@@ -3198,7 +3198,7 @@ Four things the first build found, each fixed rather than tolerated:
   working document, not documentation. `processing.md` now links to it on
   GitHub instead.
 - **`notes/` was excluded on that same reasoning, and that was wrong.**
-  `choosing_a_transform.md` links to `notes/window_position.md` for a per-trace
+  `choosing-a-transform.md` links to `notes/window-position.md` for a per-trace
   table, which makes it documentation. Now built, and reachable through a
   hidden toctree on the page that cites it.
 - **`HOLT_2019_UTAH` broke autodoc.** It is a callable dataclass instance
@@ -3208,7 +3208,7 @@ Four things the first build found, each fixed rather than tolerated:
 
 **The equations in `docs/` did not render before this, and building it was the
 fix.**
-`processing.md` and `choosing_a_transform.md` are written in LaTeX with
+`processing.md` and `choosing-a-transform.md` are written in LaTeX with
 `$...$` and `$$...$$`, which is what MyST's `dollarmath` extension reads — and
 that extension does not exist yet, because neither does the Sphinx build. The
 only renderer these files currently meet is GitHub's, whose math support is
@@ -3226,7 +3226,7 @@ without a renderer to check against. Measured against the built site:
 - **The syntax predicted to break does not.** The prediction was one display
   block without a preceding blank line, one spanning two lines, and 26 inline
   expressions containing underscores. Built: `processing.html` and
-  `choosing_a_transform.html` contain **no** literal `$` at all and 120 math
+  `choosing-a-transform.html` contain **no** literal `$` at all and 120 math
   nodes between them, the two-line block and the `cases` block included. The
   risk was real on GitHub's renderer; MyST's parses all of it.
 
@@ -3314,7 +3314,7 @@ This does impose Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`,
 there is no `commitlint` hook, and this paragraph claimed one until §6.6 went
 looking. It is a small discipline and it is what makes the changelog automatic.
 
-**Built, in `release-please-config.json` and `ci/workflows/release.yml`.**
+**Built, in `release-please-config.json` and `.github/workflows/release.yml`.**
 Three settings there are load-bearing, and each was chosen against a measured
 consequence rather than a default:
 
@@ -3568,7 +3568,7 @@ Each phase ends green on CI and is independently mergeable.
 | **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
-| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → a published site~~ ✅ — Read the Docs rather than GH Pages, for versions (§6.3); ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. All three workflows are staged in `ci/` and need copying across, and six repository settings have to be turned on by hand: `docs/releasing.md` lists them. Parallel with 2 | 1 | 1–2 days |
+| **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → a published site~~ ✅ — Read the Docs rather than GH Pages, for versions (§6.3); ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. Five repository settings have to be turned on by hand: `docs/releasing.md` lists them. The `ci/` mirror that staged workflow files for hand-copying is gone — it existed because an agent token could not push `.github/workflows/`, and that permission is now granted. Parallel with 2 | 1 | 1–2 days |
 | **3. Transform layer** | `SpectralEstimator` protocol; `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator`; `smoothing/` incl. Konno–Ohmachi and `LogBinner`; mtspec demoted to optional legacy backend; Tier 1 + Tier 2 tests; theory docs page | 2 | 5–7 days |
 | **4. CWT** | `CWTEstimator` + `Scalogram`; COI handling; the Parseval/units calibration and its test; `time_average()`; `ScalogramQC` + the four QC checks; COI floor into `BandwidthSelector`; scalogram plotting; HDF5 scalogram storage | 3 | 6–8 days |
 | **5. Decompose** | Split `Spectral.py` (655 lines) into `core/` + `snr/` ✅; ~~`Fitting.py` → `fitting/`~~ ✅ — `base`/`guess`/`spectrum`/`event`, 745 lines to four modules of 30–300, public names unchanged; models as objects ✅; `io/`; `viz/`; non-mutating operations; mypy override list → empty ✅; `picks/` per §4.9 ✅ | 3 | 4–6 days |
