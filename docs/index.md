@@ -43,47 +43,24 @@ fits.fit_spectra()
 print(fits.table[["id", "llpsp", "fc", "ts"]])
 ```
 
-## Where to start
+## Where to go
 
-[Tutorial](tutorial/SpecModTutorial.ipynb)
-: One event end to end — waveforms and picks in, source parameters out. Every
-  figure and number on the page is produced by running the notebook at build
-  time, so it cannot describe an API that no longer exists.
+[Getting started](getting-started.md)
+: Install it, run one event end to end with the tutorial, and — if you have
+  code written against `0.1` — find out what moved.
 
-[Processing](processing.md)
-: Every step of the pipeline with the equation it implements — what a window
-  is, how the noise is compared against it, and what the bandwidth selector
-  does.
+[Guides](guides.md)
+: What each stage does and why, and where the conventions are stated: the
+  amplitude convention, the Parseval contract, and the moment and magnitude
+  equations.
 
-[Choosing a transform](choosing-a-transform.md)
-: What each estimator does to your data, measured. The choices here change
-  recovered amplitude by factors of three on real windows, which is about 0.3
-  magnitude units.
+[API reference](api.md)
+: Every public object. `specmod.api` is the narrower, more stable subset to
+  import from if you are building on this.
 
-[Reading picks](pick-formats.md)
-: What arrival formats are read out of the box, how to add one, and how a pick
-  is matched to a trace.
-
-[Publishing a dataset](releasing-data.md)
-: Taking an event from an FDSN archive to a hash-pinned entry in the registry.
-
-[Releasing the software](releasing.md)
-: How a merged commit becomes a tag, a PyPI release and a DOI, and the six
-  settings that have to be turned on once.
-
-[Roadmap](roadmap.md)
-: What has shipped and in which version, what is being worked on, and what 1.0
-  will mean. Milestones, not dates.
-
-## Working on SpecMod
-
-[Developer guide](development.md)
-: Quick start, the repository mapped, the daily loop, every tool and check, and
-  where development stops and releasing begins.
-
-[Documentation workflow](documentation.md)
-: Building the site locally, previewing a pull request's build, what the
-  official site is, and how versions would work.
+[Working on SpecMod](contributing.md)
+: The roadmap, the developer guide, how this site is built, and how a merged
+  commit becomes a release.
 
 ## Two things worth knowing early
 
@@ -99,17 +76,11 @@ model carries a motion factor, so the plateau it reports is the displacement
 one either way.
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 3
 :hidden:
 
-tutorial/SpecModTutorial
-processing
-choosing-a-transform
-pick-formats
-development
-documentation
-releasing-data
-releasing
-roadmap
+getting-started
+guides
 api
+contributing
 ```

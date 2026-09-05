@@ -160,5 +160,19 @@ html_theme_options = {
     "github_url": "https://github.com/sgjholt/SpecMod",
     "show_prev_next": True,
     "navigation_with_keys": False,
+    #: This theme puts *top-level* toctree entries in the header and gives the
+    #: sidebar the current section's children. A flat toctree therefore
+    #: produces a header of ten items and an empty sidebar, with `:caption:`
+    #: nowhere to render — which is what this site had. The four section pages
+    #: are what give the sidebar something to nest.
+    #:
+    #: `show_nav_level: 1` expands each section's own entries rather than
+    #: leaving them behind a disclosure triangle, so a reader can see a
+    #: section's contents without a click.
+    "show_nav_level": 1,
+    #: Deep enough for a section, its pages, and their headings — which is what
+    #: makes a long page like `processing` navigable from the sidebar rather
+    #: than by scrolling.
+    "navigation_depth": 3,
 }
 html_static_path: list[str] = []
