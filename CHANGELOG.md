@@ -9,6 +9,18 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.2.2](https://github.com/sgjholt/SpecMod/compare/v0.2.1...v0.2.2) (2026-09-05)
+
+
+### Bug Fixes
+
+* ignore the tutorial output at the path it is actually written to ([ad34cc7](https://github.com/sgjholt/SpecMod/commit/ad34cc7d44208e5bd49a2d1f1277516670848dc7))
+
+
+### Documentation
+
+* publish the tutorial, executed on every build ([ccd1842](https://github.com/sgjholt/SpecMod/commit/ccd18429b9da5db875885d88269fb70686e6eaa3))
+
 ## [0.2.1](https://github.com/sgjholt/SpecMod/compare/v0.2.0...v0.2.1) (2026-08-23)
 
 
