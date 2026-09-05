@@ -27,7 +27,7 @@ $X(f)$.
 | 1 | Instrument correction and detrending | `preprocess` |
 | 2 | Window selection and refinement | `preprocess.cut_s`, `signal_intensity` |
 | 3 | Spectral estimation | `transforms/` |
-| 4 | Amplitude convention | `core.Spectrum.to_kind`, `spectral.Spectrum.psd_to_amp` |
+| 4 | Amplitude convention | `core.Spectrum.to_kind` |
 | 5 | Log binning | `core.collection.log_bin` |
 | 6 | Noise rescaling and rotation | `core.collection.parseval_scale`, `core.noise.NOISE_MODELS` |
 | 7 | Signal-to-noise and bandwidth | `core.collection.find_bandwidth` |
