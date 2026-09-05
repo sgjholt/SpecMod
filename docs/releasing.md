@@ -102,11 +102,9 @@ release workflow is inert rather than wrong — it opens a release PR and stops.
    every merge.
 
    The release pull request goes through them like any other — but only
-   because of step 1. This page previously said GitHub *holds* the runs on a
-   `github-actions[bot]` pull request until a maintainer approves them, and
-   that is not what happens: no runs are created, there is nothing to approve,
-   and the PR sits blocked with an empty check list.
-   `RELEASE_PLEASE_TOKEN_SPECMOD` is what makes this paragraph true.
+   because of step 1. Without that token no runs are *created* on it at all:
+   there is nothing to approve and nothing to re-run, and the PR sits blocked
+   behind an empty check list.
 
 ## What a version number means while this is 0.x
 
@@ -151,9 +149,8 @@ the information exists: the changelog in front of you says exactly what this
 release carries.
 
 Only entries move by hand. The version in "Where it is now" is a
-`{{ release }}` substitution resolved at build time, so it cannot go stale —
-it did, saying v0.2.0 through the two releases that followed, which is why it
-is derived now.
+`{{ release }}` substitution resolved at build time, so it needs no
+maintenance and cannot disagree with the build it appears in.
 
 A release that carries nothing from the roadmap — most patch releases — needs
 no edit at all. The test is whether an entry under *In progress* is in the

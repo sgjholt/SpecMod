@@ -199,15 +199,10 @@ $$A = \sqrt{\mathrm{PSD}\cdot 2T}$$
 keyed off the physical duration $T$, for the reason given in [§3](#3-spectral-estimation).
 
 :::{warning}
-**Not $\sqrt{\mathrm{PSD}\cdot T/2}$**, which this page gave until v0.2.3 and
-which returns exactly half of it — that is $\lvert X\rvert$, the `MAGNITUDE`
-kind, because the legacy `psd_to_amp` it was inherited from worked in the
-unfolded convention. A PSD read into `FAS` through the old formula is a factor
-of two low, and `WelchEstimator` is the path that would show it: its only route
-from SciPy's one-sided density to a `FAS` is this conversion.
-
-Nothing shipped was ever wrong — `Spectrum.to_kind` has always applied
-$A^2/(2T)$ — but anyone who converted by hand from this page needs to check.
+**Not $\sqrt{\mathrm{PSD}\cdot T/2}$.** That returns exactly half — it is
+$\lvert X\rvert$, the `MAGNITUDE` kind, and it is the form the legacy
+`psd_to_amp` used because it worked in the unfolded convention. Anything
+carried over from that code reads a PSD into a `FAS` a factor of two low.
 :::
 
 ## 5. Log binning
