@@ -120,15 +120,9 @@ that made a last-bit difference between two machines move the noise by up to
 they were not reproducible before. See
 [Reproducibility](processing.md#reproducibility).
 
-:::{note}
-**Multitaper adaptive weighting is still on by default**, as it was in `0.1.1`
-and as `mtspec` had it. The changelog for `0.2.0` carries a breaking-change
-bullet saying it now defaults to `False`; that bullet is stale within its own
-release. The default was turned off, then turned back on in the same release
-once the collapse it was turned off for was diagnosed as a units bug in the
-adaptive weighting itself — so there is nothing to restore and nothing to pass.
-[Choosing a transform](choosing-a-transform.md) has the reasoning.
-:::
+Multitaper adaptive weighting is on by default, as it was in `0.1.1` and as
+`mtspec` had it, so nothing needs passing to keep it.
+[Choosing a transform](choosing-a-transform.md) explains why.
 
 ## The three deprecation shims
 
