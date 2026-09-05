@@ -2,7 +2,7 @@
 
 Build with::
 
-    uv pip install -e '.[docs]'
+    uv pip install -e '.[docs,io,tutorial]'
     sphinx-build -b html docs docs/_build/html
 
 ``-W`` is deliberately **not** used. Intersphinx resolves seven inventories

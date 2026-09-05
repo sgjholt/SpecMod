@@ -12,7 +12,7 @@ identifiers:
   # mints a version DOI per release; cite that one instead when reproducibility
   # matters and you need the reader to land on the exact version you ran.
   - type: doi
-    value: "10.5281/zenodo.22071455"
+    value: "10.5281/zenodo.22071454"
     description: "Concept DOI — resolves to the latest release."
 keywords:
   - seismology

@@ -32,7 +32,7 @@ those are separate clocks.
 ## Building it locally
 
 ```sh
-uv pip install -e '.[docs]'
+uv pip install -e '.[docs,io,tutorial]'
 sphinx-build -b html docs docs/_build/html
 python -m http.server -d docs/_build/html 8000   # then open localhost:8000
 ```
@@ -136,9 +136,11 @@ Two things in it are load-bearing and easy to lose:
   clones shallow to save time, and `hatch-vcs` derives the version from
   `git describe`. Without those two lines every build — including a tagged one
   — reports the fallback `0.0.0` in the sidebar.
-- **`extra_requirements: [docs, io]`.** The `io` extra is there because autodoc
-  imports `specmod.io`, which imports h5py and pyarrow. The CI job installs the
-  same pair for the same reason.
+- **`extra_requirements: [docs, io, tutorial]`.** `io` because autodoc imports
+  `specmod.io`, which imports h5py and pyarrow — and because the tutorial saves
+  an HDF5 file while executing. `tutorial` for the Jupyter kernel that executes
+  it. The CI `docs` job installs the same three for the same reasons; keep them
+  in step or one of the two builds fails on a missing kernel.
 
 ## Versions, and what to link to
 
