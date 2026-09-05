@@ -42,6 +42,12 @@ python:
       extra_requirements:
         # `io` alongside `docs` because autodoc imports every module it
         # documents, and `specmod.io` imports h5py and pyarrow. Without it the
-        # API reference loses those pages to import errors.
+        # API reference loses those pages to import errors — and the tutorial
+        # saves an HDF5 file, so it needs them at execution time too.
         - docs
         - io
+        # `tutorial` supplies the Jupyter kernel. `docs/conf.py` executes the
+        # notebook on every build rather than trusting committed outputs, which
+        # needs ipykernel, nbclient and nbformat present. Without it the build
+        # fails on a missing kernel rather than quietly publishing stale cells.
+        - tutorial

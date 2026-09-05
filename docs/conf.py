@@ -14,7 +14,9 @@ gives.
 
 from __future__ import annotations
 
+import shutil
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 project = "SpecMod"
 author = "James Holt"
@@ -32,7 +34,9 @@ except PackageNotFoundError:  # pragma: no cover - docs built without an install
 version = ".".join(release.split(".")[:2])
 
 extensions = [
-    "myst_parser",
+    #: `myst_nb` supersedes `myst_parser` — it is a superset, and loading both
+    #: makes Sphinx complain that the `.md` parser is registered twice.
+    "myst_nb",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
@@ -45,9 +49,10 @@ extensions = [
 
 #: `REFACTOR_PLAN.md` is a working document, not documentation — it is written
 #: for whoever is doing the refactor and records decisions and their evidence.
-#: `notebooks/` is built by Phase 6 with myst-nb; until then the `.ipynb` files
-#: would be copied in without being executed, which is worse than leaving them
-#: out. `notes/` *is* included: `choosing-a-transform.md` links to it for a
+#: `notebooks/` holds the source for the transform comparison, which
+#: `tools/measure_docs.py` renders into `choosing-a-transform.md`; the page is
+#: what is published, so building the notebook too would duplicate it.
+#: `notes/` *is* included: `choosing-a-transform.md` links to it for a
 #: per-trace table, so excluding it broke that link.
 exclude_patterns = [
     "_build",
@@ -57,9 +62,58 @@ exclude_patterns = [
     ".DS_Store",
 ]
 
-#: Markdown only. Every page in `docs/` is already written that way, and
-#: allowing both means two syntaxes for the same job.
-source_suffix = {".md": "markdown"}
+# ------------------------------------------------------- the tutorial notebook
+
+#: The tutorial lives in `tutorial/`, outside this source directory, next to the
+#: 1 MB of PNR waveforms it reads through paths relative to itself. Sphinx only
+#: builds what is under `docs/`, so it is copied in here.
+#:
+#: A copy rather than a move, and rather than executing it where it sits,
+#: because **the notebook writes**: cell 53 saves an HDF5 file under
+#: `data/events/<event>/spectra/` and cell 54 writes flatfiles beside it. Run in
+#: place, a docs build would leave those artefacts in the working tree — which
+#: is why `tests/test_tutorial.py` executes it in a `tmp_path` copy too. This is
+#: the same trick, and the copy is what the artefacts land in.
+#:
+#: Copying the data with it is what keeps the notebook's `Path("data/events")`
+#: working, so the notebook is identical whether opened from `tutorial/`, run by
+#: pytest, or built here. `tutorial/` stays canonical: eight other files name
+#: `tutorial/data/events/`, and the CI job that executes it records that a
+#: renamed data directory has already broken this once.
+_HERE = Path(__file__).parent
+_TUTORIAL_SRC = _HERE.parent / "tutorial"
+_TUTORIAL_DST = _HERE / "tutorial"
+
+if _TUTORIAL_SRC.is_dir():
+    shutil.rmtree(_TUTORIAL_DST, ignore_errors=True)
+    shutil.copytree(_TUTORIAL_SRC, _TUTORIAL_DST)
+
+#: `force`, not `auto`. `auto` executes only notebooks that arrive without
+#: outputs, and the tutorial is committed *with* 28 cells of them — so `auto`
+#: would publish whatever was last saved by hand, which is the silent rot this
+#: is meant to end. Forcing it means the page can only show output the code
+#: actually produced against the code being documented.
+nb_execution_mode = "force"
+#: Matches `tests/test_tutorial.py`. The whole notebook runs in ~40s; the
+#: default 30s is per cell, and the two-stage fit is the one that would trip it.
+nb_execution_timeout = 600
+#: A notebook that raises fails the build. That is the point: an executed
+#: tutorial is only a guarantee if a broken one is loud.
+nb_execution_raise_on_error = True
+#: `False` keeps the kernel's working directory at the notebook's own, which is
+#: what `Path("data/events")` resolves against.
+nb_execution_in_temp = False
+
+#: Markdown for the prose pages — every one in `docs/` is written that way, and
+#: allowing reStructuredText too would mean two syntaxes for the same job — plus
+#: `.ipynb` for the tutorial.
+#:
+#: Both map to `myst-nb`, which is the only parser name `myst_nb` 1.4 registers:
+#: it does not re-register `myst_parser`'s `markdown`, so leaving `.md` pointing
+#: at that fails the build outright with "Source parser for markdown not
+#: registered". The `myst-nb` parser is a superset and reads the prose pages
+#: identically.
+source_suffix = {".md": "myst-nb", ".ipynb": "myst-nb"}
 
 #: `linkify` is deliberately absent: it needs `linkify-it-py` and every link in
 #: these pages is already explicit.

@@ -33,7 +33,12 @@ jobs:
 
       # The package itself, not just the docs extra: autodoc imports every
       # module it documents, so a docs build is also an import check.
-      - run: uv pip install -e ".[docs,io]"
+      #
+      # `tutorial` supplies the Jupyter kernel. `docs/conf.py` executes the
+      # tutorial notebook on every build instead of trusting committed outputs,
+      # so without ipykernel the build fails on a missing kernel. Keep this list
+      # in step with `.readthedocs.yaml`, which installs the same three.
+      - run: uv pip install -e ".[docs,io,tutorial]"
 
       - name: Build
         # No -W. Intersphinx resolves seven inventories over the network and

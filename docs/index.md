@@ -45,6 +45,11 @@ print(fits.table[["id", "llpsp", "fc", "ts"]])
 
 ## Where to start
 
+[Tutorial](tutorial/SpecModTutorial.ipynb)
+: One event end to end — waveforms and picks in, source parameters out. Every
+  figure and number on the page is produced by running the notebook at build
+  time, so it cannot describe an API that no longer exists.
+
 [Processing](processing.md)
 : Every step of the pipeline with the equation it implements — what a window
   is, how the noise is compared against it, and what the bandwidth selector
@@ -97,6 +102,7 @@ one either way.
 :maxdepth: 2
 :hidden:
 
+tutorial/SpecModTutorial
 processing
 choosing-a-transform
 pick-formats
