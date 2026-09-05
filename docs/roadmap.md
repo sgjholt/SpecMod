@@ -14,10 +14,14 @@ measurements and the open questions.
 
 ## Where it is now
 
-**v0.2.2** — [on PyPI](https://pypi.org/p/specmod), with a Zenodo DOI and its
-own [documentation version](https://specmod.readthedocs.io/en/stable/). Install
-it with `pip install specmod`. `v0.2.0` was the first release of the rebuilt
-package; everything since has been documentation.
+SpecMod is [on PyPI](https://pypi.org/p/specmod), with a Zenodo DOI per release
+and its own [documentation version](https://specmod.readthedocs.io/en/stable/)
+for each. Install it with `pip install specmod`; `v0.2.0` was the first release
+of the rebuilt package.
+
+*This page was built from version* **{{ release }}**. On `stable` that is the
+release you are reading about; on `latest` it is a development build ahead of
+it, which is the honest answer to which code the milestones below describe.
 
 Still alpha, still pre-1.0: names and signatures move between `0.x` releases
 without a deprecation cycle. Everything below marked shipped is released,

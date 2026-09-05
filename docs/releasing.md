@@ -133,12 +133,31 @@ does on its way past.
    since the last release.
 3. Read the changelog. This is the review, and the only one — after the merge
    nothing else is asked.
-4. Merge it. release-please creates the tag and the GitHub Release; the
+4. **If the changelog carries anything on the roadmap, move it there first**,
+   in its own commit on `main` before merging the release PR. See below.
+5. Merge it. release-please creates the tag and the GitHub Release; the
    `publish` job builds the sdist and wheel from **the tag**, checks their
    version against it, and uploads to PyPI; Zenodo mints the DOI from the
    release webhook.
 
 To skip a release, do not merge the PR. It stays open and keeps accruing.
+
+### Keeping the roadmap honest
+
+[The roadmap](roadmap.md) distinguishes *In progress — not yet released* from
+*Shipped in vX.Y.Z*, and that distinction is only worth anything if someone
+maintains it. Step 4 is where it is maintained, because that is the one moment
+the information exists: the changelog in front of you says exactly what this
+release carries.
+
+Only entries move by hand. The version in "Where it is now" is a
+`{{ release }}` substitution resolved at build time, so it cannot go stale —
+it did, saying v0.2.0 through the two releases that followed, which is why it
+is derived now.
+
+A release that carries nothing from the roadmap — most patch releases — needs
+no edit at all. The test is whether an entry under *In progress* is in the
+changelog you just read.
 
 ## Things that are the way they are for a reason
 

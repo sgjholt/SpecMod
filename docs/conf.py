@@ -126,6 +126,13 @@ myst_enable_extensions = [
 #: Heading anchors down to h3, so `docs/*.md` can link to each other's sections.
 myst_heading_anchors = 3
 
+#: `{{ release }}` in a page resolves to the version this site was built from.
+#: The roadmap used to state it in prose, which meant it was wrong from the
+#: moment of the next release — it said v0.2.0 through two that followed. A
+#: version is derivable, so deriving it removes the only part of that page that
+#: went stale on a timetable rather than on a decision.
+myst_substitutions = {"release": release}
+
 # ------------------------------------------------------------------ autodoc
 
 autodoc_typehints = "description"
