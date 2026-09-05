@@ -9,6 +9,23 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.2.3](https://github.com/sgjholt/SpecMod/compare/v0.2.2...v0.2.3) (2026-09-05)
+
+
+### Bug Fixes
+
+* correct four documented equations and behaviours that the code contradicts ([821792b](https://github.com/sgjholt/SpecMod/commit/821792b66d418b9c0048d717975b5a3716c52c20))
+* point the DOI badge at the concept DOI, not v0.2.0's ([11e7f7a](https://github.com/sgjholt/SpecMod/commit/11e7f7a056fc17c91b22c1dc9d834f19b8b6dbe3))
+
+
+### Documentation
+
+* an upgrade guide, and a table of contents with a shape ([4f35388](https://github.com/sgjholt/SpecMod/commit/4f353885cfd0768edeac225d7db4672a20c9120e))
+* derive the roadmap's version, and say when its entries move ([1917d43](https://github.com/sgjholt/SpecMod/commit/1917d432c6fdae1969dacb506bdac986152e40d8))
+* document moment and magnitude, which the page said were absent ([026abec](https://github.com/sgjholt/SpecMod/commit/026abecb9c6ed33017b306e825a6f84db2b343e4))
+* state what is true now, not what the page used to say ([b17339b](https://github.com/sgjholt/SpecMod/commit/b17339b6ad383afd936f7f2a972549b313e19906))
+* the documentation 1.0 was waiting on is done ([9693334](https://github.com/sgjholt/SpecMod/commit/9693334434738ae000bf61f1908524ee983ced17))
+
 ## [0.2.2](https://github.com/sgjholt/SpecMod/compare/v0.2.1...v0.2.2) (2026-09-05)
 
 
