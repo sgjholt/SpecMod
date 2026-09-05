@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/specmod.svg)](https://pypi.org/project/specmod/)
 [![Documentation](https://readthedocs.org/projects/specmod/badge/?version=stable)](https://specmod.readthedocs.io/en/stable/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22071455.svg)](https://doi.org/10.5281/zenodo.22071455)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22071454.svg)](https://doi.org/10.5281/zenodo.22071454)
 
 A Python toolbox for processing and modelling seismic spectra, following the
 method of Edwards *et al.* (2010).
@@ -181,7 +181,7 @@ The full documentation — the pipeline with its equations, the estimator
 comparison, pick formats, and an API reference — builds with Sphinx:
 
 ```bash
-uv pip install -e '.[docs]'
+uv pip install -e '.[docs,io,tutorial]'
 sphinx-build -b html docs docs/_build/html
 ```
 
