@@ -1,7 +1,10 @@
 # How a spectrum is processed, end to end
 
-Every step from a raw waveform to a fitted source model, with the equation
-each one applies and a pointer to the code that applies it.
+Every step from a raw waveform to a moment magnitude, with the equation each
+one applies and a pointer to the code that applies it. Together with the
+normalisation and units conventions in [§3](#the-parseval-contract) and
+[§4](#4-amplitude-convention), this is the reference for what SpecMod computes
+and in which units.
 
 This exists because a pipeline described only in prose is a pipeline nobody
 can check. Writing the noise rotation down as an equation rather than a loop
@@ -28,7 +31,8 @@ $X(f)$.
 | 5 | Log binning | `core.collection.log_bin` |
 | 6 | Noise rescaling and rotation | `core.collection.parseval_scale`, `core.noise.NOISE_MODELS` |
 | 7 | Signal-to-noise and bandwidth | `core.collection.find_bandwidth` |
-| 8 | Source model fitting | `models`, `fitting` |
+| 8 | Source model fitting | `sources/`, `fitting/` |
+| 9 | Moment and magnitude | `magnitude`, `spreading` |
 
 ---
 
@@ -370,11 +374,8 @@ The fitted model is their sum:
 $$\log_{10} A(f) = \log_{10} S(f) + \log_{10} D(f) + \log_{10} G(f)$$
 
 Free parameters are $\Omega$, $f_c$ and $t^\ast$, minimised with Powell's
-method by default.
-
-**The package stops here.** Converting $\Omega$ to $M_0$ and $M_w$ needs a
-density, velocity, radiation-pattern coefficient and geometrical spreading
-model, none of which SpecMod currently owns, so those live in the caller.
+method by default. Turning the fitted $\Omega$ into a magnitude is
+[§9](#9-moment-and-magnitude).
 
 > **A note for anyone adding a source model.** Madariaga is omega-squared like
 > Brune and sits at the *same* $(\gamma, n) = (1,2)$, so adding it as a
@@ -384,6 +385,85 @@ model, none of which SpecMod currently owns, so those live in the caller.
 > $f_c$-to-radius scaling has to be a named property of the model, not a
 > constant buried in whatever computes stress drop. See
 > `REFACTOR_PLAN.md` §4.6.5.
+
+---
+
+## 9. Moment and magnitude
+
+`specmod.magnitude`. The fit gives $\Omega$ per channel; this turns it into a
+seismic moment and a moment magnitude.
+
+$$M_0 = \frac{4\pi\rho\beta^3 R_0}{\Theta F}\cdot\frac{\Omega}{G(R)}
+\qquad\text{[N m]}$$
+
+$$M_w = \tfrac{2}{3}\left(\log_{10} M_0 - 9.1\right)$$
+
+$G(R)$ is the geometrical spreading ([`specmod.spreading`](api.md)), which
+corrects the observed plateau back to the reference distance $R_0$. The
+magnitude relation is Hanks and Kanamori (1979).
+
+### The constants
+
+Defaults are the S-wave values of Holt (2019) Ch. 1 §1.4 and Ch. 2 §2.2, all
+taken **at the source**, and all overridable through `MediumConstants`:
+
+| Symbol | Field | Default | |
+|---|---|---|---|
+| $\rho$ | `density` | 2700 | kg m⁻³ |
+| $\beta$ | `velocity` | 3500 | m s⁻¹, cubed here |
+| $\Theta$ | `radiation_pattern` | 0.55 | average SH over the focal sphere |
+| $F$ | `free_surface` | 2 | vertically incident SH |
+| $R_0$ | `reference_distance_m` | 1000 | metres |
+
+**$\Theta = 0.55$ is the SH average and pairs with $F = 2$.** The textbook
+0.63 is the RMS over total S — a different quantity, and substituting it while
+keeping $F = 2$ is not a small correction. No partition factor is applied.
+
+### Two distances, both correct
+
+$R_0$ is in **metres**, because it sits beside kg m⁻³ and m s⁻¹ and that is
+what makes $M_0$ come out in newton-metres. $G(R)$ takes its distance in
+**kilometres**.
+
+That looks like a units bug and is not: they are different distances. They
+cancel only when the spreading exponent is exactly 1, so a model with any
+other exponent genuinely needs both, in their own units.
+
+### $\Omega$ is linear, `llpsp` is not
+
+The fit reports `llpsp` — $\log_{10}\Omega$. `seismic_moment` takes $\Omega$
+itself and raises `ValueError` on a non-positive plateau rather than returning
+a moment roughly $10^{40}$ times too small, which is what passing the logarithm
+straight through would otherwise produce.
+
+And $\Omega$ must be the **displacement** plateau, in m s. That is the reason
+[§4](#4-amplitude-convention) converts to `MAGNITUDE`: reading a folded `FAS`
+plateau as $\Omega$ puts $M_0$ out by two, which is 0.2 magnitude units.
+
+### Station values, then an event value
+
+`station_moments` appends `m0` and `mw` per channel. `event_magnitude`
+aggregates, following Holt (2019) §2.2:
+
+- the **sample mean of station magnitudes**, excluding anything beyond
+  `outlier_sigma` (default 2.5) standard deviations, in a single pass rather
+  than iterated to convergence;
+- **no event value at all below `min_stations`** (default 3). Fewer than three
+  stations cannot average out the radiation pattern, so the published method
+  declines to report a value rather than reporting a poor one, and this raises
+  instead of returning something usable-looking.
+
+Averaging in magnitude rather than in $M_0$ makes the result a *geometric* mean
+of moments. That is the published choice, not an oversight.
+
+:::{warning}
+**The absolute calibration is unverified.** The shape of the fit is checked
+against golden references, and the constants above are sourced; what has not
+been confirmed is that the resulting $M_w$ reproduces the published catalogue
+values on the same events. Treat station-to-station and event-to-event
+*differences* as sound and the absolute level as provisional until §4.7 of
+`REFACTOR_PLAN.md` is closed.
+:::
 
 ---
 
