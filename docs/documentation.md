@@ -170,10 +170,18 @@ page depends on is documentation whatever its folder is called.
 ### Adding a page
 
 1. Write `docs/<name>.md` in MyST Markdown.
-2. Add it to the `toctree` at the bottom of `docs/index.md`, and usually to the
-   "Where to start" list above it.
+2. **Add it to the `toctree` of the section it belongs to** — not to
+   `index.md`. The site has four section pages, each owning its own toctree:
+   `getting-started.md`, `guides.md`, `api.md` and `contributing.md`. Add a
+   description to the list on that page too, since the sidebar shows titles
+   only.
 3. Build. A page in no toctree builds but warns, and is reachable only by a
    direct link.
+
+`index.md`'s toctree holds only those four. That is what gives the sidebar its
+nesting: this theme puts top-level toctree entries in the header and gives the
+sidebar the current section's children, so a page added at the top level lands
+in the header and flattens the navigation for everything else.
 
 If a page is a supporting note rather than a top-level one, put it in a hidden
 toctree on the page that cites it — that is how `notes/window-position.md` is
@@ -228,7 +236,7 @@ the first build:
 
 Type hints come from the annotations via `autodoc_typehints = "description"`.
 `sphinx-autodoc-typehints` is deliberately **not** used: measured, it produced
-the same 367 documented objects while calling an API Sphinx 10 removes.
+the same number of documented objects while calling an API Sphinx 10 removes.
 
 ### The tutorial notebook
 
@@ -260,9 +268,12 @@ committed output is never what a reader sees — only a stale diff.
 The kernel comes from the `tutorial` extra. Both `.readthedocs.yaml` and
 `.github/workflows/docs.yml` install `[docs,io,tutorial]`; keep them in step or
 one of the two builds fails on a missing kernel. This does mean the notebook
-executes twice per pull request — once here and once in the `notebook` CI job,
-which also checks imports and that deleted modules stay unmentioned. Roughly
-40 seconds, paid twice, for two genuinely different failures.
+executes twice per pull request — once here, and once in the `notebook` CI job,
+which runs the single `-m notebook` test that executes it in a `tmp_path` copy.
+Roughly 40 seconds, paid twice, to catch a broken notebook either as a failed
+build or as a failed test. The cheaper checks around it — that every name the
+notebook imports resolves, and that deleted modules stay unmentioned even in
+prose — are unmarked, so they run in the `test` matrix job instead.
 
 ### Numbers in prose
 

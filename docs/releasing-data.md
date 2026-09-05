@@ -13,9 +13,10 @@ fetching v1 after v2 exists. Nothing here ever revises an entry in place.
   USGS for the catalogue, in Magna's case).
 - Push access to the repository, and permission to create releases.
 - `specmod` installed from the working tree: `uv pip install -e '.[dev]'`.
-- **This branch merged**, or at least `pyproject.toml`'s `tag_regex` in place.
-  Step 3 creates a `data-v1` tag, and without that constraint the tag silently
-  becomes the package's version number. See "Why the tag prefix matters" below.
+- **`pyproject.toml`'s `tag_regex` in place** — it has been on `main` since
+  v0.2.0. Step 3 creates a `data-v1` tag, and without that constraint the tag
+  silently becomes the package's version number. See "Why the tag prefix
+  matters" below.
 
 ## 1. Fetch
 
@@ -106,12 +107,12 @@ have to be told that data tags are not code releases:
   before the tag, `1` after it. `pyproject.toml` now constrains both
   `git_describe_command` (`--match "v[0-9]*"`) and `tag_regex`, and
   `tests/test_versioning.py` pins it.
-- **release-please**, which is not wired up yet — it arrives in Phase 2b
-  (§7 of `docs/REFACTOR_PLAN.md`). When it does, configure it manifest-first
-  (`.release-please-manifest.json` as the source of truth) rather than letting
-  it infer the last release by scanning tags, and constrain any tag pattern it
-  uses to `v*`. Otherwise it will read `data-v1` as a code release and offer to
-  release `2` next.
+- **release-please**, which is wired up and has cut three releases. It is
+  configured manifest-first — `.release-please-manifest.json` is the source of
+  truth — rather than inferring the last release by scanning tags, which is
+  what keeps a `data-v1` tag from being read as a code release and offered as
+  `2` next. `include-component-in-tag` is `false`, so its tags are plain `v*`.
+  See [Releasing the software](releasing.md).
 
 If the release feed gets noisy with data tags, the fallback in §5.2.3 of the
 plan is a sibling `sgjholt/specmod-data` repository holding assets only — a

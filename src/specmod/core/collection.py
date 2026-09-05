@@ -84,12 +84,16 @@ def log_bin(
 ) -> BinnedSpectrum:
     """Average ``amp`` into ``n_bins`` log-spaced bins, dropping empty ones.
 
-    The requested range is clamped to the record's own, which is what makes
-    the requested bin count the count you get. Unclamped, the shipped defaults
-    (0.001 Hz to 200 Hz) sit far outside any real record — on the PNR data
-    roughly a third of the bins fall below the lowest frequency present and a
-    third above the highest, all of them empty — which is why the surviving
-    axis was always far shorter than ``n_bins``.
+    The requested range is clamped to the record's own, which is what stops
+    bins being wasted outside it. Unclamped, the shipped defaults (0.001 Hz to
+    200 Hz) sit far outside any real record — on the PNR data roughly a third
+    of the bins fall below the lowest frequency present and a third above the
+    highest, all of them empty.
+
+    Clamping does not make the surviving count equal ``n_bins``, and nothing
+    does: ``n_bins`` counts bin *edges*, so there are at most ``n_bins - 1``
+    intervals, and empty ones are dropped from those. Ask for 151 and a typical
+    PNR window returns 104.
 
     The average is geometric (the mean of ``log10(amp)``), matching the log
     scale the bins themselves are spaced on. Empty bins are expected rather

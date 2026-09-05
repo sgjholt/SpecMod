@@ -55,20 +55,28 @@ See [§4](processing.md#4-amplitude-convention) for the conventions themselves.
 
 ## Models and guesses
 
-`Models.py` bound a source shape and an attenuation model together at import
-time through `MODEL = which_model(...)`, which is why a Brune and a Boatwright
-could not be fitted in one session. They are now separate and composed:
+`Models.py` bound a source shape and a ground-motion domain together at import
+time — `MODEL = which_model(...)` and `MOTION` read from config — which is why
+a Brune and a Boatwright could not be fitted in one session. Attenuation was
+not import-bound; it was chosen per call site by reaching for `simple_model`
+or `simple_model_fdep`. All three are now separate and composed:
 
 | 0.1.1 | 0.2.x |
 |---|---|
-| `which_model` | `sources.get_source_model`, `sources.build_model`, `sources.from_config` |
-| `scale_to_motion` | `sources.motion_scaling` |
-| `source`, `simple_model`, `simple_model_fdep` | `SourceModel.log10_shape` |
+| `which_model` | `sources.get_source_model` |
+| `scale_to_motion` | `sources.motion_scaling` (note the argument order flipped) |
+| `source` | `SourceModel.log10_shape` — the source term alone |
+| `simple_model`, `simple_model_fdep` | `sources.SpectralModel`, built by `build_model` or `from_config`, then `.evaluate()` |
 | `t_star`, `t_star_freq` | `AttenuationModel.log10_decay` |
 | `create_simple_guess`, `create_simple_guess_fdep` | `fitting.initial_guess` |
 
 The composed model is a sum of three log-space terms — source, attenuation,
 motion — written out in [§8](processing.md#8-source-model).
+
+**Reach for `SpectralModel`, not `log10_shape`, when porting `simple_model`.**
+`log10_shape` is only the source term of the three; calling it in place of the
+old `simple_model` silently drops attenuation and motion, which is a wrong
+number rather than an error.
 
 ## Persistence
 
@@ -104,20 +112,23 @@ specmod config show      # resolved values, and which layer set each one
 specmod config freeze    # emit TOML to commit alongside a result
 ```
 
-## Defaults that changed the numbers
+## Results will not match `0.1.1` bit for bit
 
-Two, both called out as breaking in the
-[changelog](https://github.com/sgjholt/SpecMod/blob/main/CHANGELOG.md):
+**The pipeline is continuous in its input**, where `0.1.1` had discontinuities
+that made a last-bit difference between two machines move the noise by up to
+82% and a band edge by 13 bins. Removing them changes results by design, and
+they were not reproducible before. See
+[Reproducibility](processing.md#reproducibility).
 
-- **`MultitaperEstimator.adaptive` and `TransformConfig.adaptive` now default
-  to `False`.** Adaptive weighting collapses for off-centre transients, and a
-  seismic arrival in a refined window is one. Pass `adaptive=True` to restore
-  the old behaviour, and read
-  [Choosing a transform](choosing-a-transform.md) before you do.
-- **The pipeline is continuous in its input**, where `0.1.1` had
-  discontinuities that made a last-bit difference between two machines move
-  the noise by up to 82%. Results will not match `0.1.1` bit for bit. See
-  [Reproducibility](processing.md#reproducibility).
+:::{note}
+**Multitaper adaptive weighting is still on by default**, as it was in `0.1.1`
+and as `mtspec` had it. The changelog for `0.2.0` carries a breaking-change
+bullet saying it now defaults to `False`; that bullet is stale within its own
+release. The default was turned off, then turned back on in the same release
+once the collapse it was turned off for was diagnosed as a units bug in the
+adaptive weighting itself — so there is nothing to restore and nothing to pass.
+[Choosing a transform](choosing-a-transform.md) has the reasoning.
+:::
 
 ## The three deprecation shims
 

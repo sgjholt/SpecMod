@@ -69,7 +69,10 @@ One `SpectralEstimator` protocol with interchangeable implementations —
 `FFTEstimator`, `WelchEstimator`, `MultitaperEstimator` and Prieto's — plus
 Konno–Ohmachi smoothing and log-binning as separate, composable steps. The
 `mtspec` Fortran dependency, which no longer builds on current toolchains, is
-demoted to an optional legacy backend rather than being the only path.
+dropped rather than being the only path: multitaper is implemented natively on
+SciPy's DPSS tapers, and Prieto's `multitaper` package is available through the
+optional `[multitaper]` extra as the same-lineage substitute. Asking the
+pipeline for `mtspec` by name raises, and says which two to use instead.
 
 What each estimator does to real data is measured in
 [Choosing a transform](choosing-a-transform.md); the differences are large
@@ -154,7 +157,7 @@ guess written from documentation cannot substitute for:
   fails when that starts working upstream.
 - **Recording pick-resolution policy in the configuration**, alongside the
   provenance stamp.
-- **A fuller `acquire --verify`** that re-fetches and diffs against the
+- **A fuller `specmod fetch --verify`** that re-fetches and diffs against the
   manifest, rather than only detecting local tampering.
 
 ## How this page works
