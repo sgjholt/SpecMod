@@ -246,12 +246,12 @@ bounded rather than explained, and says so in as many words.
 
 ## What CI runs
 
-Five jobs in `test.yml`, plus two more workflows. All of them run on every pull
-request.
+Six jobs in `test.yml`, plus three more workflows. All of them run on every
+pull request except `release.yml`, which fires only on a push to `main`.
 
 | Job | Workflow | Does |
 |---|---|---|
-| `lint` | `test.yml` | `ruff check`, `ruff format --check`, and the `ci/` mirror check |
+| `lint` | `test.yml` | `ruff check` and `ruff format --check` over `src/ tests/ tools/` |
 | `typecheck` | `test.yml` | `mypy`, strict, over the whole package |
 | `test` | `test.yml` | pytest on 3.11/3.12/3.13 × ubuntu/macOS, coverage to Codecov from one cell |
 | `floors` | `test.yml` | installs the *declared minimum* versions and runs the suite |
@@ -403,9 +403,12 @@ has happened here:
   not there. Three commits went out with session trailers before this was
   noticed; the config now installs both hook types from one command, and the
   first thing `AGENTS.md` says is to run it.
-- **An agent's token cannot push `.github/workflows/`.** This is what the
-  `ci/` mirror exists for. An agent that does not know about it will either
-  fail the push or, worse, quietly drop the change.
+- **An agent's token may not be able to push `.github/workflows/`.** The
+  permission is granted here now, and the `ci/` mirror that used to work around
+  it is gone — keeping two copies of every workflow in step cost more than the
+  problem it solved. If the permission is ever withdrawn the push is rejected
+  loudly, naming `workflows`; the answer is to ask for it back, not to rebuild
+  the mirror.
 - **A development container often lacks the optional extras**, so an agent's
   green run can be greener than CI's. `--without-optional-extras` is the check.
 - **A harness may append its own commit trailers.** The repository's rules take

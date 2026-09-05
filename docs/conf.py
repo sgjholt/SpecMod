@@ -41,6 +41,11 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    #: Makes `:class: dropdown` collapse an admonition. The alpha warning on the
+    #: landing page is the reason: it has to be read once and then stops earning
+    #: the screen it occupies, and a caveat nobody scrolls past is worse than
+    #: one folded behind its own headline.
+    "sphinx_togglebutton",
 ]
 #: `sphinx_autodoc_typehints` is deliberately not used. `autodoc_typehints`
 #: below is built into `sphinx.ext.autodoc` and does the same job here, and the
@@ -88,11 +93,11 @@ if _TUTORIAL_SRC.is_dir():
     shutil.rmtree(_TUTORIAL_DST, ignore_errors=True)
     shutil.copytree(_TUTORIAL_SRC, _TUTORIAL_DST)
 
-#: `force`, not `auto`. `auto` executes only notebooks that arrive without
-#: outputs, and the tutorial is committed *with* 28 cells of them — so `auto`
-#: would publish whatever was last saved by hand, which is the silent rot this
-#: is meant to end. Forcing it means the page can only show output the code
-#: actually produced against the code being documented.
+#: `force`, not `auto`. The `nbstripout` hook means the notebook arrives with no
+#: outputs, so `auto` would execute it today and quietly stop the moment anyone
+#: committed a notebook with outputs saved — publishing whatever was last run by
+#: hand. Forcing it means the page can only ever show output the code produced
+#: against the code being documented, whatever is in the file.
 nb_execution_mode = "force"
 #: Matches `tests/test_tutorial.py`. The whole notebook runs in ~40s; the
 #: default 30s is per cell, and the two-stage fit is the one that would trip it.

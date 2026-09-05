@@ -4,9 +4,11 @@ A Python toolbox for processing and modelling seismic spectra: cut a window,
 estimate its spectrum, decide which part of it is above the noise, and fit a
 source model to that band.
 
-:::{warning}
-**Alpha. Pre-1.0, and mid-refactor.** SpecMod is being rebuilt in the open, so
-treat everything here as provisional until the API settles at 1.0:
+:::{admonition} Alpha, pre-1.0 — pin an exact version for anything you publish
+:class: warning, dropdown
+
+SpecMod is being rebuilt in the open, so treat everything here as provisional
+until the API settles at 1.0:
 
 - **Names and signatures move between `0.x` releases**, without a deprecation
   cycle. Breaking changes land in minor bumps by design — that is what `0.x`

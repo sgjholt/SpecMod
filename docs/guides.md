@@ -28,9 +28,11 @@ that apply them rather than on a page of their own:
 ## Choices that change the answer
 
 [Choosing a transform](choosing-a-transform.md)
-: What each estimator does to your data, measured. The choices here change
-  recovered amplitude by factors of three on real windows, which is about 0.3
-  magnitude units.
+: What each estimator does to your data, measured. On real windows the plateau
+  moves by 7–15% between estimators — about 0.03 magnitude units — and window
+  position alone reaches 0.08. Small against the 0.13 m.u. scatter quoted for
+  spectral $M_w$, but systematic rather than random, so it does not average
+  away across stations at similar distance.
 
 [Reading picks](pick-formats.md)
 : What arrival formats are read out of the box, how to add one, and how a pick

@@ -194,18 +194,18 @@ change bumps the minor instead, which is what §3.1 of the refactor plan
 assumes throughout.
 
 **The changelog sections are listed explicitly.** The default preset hides
-`refactor`, `docs`, `build`, `test`, `ci`, `style` and `chore`. Measured over
-this repository's 146 conventional commits, that default would print 73 of
-them and drop the other 73 — a release that is mostly a refactor would ship an
-almost empty changelog. `refactor`, `docs` and `build` are shown; `test`,
+`refactor`, `docs`, `build`, `test`, `ci`, `style` and `chore`. Measured at
+`v0.2.0` over this repository's 167 conventional commits, that default would
+have printed 76 of them and dropped the other 91 — a release that is mostly a
+refactor would ship an almost empty changelog. `refactor`, `docs` and `build` are shown; `test`,
 `ci`, `style` and `chore` stay hidden.
 
-**The first release will be enormous, and that is correct.** There are no tags
-in this repository, so the manifest declares `0.1.1` — the version the Magna
-paper cites, which is the pre-refactor code. Everything since then genuinely
-is the delta, so the first changelog covers the whole refactor. With the two
-breaking commits and `bump-minor-pre-major`, the version it proposes is
-`0.2.0`, which is what §7 of the plan expects at the end of Phase 2.
+**The first release was enormous, and that was correct.** There were no tags,
+so the manifest declared `0.1.1` — the version the Magna paper cites, which is
+the pre-refactor code. Everything since was genuinely the delta, so the first
+changelog covered the whole refactor, and `bump-minor-pre-major` turned its two
+breaking commits into `0.2.0` rather than a `1.0.0` nobody meant. Later
+releases are ordinary.
 
 ## Checking a release went out
 

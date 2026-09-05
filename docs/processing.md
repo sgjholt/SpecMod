@@ -88,8 +88,10 @@ every noise spectrum in the reference visibly rather than silently.
 
 ## 3. Spectral estimation
 
-Every estimator returns a **one-sided** spectrum over $(0, f_{\mathrm{Nyq}}]$
-obeying one contract, so a single test suite pins all of them.
+Every estimator returns a **one-sided** spectrum obeying one contract, so a
+single test suite pins all of them. With the shipped defaults the axis is
+$(0, f_{\mathrm{Nyq}}]$; DC is retained by `drop_dc=False`, and an odd
+transform length ends half a bin below Nyquist instead of on it.
 
 ### The FFT path
 
@@ -106,7 +108,8 @@ why the fold factor is computed per bin rather than applied as a scalar.
 is the right choice for a transient — and a seismic arrival is a transient.
 The alternative, dividing by $\langle w \rangle$, preserves the peak of a
 coherent sinusoid instead. For a Tukey taper with $\alpha = 0.05$ they differ
-by well under a percent, but the choice is explicit rather than implied.
+by about a percent (0.984 against 0.975), but the choice is explicit rather
+than implied.
 
 **Normalisation is keyed off $\Delta t$, never off the transform length.** The
 DFT sums over the $N$ non-zero samples whatever $n_\mathrm{fft}$ is, so it
@@ -162,12 +165,23 @@ the CWT's usable band opens higher than multitaper's on the same record.
 
 ## 4. Amplitude convention
 
-Two conventions are in play and the factor between them is exactly 2.
+Four kinds, of which two carry the factor of 2 that matters. Writing $A$ for
+the folded `FAS` and $T$ for the physical duration:
 
-| Kind | Definition | Energy relation |
-| --- | --- | --- |
-| `FAS` | $2\lvert X(f)\rvert$, folded | $E = \int A^2/2 \,\mathrm{d}f$ |
-| `MAGNITUDE` | $\lvert X(f)\rvert = \lvert\mathrm{rfft}(x)\rvert\,\Delta t$, unfolded | $E = 2\int \lvert X\rvert^2\,\mathrm{d}f$ |
+| Kind | Definition | From `FAS` | Energy relation |
+| --- | --- | --- | --- |
+| `FAS` | $2\lvert X(f)\rvert$, folded | — | $E = \int A^2/2 \,\mathrm{d}f$ |
+| `MAGNITUDE` | $\lvert X(f)\rvert = \lvert\mathrm{rfft}(x)\rvert\,\Delta t$, unfolded | $\lvert X\rvert = A/2$ | $E = 2\int \lvert X\rvert^2\,\mathrm{d}f$ |
+| `PSD` | one-sided power density, $[x]^2/\mathrm{Hz}$ | $P = A^2/(2T)$ | — |
+| `ASD` | one-sided amplitude density, $[x]/\sqrt{\mathrm{Hz}}$ | $D = A/\sqrt{2T}$ | — |
+
+The `MAGNITUDE` row states the fold factor as 2, which is what it is at every
+bin that has a negative-frequency twin — that is, everywhere except DC and, for
+an even transform length, Nyquist, exactly as
+[§3](#3-spectral-estimation) sets out. Neither ever falls inside the
+SNR-selected band, so no $\Omega$ depends on it; `Spectrum.to_kind` applies the
+per-bin factor rather than a flat 2, so a conversion made through the API is
+right at those bins too.
 
 `core.Spectrum` carries `FAS`. **The pipeline converts to `MAGNITUDE`**,
 because that is the convention $\Omega$ is defined in: the long-period plateau
@@ -178,17 +192,34 @@ $0.2$ magnitude units on every event.
 Both are self-consistent and both recover the record's energy. Anyone reading
 `core.Spectrum.amp` and calling it $\Omega$ needs to halve it first.
 
-The conversion from a PSD is
+Inverting the PSD row gives the conversion back:
 
-$$A = \sqrt{\mathrm{PSD}\cdot T/2}$$
+$$A = \sqrt{\mathrm{PSD}\cdot 2T}$$
 
 keyed off the physical duration $T$, for the reason given in [§3](#3-spectral-estimation).
 
+:::{warning}
+**Not $\sqrt{\mathrm{PSD}\cdot T/2}$**, which this page gave until v0.2.3 and
+which returns exactly half of it — that is $\lvert X\rvert$, the `MAGNITUDE`
+kind, because the legacy `psd_to_amp` it was inherited from worked in the
+unfolded convention. A PSD read into `FAS` through the old formula is a factor
+of two low, and `WelchEstimator` is the path that would show it: its only route
+from SciPy's one-sided density to a `FAS` is this conversion.
+
+Nothing shipped was ever wrong — `Spectrum.to_kind` has always applied
+$A^2/(2T)$ — but anyone who converted by hand from this page needs to check.
+:::
+
 ## 5. Log binning
 
-Amplitudes are averaged into $M$ bins spaced evenly in $\log_{10} f$ between
-the record's own $f_{\min}$ and $f_{\max}$ — clamped to the record, so the
-requested bin count is the count you get.
+Amplitudes are averaged into bins spaced evenly in $\log_{10} f$ between the
+record's own $f_{\min}$ and $f_{\max}$. Clamping to the record is what stops
+bins being *wasted* outside it — unclamped, the shipped 0.001–200 Hz defaults
+put roughly two thirds of them beyond any real record, all empty.
+
+**Expect fewer bins out than you asked for.** `n_bins` counts bin *edges*, so
+it yields at most `n_bins - 1` intervals, and empty bins are then dropped. The
+shipped `n_bins = 151` gives 104 on a typical PNR window; 101 gives 75.
 
 The average is **geometric**, matching the scale the bins are spaced on:
 
@@ -329,10 +360,30 @@ binning:
 
 $$R_i = \bar{A}^{\,\text{signal}}_i \big/ \bar{A}^{\,\text{noise}}_i$$
 
-The usable band is the **widest contiguous run** of bins with $R_i \ge R_{\min}$,
-bridging gaps of a single failing bin so that one noisy bin does not end a
-band. It returns nothing — not a band plus a flag — when no run of at least
-`min_width` bins survives.
+Which bins that leaves is a **registry**, `core.bandwidth.BANDWIDTH_SELECTORS`,
+in the same way the noise models in [§6](#6-noise-rescaling-and-rotation) are.
+Two are shipped, and they can disagree completely:
+
+`peak` — **the default** (`[snr] bandwidth_method`)
+: Walk outward from the bin with the highest ratio until $R_i$ falls below
+  $R_{\min}$ in each direction. This says the usable band is the one containing
+  the strongest part of the signal, *even where a wider passing run exists
+  elsewhere*. It is what the legacy `BW_METHOD = 2` did.
+
+`widest`
+: The widest contiguous run of bins with $R_i \ge R_{\min}$, bridging gaps of a
+  single failing bin so one noisy bin does not end a band, subject to a
+  `min_width` (default 3).
+
+Either returns nothing — not a band plus a flag — when no band survives. So
+does the resolution floor below, which can reject a pair outright rather than
+only narrowing it.
+
+**They are not cosmetic variants.** On a spectrum with a wide low-frequency
+passing run beneath a narrow high-SNR peak, `peak` and `widest` return disjoint
+bands. Since the low edge is what constrains $\Omega$, reconstructing a result
+means matching the selector as well as the threshold — it is recorded in the
+configuration stamp on every output.
 
 The previous method integrated $\mathrm{sign}(R - R_{\min})$ and read the
 edges off the 1st and 99th percentiles, with a retry loop when they crossed.
@@ -340,8 +391,9 @@ Every step there is discontinuous and they compound: an edge could move 13
 bins between machines. It also **lagged**: on a clean 5–30 Hz passing region
 it returned 9.41 Hz for the low edge, because the 1st percentile of a
 cumulative integral arrives late. The low edge is what constrains $\Omega$.
-The contiguous-run method returns 5.45 Hz on the same input, within one bin of
-the truth.
+`widest` returns 5.45 Hz on the same input, within one bin of the truth. Both
+shipped selectors are continuous in the input, which is the property that
+mattered; the 9.41 Hz figure is what the *legacy* method gave.
 
 **Resolution floor.** The band is finally clamped to
 
