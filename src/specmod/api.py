@@ -66,8 +66,12 @@ from .exceptions import (
     SpecModError,
 )
 from .fitting import FitSpectrum, fittable_signal, initial_guess
-from .transforms import ESTIMATORS, get_estimator
-from .transforms.base import make_window, window_correction
+from .transforms import (
+    ESTIMATORS,
+    get_estimator,
+    make_window,
+    window_correction,
+)
 
 __all__ = [
     "AmplitudeKind",

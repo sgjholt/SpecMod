@@ -21,14 +21,14 @@ for the exact scope of that promise.
 .. automodule:: specmod.exceptions
 ```
 
-The names excluded above are re-exports, documented at the path they are
-defined — `Spectrum` and `SpectrumPair` under [Spectra](#spectra), `Config`
-and `load_config` under [Configuration](#configuration), `make_window` and
-`window_correction` under [Transforms](#transforms). Documenting them twice
-gives every cross-reference to them two targets and makes all of them
-ambiguous, which is the same trap package-level `automodule` set earlier on
-this page. `specmod.api.__all__` is the authoritative list, and
-`tests/test_api_surface.py` asserts it.
+The names excluded above are re-exports, documented once under the section
+that owns them — `Spectrum` and `SpectrumPair` under [Spectra](#spectra),
+`Config` and `load_config` under [Configuration](#configuration), and
+`make_window` and `window_correction` under
+[Transforms](#transforms-and-smoothing). Documenting them twice gives every
+cross-reference to them two targets and makes all of them ambiguous, which is
+the same trap described below. `specmod.api.__all__` is the authoritative
+list, and `tests/test_api_surface.py` asserts it.
 
 Packages are documented at the path you import from — `specmod.picks.PickSet`,
 not `specmod.picks.base.PickSet`. Documenting both the package and its
@@ -70,7 +70,6 @@ cross-reference to it ambiguous.
 ```{eval-rst}
 .. automodule:: specmod.transforms
    :imported-members:
-.. automodule:: specmod.transforms.base
 .. automodule:: specmod.smoothing
    :imported-members:
 ```
