@@ -26,6 +26,11 @@ htmlcov/
 
 # Docs
 docs/_build/
+# `docs/conf.py` copies `tutorial/` here so Sphinx can build the notebook from
+# inside its source directory, with the data it reads by relative path. The
+# copy is also what the notebook's own output lands in, which is the point —
+# executing it where it lives would write into the working tree.
+docs/tutorial/
 
 # Editors / OS
 .ftpconfig

@@ -195,8 +195,11 @@ pages can link to each other's sections.
   those work; without it MyST does not read `$` at all.
 - `amsmath` is **not** enabled — nothing here uses a bare `\begin{align}`
   outside `$` delimiters. A `\begin{cases}` inside `$$` renders without it.
-- Markdown only. `source_suffix` maps `.md`; there is no reStructuredText in
-  `docs/`, so there is one syntax rather than two.
+- Markdown and notebooks. `source_suffix` maps `.md` and `.ipynb`, both to
+  `myst-nb` — there is no reStructuredText in `docs/`, so there is one prose
+  syntax rather than two. Both suffixes name `myst-nb` because that is the only
+  parser `myst_nb` registers; pointing `.md` at `myst_parser`'s `markdown`
+  fails the build with "Source parser for markdown not registered".
 - For a Sphinx directive that has no MyST spelling, drop into rST:
 
 ````markdown
@@ -224,6 +227,40 @@ the first build:
 Type hints come from the annotations via `autodoc_typehints = "description"`.
 `sphinx-autodoc-typehints` is deliberately **not** used: measured, it produced
 the same 367 documented objects while calling an API Sphinx 10 removes.
+
+### The tutorial notebook
+
+`tutorial/SpecModTutorial.ipynb` is published as part of the site and
+**executed on every build** (`nb_execution_mode = "force"`). Every figure and
+number on the page came from running that code against the code being
+documented, and a notebook that raises fails the build
+(`nb_execution_raise_on_error = True`). That is the whole point: a tutorial
+nobody runs is the first thing to rot, and this one broke three times before
+anything executed it.
+
+Three things about the arrangement are worth knowing before changing it.
+
+**It is copied into `docs/tutorial/` by `conf.py`, not moved.** Sphinx builds
+only what is under `docs/`, and the notebook reads its 1 MB of waveforms
+through paths relative to itself — so the data has to travel with it. The copy
+is gitignored. `tutorial/` stays canonical because eight other files name
+`tutorial/data/events/`, and a renamed data directory has broken this before.
+
+**The copy is also what the notebook writes into.** It saves an HDF5 file and
+two flatfiles as part of the lesson. Executed where it lives, a docs build
+would leave those in your working tree; `tests/test_tutorial.py` copies to
+`tmp_path` for exactly the same reason.
+
+**Outputs are stripped in git**, by the `nbstripout` pre-commit hook, and
+regenerated at build time. Do not commit them back: `force` ignores them, so a
+committed output is never what a reader sees — only a stale diff.
+
+The kernel comes from the `tutorial` extra. Both `.readthedocs.yaml` and
+`.github/workflows/docs.yml` install `[docs,io,tutorial]`; keep them in step or
+one of the two builds fails on a missing kernel. This does mean the notebook
+executes twice per pull request — once here and once in the `notebook` CI job,
+which also checks imports and that deleted modules stay unmentioned. Roughly
+40 seconds, paid twice, for two genuinely different failures.
 
 ### Numbers in prose
 

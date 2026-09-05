@@ -102,15 +102,24 @@ What is left: `io.py` and `plotting.py` are still single modules, and the
 operations that mutate in place need to return new objects instead. Neither is
 large — the split is about responsibilities, not line count.
 
+### The tutorial, executed
+
+The tutorial is published as part of this site and **re-executed on every
+build**, so every figure and number on the page came from running the code
+being documented. A notebook that stops working fails the build rather than
+going quietly stale, which is what it was listed as a 1.0 requirement for.
+
 ## Planned
 
 ### 1.0 — the API stops moving
 
-The theory page that states the normalisation and units conventions
-explicitly, the tutorial rebuilt as an executed notebook so it cannot rot
-silently, and a "what changed since 0.1" guide for anyone upgrading. Then the
-1.0 release, which is the promise that names and signatures stop moving
-without a deprecation cycle.
+Two things left: the theory page that states the normalisation and units
+conventions explicitly, and a "what changed since 0.1" guide for anyone
+upgrading. Then the 1.0 release, which is the promise that names and
+signatures stop moving without a deprecation cycle.
+
+The third — the tutorial rebuilt as an executed notebook, so it cannot rot
+silently — is merged and sits under *In progress* above until it ships.
 
 That promise is the whole content of the number, which is why it has to be a
 decision rather than something a breaking commit does on its way past. Until
