@@ -14,10 +14,10 @@ measurements and the open questions.
 
 ## Where it is now
 
-**v0.2.0**, the first release of the rebuilt package —
-[on PyPI](https://pypi.org/p/specmod), with a Zenodo DOI and its own
-[documentation version](https://specmod.readthedocs.io/en/stable/). Install it
-with `pip install specmod`.
+**v0.2.2** — [on PyPI](https://pypi.org/p/specmod), with a Zenodo DOI and its
+own [documentation version](https://specmod.readthedocs.io/en/stable/). Install
+it with `pip install specmod`. `v0.2.0` was the first release of the rebuilt
+package; everything since has been documentation.
 
 Still alpha, still pre-1.0: names and signatures move between `0.x` releases
 without a deprecation cycle. Everything below marked shipped is released,
@@ -90,6 +90,15 @@ without the code that wrote it and cannot execute anything on load.
 typed errors, for downstream packages that need something narrower than the
 whole package and less volatile than its internals.
 
+## Shipped in v0.2.2
+
+### The tutorial, executed
+
+The tutorial is published as part of this site and **re-executed on every
+build**, so every figure and number on the page came from running the code
+being documented. A notebook that stops working fails the build rather than
+going quietly stale, which is why it was a 1.0 requirement.
+
 ## In progress — not yet released
 
 ### Finishing the decomposition
@@ -102,28 +111,28 @@ What is left: `io.py` and `plotting.py` are still single modules, and the
 operations that mutate in place need to return new objects instead. Neither is
 large — the split is about responsibilities, not line count.
 
-### The tutorial, executed
+### The documentation 1.0 asked for
 
-The tutorial is published as part of this site and **re-executed on every
-build**, so every figure and number on the page came from running the code
-being documented. A notebook that stops working fails the build rather than
-going quietly stale, which is what it was listed as a 1.0 requirement for.
+The conventions are stated explicitly and can be found: the amplitude
+convention, the Parseval contract, and now the moment and magnitude equations
+with their constants, in
+[How a spectrum is processed](processing.md) — in the sections that apply them,
+signposted from [Guides](guides.md) rather than split onto a page of their own.
+[Upgrading from 0.1](upgrading.md) covers moving code off the pre-refactor
+`master`.
 
 ## Planned
 
 ### 1.0 — the API stops moving
 
-Two things left: the theory page that states the normalisation and units
-conventions explicitly, and a "what changed since 0.1" guide for anyone
-upgrading. Then the 1.0 release, which is the promise that names and
-signatures stop moving without a deprecation cycle.
-
-The third — the tutorial rebuilt as an executed notebook, so it cannot rot
-silently — is merged and sits under *In progress* above until it ships.
+**The documentation this was waiting on is done.** What remains is finishing
+the decomposition above — it changes signatures, so it belongs before the
+promise rather than after — and then the release itself, which says that names
+and signatures stop moving without a deprecation cycle.
 
 That promise is the whole content of the number, which is why it has to be a
-decision rather than something a breaking commit does on its way past. Until
-it is made, breaking changes bump the minor.
+decision rather than something a breaking commit does on its way past. Until it
+is made, breaking changes bump the minor.
 
 ## After 1.0
 
