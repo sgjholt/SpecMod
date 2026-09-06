@@ -36,12 +36,18 @@ repos:
       # running the hooks over one silently stripped six bytes from the middle
       # of it — a corrupted pickle that still looks like a plausible diff.
       # Anything binary has to be excluded by hand; the hooks do not detect it.
+      #
+      # `docs/_static/fonts/` is excluded for both reasons at once. The `.woff2`
+      # files are binary, and the OFL licences beside them have to stay byte
+      # identical to what upstream publishes — `trailing-whitespace` edited
+      # Merriweather's the first time they were staged, which is a licence
+      # rewritten to satisfy a linter.
       - id: end-of-file-fixer
-        exclude: '\.spec$'
+        exclude: &verbatim '(\.spec$|^docs/_static/fonts/)'
       - id: trailing-whitespace
-        exclude: '\.spec$'
+        exclude: *verbatim
       - id: mixed-line-ending
-        exclude: '\.spec$'
+        exclude: *verbatim
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1

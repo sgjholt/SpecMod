@@ -2,9 +2,13 @@
  *
  * Every colour here is a CSS custom property furo emits from `conf.py`, so a
  * palette change is one edit there and none here.
+ *
+ * The fonts are served from this site, by `fonts.css` — generated, and loaded
+ * ahead of this file by `html_css_files`. The manual specifies an `@import`
+ * from fonts.googleapis.com instead; that puts the typography behind a third
+ * party being reachable from the *reader's* browser, and it fails silently to
+ * Georgia and a system sans. See `tools/vendor_fonts.py`.
  */
-
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code&family=Merriweather:wght@400;700&family=Open+Sans:wght@400;600&display=swap');
 
 h1, h2, h3, h4, h5, h6 {
     font-family: 'Merriweather', Georgia, serif;

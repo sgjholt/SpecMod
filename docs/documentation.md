@@ -339,6 +339,31 @@ do not survive a rebuild. Cell ids are sequential rather than the random hex
 carry long prose lines and mathematical unicode that the source rules reject —
 so keep new builders there rather than under `tools/`.
 
+### Fonts and the theme
+
+The theme is `furo`, configured against `branding.md`: the palettes live in
+`html_theme_options` as CSS custom properties and `_static/academic.css` reads
+them back with `var()`, so a colour change is one edit in `conf.py`.
+
+**The fonts are served from this site, not from Google.** `_static/fonts/`
+holds eight woff2 files and their licences, and `_static/fonts.css` is
+generated — run `python tools/vendor_fonts.py` to refresh them or to add a
+family. The manual specifies an `@import` from `fonts.googleapis.com`; that
+puts the typography behind a third party being reachable from the *reader's*
+browser, and when it is not the page silently falls back to Georgia and a
+system sans with nothing in the build to notice. It is not hypothetical — it
+is what a corporate firewall does, and what the sandbox this was written in
+did.
+
+Only the `latin`, `latin-ext` and `greek` subsets are vendored. Scanning the
+built site for non-ASCII characters gives 33 distinct ones, and the Greek is
+real: `σ`, `τ`, `Ω` and others appear in the prose of `processing.md`. No page
+uses Cyrillic or Vietnamese, so those subsets are left behind.
+
+MathJax is still fetched from a CDN, and fails the same way — unrendered
+`\(x\)` rather than a wrong font. Self-hosting it is the same argument at
+about ten times the payload.
+
 ### Numbers in prose
 
 Any table that came from a measurement is generated, not typed. Edit
