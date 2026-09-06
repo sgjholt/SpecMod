@@ -81,6 +81,10 @@ docs = [
     # spelling for one, and the alternative is raw <details>, which the theme
     # does not style. Small and single-purpose.
     "sphinx-togglebutton>=0.3",
+    # Maths, rendered by KaTeX from `_static/` rather than by MathJax from a
+    # CDN. See the note in `docs/conf.py`; `tools/vendor_katex.py` vendors the
+    # matching stylesheet.
+    "sphinxcontrib-katex>=0.9",
 ]
 tutorial = [ # for running the tutorial notebook, which is not part of the package
     "ipykernel>=7.0",

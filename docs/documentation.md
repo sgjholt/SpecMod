@@ -360,22 +360,33 @@ built site for non-ASCII characters gives 33 distinct ones, and the Greek is
 real: `σ`, `τ`, `Ω` and others appear in the prose of `processing.md`. No page
 uses Cyrillic or Vietnamese, so those subsets are left behind.
 
-MathJax is still fetched from a CDN, and fails the same way — a page of
-unrendered `\(x\)` rather than a wrong font. Self-hosting it is the same
-argument at ten times the size:
+**Maths is KaTeX, served from this site too.** `sphinxcontrib-katex` replaces
+the built-in `sphinx.ext.mathjax`, which fetched a 974 KB bundle from jsdelivr
+at read time — the same failure as the fonts, and a louder one: an unreachable
+CDN leaves a page of raw `\(x\)` instead of equations. The extension serves
+its JavaScript from `_static/`, and `python tools/vendor_katex.py` puts the
+stylesheet there as well; the default for that is still a CDN URL.
 
-| | vendored |
-|---|---|
-| the three branding families, three subsets | 322 KB |
-| `mathjax@4` `tex-mml-chtml.js` | 974 KB |
-| its CHTML `woff2` fonts | 1.6 MB |
-| its lazily-loaded glyph ranges | 538 KB |
-| **MathJax total** | **3.1 MB**, or 9.6× |
+The version is read from the extension, never typed. KaTeX's markup and its
+stylesheet are coupled, and a mismatch mis-sizes delimiters *quietly* rather
+than failing — the prototype for this vendored 0.18.7 against the bundled
+0.16.22 before anyone checked.
 
-That is the repository cost, not what a reader pays: MathJax fetches font
-ranges on demand, so a page transfers a fraction of it. The whole `mathjax`
-npm package is 20 MB, and its font package another 49 MB — neither is what a
-self-hosted site would carry, since both ship every output format.
+Switching engines was checked rather than assumed. All 129 distinct equations
+on the site parse under KaTeX's strictest mode, and rendered side by side
+against MathJax 4 they agree to a median width ratio of 0.998 across the whole
+set.
+
+Maths is rendered in the browser rather than at build time. Pre-rendering
+would remove the runtime entirely and let equations survive with JavaScript
+disabled, but it needs a Node toolchain in both `.readthedocs.yaml` and the
+docs CI job, and it inlines the markup — `processing.html` goes from 72 KB to
+296 KB. Both were measured; neither buys enough for this site.
+
+**Nothing on the published site is fetched from anywhere else.** No CDN, no
+Google Fonts, no jsdelivr. Grepping a built tree for `https://cdn` or
+`fonts.googleapis` returns nothing, which is the check worth repeating if
+someone adds an extension.
 
 ### Numbers in prose
 

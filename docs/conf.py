@@ -46,7 +46,33 @@ extensions = [
     #: the screen it occupies, and a caveat nobody scrolls past is worse than
     #: one folded behind its own headline.
     "sphinx_togglebutton",
+    #: Maths. KaTeX rather than the built-in `sphinx.ext.mathjax`, and the
+    #: reason is the same one that vendored the fonts: MathJax is fetched from
+    #: jsdelivr at *read* time, so a reader who cannot reach it gets a page of
+    #: raw `\(x\)` instead of equations. `sphinxcontrib-katex` serves the
+    #: JavaScript from `_static/`, and `tools/vendor_katex.py` puts the
+    #: stylesheet there too, so the page requests nothing from outside.
+    #:
+    #: Checked before switching: all 129 equations on this site parse under
+    #: KaTeX's strictest mode, and render within a couple of percent of
+    #: MathJax's width on every one.
+    "sphinxcontrib.katex",
 ]
+
+#: Rendered in the browser rather than at build time. Pre-rendering removes
+#: the runtime entirely and would let the maths survive with JavaScript off,
+#: but it needs a Node toolchain in both `.readthedocs.yaml` and the docs CI
+#: job, and it inlines the markup — `processing.html` goes from 72 KB to
+#: 296 KB. Measured, and judged not worth those two for this site.
+katex_prerender = False
+
+#: Vendored beside the JavaScript the extension ships. The default is a
+#: jsdelivr URL, which would leave the CDN dependency in place for the one
+#: file that decides whether the maths is *legible* rather than whether it
+#: renders at all — the stylesheet is version-coupled to the JavaScript, and a
+#: mismatch mis-sizes delimiters quietly. `tools/vendor_katex.py` reads the
+#: version from the extension so the two cannot drift.
+katex_css_path = "katex/katex.min.css"
 #: `sphinx_autodoc_typehints` is deliberately not used. `autodoc_typehints`
 #: below is built into `sphinx.ext.autodoc` and does the same job here, and the
 #: extension calls an API Sphinx 10 removes — it emits a deprecation warning
