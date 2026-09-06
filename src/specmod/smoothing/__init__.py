@@ -8,7 +8,11 @@ the Parseval contract that :mod:`specmod.transforms` guarantees.
 from __future__ import annotations
 
 from ..core.spectrum import Spectrum
-from .base import Smoother
+
+# `record_smoothing` is re-exported because anything implementing `Smoother`
+# needs it to leave the same metadata trail the shipped smoothers do — it is
+# to `Smoother` what `prepare_record` is to `SpectralEstimator`.
+from .base import Smoother, record_smoothing
 from .konno_ohmachi import KonnoOhmachi
 from .log_bins import LogBinner
 
@@ -47,4 +51,5 @@ __all__ = [
     "Smoother",
     "get_smoother",
     "is_smoothed",
+    "record_smoothing",
 ]

@@ -61,6 +61,8 @@ cross-reference to it ambiguous.
 .. automodule:: specmod.pipeline
 .. automodule:: specmod.core.spectrum
 .. automodule:: specmod.core.collection
+.. automodule:: specmod.core.noise
+.. automodule:: specmod.core.bandwidth
 .. automodule:: specmod.core.units
 .. automodule:: specmod.core.scalogram
 ```
