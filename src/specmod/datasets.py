@@ -119,7 +119,7 @@ class Event:
     """An earthquake: where its data sits, and the hypocentre it happened at.
 
     ``origin``, ``latitude``, ``longitude`` and ``depth_km`` are the four
-    values :func:`specmod.preprocess.set_stream_distance` takes.
+    values :func:`specmod.preprocess.with_distance` takes.
     """
 
     origin: str

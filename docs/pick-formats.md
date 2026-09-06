@@ -1,11 +1,12 @@
 # Reading picks, and adding a format
 
-SpecMod attaches P and S arrivals to traces through `specmod.preprocess.set_picks`:
+`specmod.preprocess.with_picks` returns a copy of a stream with P and S
+arrivals attached:
 
 ```python
 import specmod.preprocess as pre
 
-pre.set_picks(stream, "event.xml")
+stream = pre.with_picks(stream, "event.xml")
 ```
 
 The format is detected from the file, not from its name. This page covers what
@@ -32,7 +33,7 @@ lists what was tried; if several do, that is a defect in their sniffing and the
 error says so. Either way you can force one:
 
 ```python
-pre.set_picks(stream, "picks.txt", format="obspy_events")
+stream = pre.with_picks(stream, "picks.txt", format="obspy_events")
 ```
 
 ## If your format is an event file, register it with ObsPy
@@ -82,7 +83,7 @@ reader = pk.CSVPickReader(
 )
 pk.register_reader(reader)
 
-pre.set_picks(stream, "picks.csv")   # detected by its column headings
+stream = pre.with_picks(stream, "picks.csv")   # detected by its column headings
 ```
 
 Four classes, differing only in how a line is split:
@@ -183,8 +184,8 @@ arrival. Broadcasting a station-only pick to both is never silently correct, so
 you have to say what you want:
 
 ```python
-pre.set_picks(stream, "picks.csv", on_ambiguous="broadcast")  # co-located
-pre.set_picks(stream, "picks.csv", on_ambiguous="skip")       # drop them
+stream = pre.with_picks(stream, "picks.csv", on_ambiguous="broadcast")  # co-located
+stream = pre.with_picks(stream, "picks.csv", on_ambiguous="skip")       # drop them
 ```
 
 ### Several picks for one arrival
@@ -199,14 +200,14 @@ Bulletins hold many events, and merging their arrivals describes none of them.
 A multi-event source raises unless you select:
 
 ```python
-pre.set_picks(stream, "bulletin.ims", event_id="smi:local/12345")
+stream = pre.with_picks(stream, "bulletin.ims", event_id="smi:local/12345")
 ```
 
 ### What was actually attached
 
 ```python
 report = []
-pre.set_picks(stream, "picks.csv", report=report)
+stream = pre.with_picks(stream, "picks.csv", report=report)
 print(report[0].summary())
 # 28 attached to 14 sensors, 2 unused, 0 ambiguous, 0 resolved by policy
 ```

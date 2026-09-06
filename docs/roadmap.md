@@ -125,7 +125,7 @@ convention, the Parseval contract, and now the moment and magnitude equations
 with their constants, in
 [How a spectrum is processed](processing.md) — in the sections that apply them,
 signposted from [Guides](guides.md) rather than split onto a page of their own.
-[Upgrading from 0.1](upgrading.md) covers moving code off the pre-refactor
+[Upgrading](upgrading.md) covers moving code off the pre-refactor
 `master`.
 
 ## Planned

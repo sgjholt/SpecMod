@@ -2,7 +2,7 @@
 
 Covers sensor identity and matching, the three resolution rules — event
 selection, ambiguity, duplicates — and the conversion from an ObsPy catalogue.
-``TestHypoDDEndToEnd`` runs a real phase file through :func:`set_picks`.
+``TestHypoDDEndToEnd`` runs a real phase file through :func:`with_picks`.
 """
 
 from __future__ import annotations
@@ -311,13 +311,13 @@ class TestHypoDDEndToEnd:
         stream = obspy.Stream([_trace()])
         for trace in stream:
             trace.stats["otime"] = ORIGIN
-        pre.set_picks(stream, source)
+        stream = pre.with_picks(stream, source)
         assert "p_time" in stream[0].stats
         assert "s_time" in stream[0].stats
         assert stream[0].stats["s_time"] > stream[0].stats["p_time"]
 
     def test_the_flat_mapping_still_cannot_match(self, source: str) -> None:
-        # Why `set_picks` no longer goes through it: the mapping keys on the
+        # Why `with_picks` no longer goes through it: the mapping keys on the
         # pick's own identity, which here states no network.
         assert set(pre.read_picks(source)) == {"*.L001.*"}
 
@@ -331,7 +331,7 @@ class TestSetPicksReport:
             trace.stats["otime"] = ORIGIN
 
         report: list[pk.Resolution] = []
-        pre.set_picks(stream, str(path), report=report)
+        stream = pre.with_picks(stream, str(path), report=report)
 
         assert len(report) == 1
         assert report[0].n_attached == 2

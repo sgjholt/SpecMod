@@ -8,7 +8,7 @@ therefore depends on the choice most strongly at exactly the station that
 matters most.
 
 Two are implemented here because they are the two a point source supports.
-Both read a value :func:`specmod.preprocess.set_stream_distance` has already
+Both read a value :func:`specmod.preprocess.with_distance` has already
 computed:
 
 ``repi``
@@ -100,7 +100,7 @@ class _FromMeta:
                 raise ValueError(
                     f"{id} carries no {self.key!r}, so its {self.name} distance "
                     f"is unknown. Set the geometry with "
-                    f"specmod.preprocess.set_stream_distance."
+                    f"specmod.preprocess.with_distance."
                 )
             value = float(meta[self.key])
             if value <= 0:

@@ -59,7 +59,7 @@ takes `(data, dt)`.
 | Function | Takes | In-memory form today |
 |---|---|---|
 | `preprocess.read_picks` | path | none — wraps `picks.read` |
-| `preprocess.set_picks` | path | none, though `picks.read` accepts a `Catalog` |
+| `preprocess.with_picks` | path | none, though `picks.read` accepts a `Catalog` |
 | `preprocess.rstfl` | paths | none |
 | `picks.read` | path or `Catalog` | **yes**, `Catalog` |
 | `picks.detect_reader`, every `PickReader.read` | path | none — they sniff the file |
@@ -67,7 +67,7 @@ takes `(data, dt)`.
 | `io.*` | path | none |
 | `datasets.*`, `acquire.*` | paths, network | not applicable — that *is* their job |
 
-The one worth fixing first is `set_picks`: `picks.read` already accepts an
+The one worth fixing first is `with_picks`: `picks.read` already accepts an
 in-memory `Catalog`, so the path-free form exists one layer down and is not
 plumbed through. A caller holding a `Catalog` has to reach past `preprocess` to
 use it.

@@ -393,7 +393,7 @@ class TestSetPicksTakesAFormat:
         )
         stream[0].stats["otime"] = obspy.UTCDateTime("2019-08-26T07:30:47")
 
-        pre.set_picks(stream, table, format="my_lab")
+        stream = pre.with_picks(stream, table, format="my_lab")
         assert "p_time" in stream[0].stats
         assert "s_time" in stream[0].stats
 

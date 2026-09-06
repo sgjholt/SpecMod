@@ -35,8 +35,8 @@ import specmod.preprocess as pre
 from specmod.pipeline import spectrum_set_from_streams
 from specmod.fitting import FitSpectra
 
-pre.set_picks(stream, "event.xml")
-signal = pre.get_signal(stream, pre.cut_s, rafp=0.8, tafs=20)
+stream = pre.with_picks(stream, "event.xml")
+signal = pre.s_window(stream, rafp=0.8, tafs=20)
 noise = pre.get_noise_p(stream, signal)
 
 spectra = spectrum_set_from_streams(signal, noise)

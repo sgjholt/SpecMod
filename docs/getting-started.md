@@ -20,7 +20,7 @@ The [roadmap](roadmap.md) says what has shipped and what 1.0 will mean.
   number on the page is produced by executing the notebook when this site is
   built, so it cannot describe an API that no longer exists. **Start here.**
 
-[Upgrading from 0.1](upgrading.md)
+[Upgrading](upgrading.md)
 : For code written against the pre-refactor `0.1.1` on `master`. Modules moved,
   were renamed to snake_case, and several were deleted, so old code fails at
   its imports rather than running and quietly giving different numbers.

@@ -25,7 +25,7 @@ $X(f)$.
 | # | Stage | Code |
 | --- | --- | --- |
 | 1 | Instrument correction and detrending | `preprocess` |
-| 2 | Window selection and refinement | `preprocess.cut_s`, `signal_intensity` |
+| 2 | Window selection and refinement | `preprocess.s_window`, `signal_intensity` |
 | 3 | Spectral estimation | `transforms/` |
 | 4 | Amplitude convention | `core.Spectrum.to_kind` |
 | 5 | Log binning | `core.collection.log_bin` |

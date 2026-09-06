@@ -1,11 +1,23 @@
 """Geometry, picks and window cutting, on ObsPy streams.
 
+**Nothing here mutates its argument.** Every function that takes a stream or a
+trace returns a new one and leaves the caller's untouched, so a stream can be
+windowed twice — as signal and as noise — from the same starting point, and a
+pipeline that raises half way through has not damaged its input. This is the
+package-wide rule stated in ``REFACTOR_PLAN.md`` §3, and it is what
+:mod:`specmod.core` has always guaranteed.
+
+The naming carries the contract. ``with_*`` returns a copy carrying something
+extra — a distance, an origin time, picks. ``p_window``, ``s_window`` and
+``coda_window`` return the cut window as a new stream. Nothing is named
+``set_*``, because in this module nothing sets.
+
 This module and :mod:`specmod.pipeline` are the only two that know what a
 ``Trace`` is. ObsPy ships no type information and no stub package is
 published, so ``stubs/obspy`` in this repository declares the surface used
 here; see ``stubs/README.md``. ``Stats`` is deliberately open, so
 ``tr.stats.delta`` is checked and ``tr.stats["p_time"]`` — one of the fields
-this module sets — is not.
+this module writes — is not.
 """
 
 from __future__ import annotations
@@ -21,21 +33,19 @@ from scipy.integrate import cumulative_trapezoid
 from . import picks as pk
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
     from os import PathLike
 
     from numpy.typing import NDArray
     from obspy import Inventory, Stream, Trace, UTCDateTime
 
-#: How station coordinates are supplied to :func:`set_stream_distance`.
-#: ``"none"`` is a deprecated alias for ``"list"``, kept because it is the
-#: spelling the function used to test for internally — see the note there.
-STREAM_DISTANCE_METHODS = ["mseed", "sac", "list", "none"]
+#: How station coordinates are supplied to :func:`with_distance`.
+STREAM_DISTANCE_METHODS = ["mseed", "sac", "list"]
 
 #: Accepted values of ``time_after``. Both spellings of the relative mode are
-#: taken by both cutting functions: they used to disagree, ``cut_p`` calling it
-#: ``"relative_time"`` and ``cut_s`` ``"relative_ps"``, with neither accepting
-#: the other's word for the same idea.
+#: taken by both cutting functions: they used to disagree, the P cutter calling
+#: it ``"relative_time"`` and the S cutter ``"relative_ps"``, with neither
+#: accepting the other's word for the same idea.
 _ABSOLUTE = "absolute_time"
 _RELATIVE = ("relative_time", "relative_ps")
 TIME_AFTER_METHODS = (_ABSOLUTE, *_RELATIVE)
@@ -49,11 +59,25 @@ def _check_time_after(time_after: str) -> None:
         )
 
 
-def set_origin_time(tr: Trace, ot: UTCDateTime) -> None:
+def _stamp_origin_time(tr: Trace, ot: UTCDateTime) -> None:
+    """Write the origin time onto a trace this module already owns.
+
+    The private half of :func:`with_origin_time`: the public function copies
+    first, and every internal caller is already working on its own copy, so
+    copying again per trace would be a copy per trace of a stream that was
+    copied whole one frame up.
+    """
     tr.stats["otime"] = ot
 
 
-def set_stream_distance(
+def with_origin_time(tr: Trace, ot: UTCDateTime) -> Trace:
+    """A copy of ``tr`` carrying ``ot`` as its origin time."""
+    out = tr.copy()
+    _stamp_origin_time(out, ot)
+    return out
+
+
+def with_distance(
     st: Stream,
     olat: float,
     olon: float,
@@ -64,9 +88,12 @@ def set_stream_distance(
     stelvs: Sequence[float] | None = None,
     inventory: Inventory | None = None,
     dtype: str = "sac",
-) -> None:
-    """
-    Set the origin and source-receiver geometry on every trace in a stream.
+) -> Stream:
+    """A copy of ``st`` carrying the origin and source-receiver geometry.
+
+    Every trace in the returned stream gains ``otime``, ``olat``, ``olon``,
+    ``dep``, ``slat``, ``slon``, ``selv``, ``repi`` and ``rhyp``; the mseed
+    path adds ``azimuth`` and ``back_azimuth``. ``st`` is not touched.
 
     ``dtype`` selects where the station coordinates come from:
 
@@ -76,7 +103,7 @@ def set_stream_distance(
         an ObsPy ``inventory``, which is then required.
     ``"list"``
         the ``stlats``, ``stlons`` and ``stelvs`` sequences, indexed
-        positionally against the stream. ``"none"`` is a deprecated alias.
+        positionally against the stream.
 
     Anything else raises. It used to print ``invalid method choice`` and carry
     on, leaving traces with an origin but no distance and deferring the failure
@@ -88,23 +115,17 @@ def set_stream_distance(
             f"dtype={dtype!r} is not recognised; "
             f"choose one of {', '.join(map(repr, STREAM_DISTANCE_METHODS))}"
         )
-    if dtype == "none":
-        warnings.warn(
-            'dtype="none" is a deprecated alias for dtype="list"',
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        dtype = "list"
     if dtype == "mseed" and inventory is None:
         raise ValueError('dtype="mseed" requires an inventory')
     if dtype == "list" and any(x is None for x in (stlats, stlons, stelvs)):
         raise ValueError('dtype="list" requires stlats, stlons and stelvs')
 
-    for i, tr in enumerate(st):
+    out = st.copy()
+    for i, tr in enumerate(out):
         tr.stats["dep"] = odep
         tr.stats["olon"] = olon
         tr.stats["olat"] = olat
-        set_origin_time(tr, ot)
+        _stamp_origin_time(tr, ot)
 
         if dtype == "sac":
             stlat, stlon, stelv = (
@@ -143,6 +164,8 @@ def set_stream_distance(
         tr.stats["repi"] = r / 1000
         tr.stats["rhyp"] = np.sqrt((odep + (stelv / 1000)) ** 2 + tr.stats["repi"] ** 2)
 
+    return out
+
 
 def get_station_loc_from_inventory(
     tr: Trace, inv: Inventory
@@ -176,13 +199,13 @@ def read_picks(
     which format it got.
 
     Keyed on each pick's own identity, so a format supplying no network code
-    keys on ``*.STA.*`` and matches no trace. :func:`set_picks` resolves
+    keys on ``*.STA.*`` and matches no trace. :func:`with_picks` resolves
     against the sensors present instead.
     """
     return pk.select_event(pk.read(source, format=format)).mapping()
 
 
-def set_picks(
+def with_picks(
     st: Stream,
     source: str | PathLike[str],
     emergency_ratio: float = 1.7,
@@ -192,8 +215,8 @@ def set_picks(
     on_ambiguous: pk.AmbiguousPolicy = "error",
     duplicates: pk.DuplicatePolicy = "prefer_reviewed",
     report: list[pk.Resolution] | None = None,
-) -> None:
-    """Attach ``p_time`` and ``s_time`` to every trace with a pick.
+) -> Stream:
+    """A copy of ``st`` with ``p_time`` and ``s_time`` on every picked trace.
 
     ``source`` is a Snuffler marker file, a registered plugin's format, or
     anything :func:`obspy.read_events` parses — QuakeML, SEISAN Nordic,
@@ -211,10 +234,15 @@ def set_picks(
     in which case ``s_time`` is left unset and a warning is issued.
 
     Pass ``report=[]`` to receive the :class:`~specmod.picks.Resolution`.
+
+    A trace with no pick is still present in the result, carrying no
+    ``p_time`` — filtering those out is the caller's decision, and the
+    pipeline's idiom for "unusable" is a trace without one.
     """
+    out = st.copy()
     picks = pk.resolve(
         pk.select_event(pk.read(source, format=format), event_id=event_id),
-        [pk.SensorID.parse(sensor_id(tr)) for tr in st],
+        [pk.SensorID.parse(sensor_id(tr)) for tr in out],
         on_ambiguous=on_ambiguous,
         duplicates=duplicates,
     )
@@ -225,7 +253,7 @@ def set_picks(
         key: {phase: pick.time for phase, pick in phases.items()}
         for key, phases in picks.attached.items()
     }
-    for tr in st:
+    for tr in out:
         id = sensor_id(tr)
         try:
             tr.stats["p_time"] = attached[id]["P"]
@@ -251,45 +279,30 @@ def set_picks(
                 continue
             tr.stats["s_time"] = tr.stats["p_time"] + sdiff
 
-
-def set_picks_from_pyrocko(
-    st: Stream, pyrock_file: str | PathLike[str], emergency_ratio: float = 1.7
-) -> None:
-    """Deprecated alias for :func:`set_picks`.
-
-    Renamed because it no longer reads only Pyrocko: QuakeML is now the
-    preferred format and the old name says the opposite of what the function
-    does.
-    """
-    warnings.warn(
-        "set_picks_from_pyrocko is deprecated; use set_picks, which reads "
-        "QuakeML as well as Snuffler marker files.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    set_picks(st, pyrock_file, emergency_ratio)
+    return out
 
 
-def basic_set_theoreticals(
+def with_theoretical_picks(
     st: Stream,
     otime: UTCDateTime,
     p: float = 5.9,
     s: float = 2.9,
     dmetric: str = "repi",
-) -> None:
+) -> Stream:
+    """A copy of ``st`` with P and S arrivals from average velocities [km/s].
+
+    For use where there are no real picks. ``dmetric`` names the distance the
+    travel time is computed over — ``"repi"`` or ``"rhyp"``, in kilometres —
+    which :func:`with_distance` must have set already.
     """
-    basic_set_theoreticals uses average propagation velocities [km/s]
-    to set the arrival times for P and S waves. This assumes epicentral and/or
-    and hypocentral distances have already been calculated and are set in the
-    trace stats dictionary as tr.stats['repi'] or tr.stats['rhyp'] in units of
-    kilometres.
-    """
-    for tr in st:
+    out = st.copy()
+    for tr in out:
         rel_p = tr.stats[dmetric] / p
         rel_s = tr.stats[dmetric] / s
         tr.stats["p_time"] = otime + rel_p
         tr.stats["s_time"] = otime + rel_s
         tr.stats["otime"] = otime
+    return out
 
 
 def rstfl(fnames: Iterable[str], wild: str = "*", ext: str = "sac") -> Stream:
@@ -305,8 +318,11 @@ def rstfl(fnames: Iterable[str], wild: str = "*", ext: str = "sac") -> Stream:
     return st
 
 
-def link_window_to_trace(tr: Trace, start: UTCDateTime, end: UTCDateTime) -> None:
-    """Record a window on a trace, as asked for *and* as delivered.
+def _stamp_window(tr: Trace, start: UTCDateTime, end: UTCDateTime) -> None:
+    """Record a window on a trace this module already owns.
+
+    The private half of :func:`with_window`; see :func:`_stamp_origin_time`
+    for why both exist.
 
     Two pairs, because they are not the same thing. ``trim`` gives back
     whatever the record actually holds, so a window that runs off either end
@@ -326,6 +342,19 @@ def link_window_to_trace(tr: Trace, start: UTCDateTime, end: UTCDateTime) -> Non
     tr.stats["wend"] = tr.stats.endtime
 
 
+def with_window(tr: Trace, start: UTCDateTime, end: UTCDateTime) -> Trace:
+    """A copy of ``tr`` recording the window it holds, and the one asked for.
+
+    For callers cutting their own windows rather than using
+    :func:`p_window`, :func:`s_window` or :func:`coda_window`, which record
+    this themselves. Must be called *after* the trim, or both pairs describe
+    the request rather than the result — see :func:`_stamp_window`.
+    """
+    out = tr.copy()
+    _stamp_window(out, start, end)
+    return out
+
+
 def get_sta_shift(sta: str, sta_shift: Mapping[str, float] | None) -> float:
     """The per-station timing correction for ``sta``, or zero.
 
@@ -336,30 +365,38 @@ def get_sta_shift(sta: str, sta_shift: Mapping[str, float] | None) -> float:
     return sta_shift.get(sta, 0.0)
 
 
-def cut_p(
+def p_window(
     st: Stream,
     bf: float = 0,
     tafp: float = 0.8,
     time_after: str = "relative_time",
     sta_shift: Mapping[str, float] | None = None,
     refine_window: bool = False,
-) -> None:
-    """
-    Function to cut a p wave window from an Obspy trace obeject
+) -> Stream:
+    """The P-wave window of every trace in ``st``, as a new stream.
 
-    bf (int/float) time shift in seconds before the P-wave arrival time
+    ``st`` is left as it was found, so the same stream can be windowed again
+    for the noise — which is what :func:`get_noise_p` expects.
 
-    raf (int/float) ratio of p-s time to fix the end of the P-window
+    ``bf``
+        seconds before the P arrival to start the window.
+    ``tafp``
+        window length: seconds when ``time_after="absolute_time"``, otherwise
+        a ratio of the P-S differential time.
+    ``sta_shift``
+        per-station timing corrections in seconds, e.g. ``{"STA": 0.5}``.
+    ``refine_window``
+        narrow the window to the 1st-99th percentile of cumulative squared
+        amplitude — see :func:`signal_intensity`.
 
-    sta_shift (dict) dictionary of station names and station specific time shifts in seconds
-
-    refine_window (bool) True if you want to use squared intergral percentiles to refine
-    the signal window.
+    Requires ``p_time`` and ``s_time``, which :func:`with_picks` or
+    :func:`with_theoretical_picks` set.
     """
 
     _check_time_after(time_after)
 
-    for tr in st:
+    out = st.copy()
+    for tr in out:
         stas = get_sta_shift(tr.stats.station, sta_shift)
 
         relps = tr.stats["s_time"] - tr.stats["p_time"]
@@ -384,39 +421,41 @@ def cut_p(
 
             tr.trim(p_start, p_end)
 
-        link_window_to_trace(tr, p_start, p_end)
+        _stamp_window(tr, p_start, p_end)
+
+    return out
 
 
-def cut_s(
+def s_window(
     st: Stream,
     rafp: float = 0.8,
     tafs: float = 20,
     time_after: str = "absolute_time",
     sta_shift: Mapping[str, float] | None = None,
     refine_window: bool = True,
-) -> None:
-    """
-    Function to cut a s wave window from an Obspy trace obeject.
+) -> Stream:
+    """The S-wave window of every trace in ``st``, as a new stream.
 
-    bf (int/float) time shift in seconds before the P-wave arrival time
+    ``st`` is left as it was found.
 
-    rafp (int/float) ratio of p-s time to fix the start the of S-window
+    ``rafp``
+        ratio of the P-S differential time at which the window starts.
+    ``tafs``
+        window length: seconds when ``time_after="absolute_time"``, otherwise
+        a ratio of the P-S differential time.
+    ``sta_shift``
+        per-station timing corrections in seconds.
+    ``refine_window``
+        narrow the window to the 1st-99th percentile of cumulative squared
+        amplitude — see :func:`signal_intensity`. On by default here, off in
+        :func:`p_window`.
 
-    tafs (int/float) window length in seconds or scaling factor of relative p-s time
-
-    time_after (str) can be set to 'absolute_time' or 'relative_ps'
-
-        if time_after == 'absolute_time' the window length is given as a value in seconds
-
-        if time_after == 'relative_ps' the value should be some number that scales with the p-s differential time
-
-    sta_shift (dict) dictionary of station names and station specific time shifts in seconds
-
-    Modified by Pungky Suroyo.
+    Requires ``p_time`` and ``s_time``. Modified by Pungky Suroyo.
     """
     _check_time_after(time_after)
 
-    for tr in st:
+    out = st.copy()
+    for tr in out:
         stas = get_sta_shift(tr.stats.station, sta_shift)
         relps = tr.stats["s_time"] - tr.stats["p_time"]
         p_end = tr.stats["p_time"] + relps * rafp + stas
@@ -439,7 +478,9 @@ def cut_s(
 
             tr.trim(p_end, s_end)
 
-        link_window_to_trace(tr, p_end, s_end)
+        _stamp_window(tr, p_end, s_end)
+
+    return out
 
 
 def signal_intensity(
@@ -463,36 +504,36 @@ def signal_intensity(
     return w_start, w_end
 
 
-def pad_traces(st: Stream, pad_len: float = 1, pad_val: float = 0) -> None:
-    """
-    Util to pad waveforms with zeros before and after the start and endtime of trace.
-    """
+def padded(st: Stream, pad_len: float = 1, pad_val: float = 0) -> Stream:
+    """A copy of ``st`` with ``pad_len`` seconds of ``pad_val`` at each end."""
 
-    for tr in st:
+    out = st.copy()
+    for tr in out:
         tr.trim(
             tr.stats.starttime - pad_len,
             tr.stats.endtime + pad_len,
             pad=True,
             fill_value=pad_val,
         )
+    return out
 
 
-def cut_c(
+def coda_window(
     st: Stream,
     bf: float = 2,
     raf: float = 0.8,
     tafp: float = 1.4,
     sta_shift: Mapping[str, float] | None = None,
-) -> None:
+) -> Stream:
+    """The coda window of every trace in ``st``, as a new stream.
+
+    Runs from ``tafp`` P-S differential times after the S window opens to the
+    end of the record. ``st`` is left as it was found. Written by Pungky
+    Suroyo.
     """
 
-    Function to cut a coda wave window from an Obspy trace object
-
-    Written by Pungky Suroyo.
-
-    """
-
-    for tr in st:
+    out = st.copy()
+    for tr in out:
         stas = get_sta_shift(tr.stats.station, sta_shift)
 
         relps = tr.stats["s_time"] - tr.stats["p_time"]
@@ -508,20 +549,22 @@ def cut_c(
 
         tr.trim(c_start, c_end)
 
-        link_window_to_trace(tr, c_start, c_end)
+        _stamp_window(tr, c_start, c_end)
+
+    return out
 
 
 def normalise(x: NDArray[np.floating[Any]], space: Sequence[float] = (0, 1)) -> Any:
     return np.interp(x, [x.min(), x.max()], space)
 
 
-def get_signal(st: Stream, func: Callable[..., None], **kwargs: Any) -> Stream:
-    stc = st.copy()
-    func(stc, **kwargs)
-    return stc
-
-
 def get_noise_p(st: Stream, sig: Stream, bshift: float = 0.2) -> Stream:
+    """A noise window per trace, ending ``bshift`` s before the P arrival.
+
+    Each window is as long as the matching trace in ``sig``, so signal and
+    noise are compared over the same duration. ``st`` should be the stream the
+    signal was cut *from*, not the cut signal itself.
+    """
     stc = st.copy()
     # `strict=True`: the two streams are paired by position, so a signal
     # stream of a different length is not a shorter result but a wrong one.
@@ -534,7 +577,7 @@ def get_noise_p(st: Stream, sig: Stream, bshift: float = 0.2) -> Stream:
 
         tr.trim(start, end)
 
-        link_window_to_trace(tr, start, end)
+        _stamp_window(tr, start, end)
     return stc
 
 
@@ -550,5 +593,5 @@ def get_noise_s(
         else:
             start = end - bf
         tr.trim(start, end)
-        link_window_to_trace(tr, start, end)
+        _stamp_window(tr, start, end)
     return stc

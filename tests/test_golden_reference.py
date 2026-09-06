@@ -206,7 +206,7 @@ def _build_windows() -> tuple[Any, Any]:
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(_PATHS.inventory))
         stream = obspy.read(_PATHS.waveform_glob("*HH[EN]*"))
-        pre.set_stream_distance(
+        stream = pre.with_distance(
             stream,
             _EVENT.latitude,
             _EVENT.longitude,
@@ -215,19 +215,14 @@ def _build_windows() -> tuple[Any, Any]:
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks(stream, str(_PATHS.picks_file()))
+        stream = pre.with_picks(stream, str(_PATHS.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")
         stream.taper(0.05)
         stream.remove_response(inventory, output="VEL")
-        signal = pre.get_signal(
-            stream,
-            pre.cut_s,
-            rafp=0.8,
-            tafs=20,
-            time_after="absolute_time",
-            refine_window=True,
+        signal = pre.s_window(
+            stream, rafp=0.8, tafs=20, time_after="absolute_time", refine_window=True
         )
         return signal, pre.get_noise_p(stream, signal)
 

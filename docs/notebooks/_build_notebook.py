@@ -484,16 +484,16 @@ paths = PNR_2019.directory("../..")
 inv = obspy.read_inventory(str(paths.inventory))
 
 st = obspy.read(paths.waveform_glob("*HH[EN]*"))
-pre.set_stream_distance(st, PNR_2019.latitude, PNR_2019.longitude, PNR_2019.depth_km,
-                        obspy.UTCDateTime(PNR_2019.origin),
-                        inventory=inv, dtype="mseed")
-pre.set_picks(st, str(paths.picks_file()))
+st = pre.with_distance(st, PNR_2019.latitude, PNR_2019.longitude, PNR_2019.depth_km,
+                       obspy.UTCDateTime(PNR_2019.origin),
+                       inventory=inv, dtype="mseed")
+st = pre.with_picks(st, str(paths.picks_file()))
 st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
 st.detrend("linear"); st.detrend("demean"); st.taper(0.05)
 st.remove_response(inv, output="VEL")
 
-sig = pre.get_signal(st, pre.cut_s, rafp=0.8, tafs=20,
-                     time_after="absolute_time", refine_window=True)
+sig = pre.s_window(st, rafp=0.8, tafs=20,
+                   time_after="absolute_time", refine_window=True)
 
 
 def energy_midpoint(tr):

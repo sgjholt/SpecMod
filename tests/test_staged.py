@@ -340,7 +340,7 @@ class TestWeighting:
             signal: Signal
 
         spectra = {"XX.A..HHZ": Pair(signal=Signal(meta={}))}
-        with pytest.raises(ValueError, match="set_stream_distance"):
+        with pytest.raises(ValueError, match="with_distance"):
             InverseDistance().weights(None, spectra, ["XX.A..HHZ"])
 
     def test_the_configured_distance_measure_is_what_gets_used(

@@ -124,7 +124,7 @@ def pnr_stream():
     want to pin the windowing itself need the stream from before the cut.
 
     Returns a callable, because every consumer mutates what it is given —
-    ``cut_s`` trims in place — and the expensive part (response removal) should
+    ``s_window`` trims in place — and the expensive part (response removal) should
     happen once per session.
     """
     obspy = pytest.importorskip("obspy")
@@ -140,7 +140,7 @@ def pnr_stream():
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(paths.inventory))
         stream = obspy.read(paths.waveform_glob("*HH[EN]*"))
-        pre.set_stream_distance(
+        stream = pre.with_distance(
             stream,
             event.latitude,
             event.longitude,
@@ -149,7 +149,7 @@ def pnr_stream():
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks(stream, str(paths.picks_file()))
+        stream = pre.with_picks(stream, str(paths.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")
@@ -175,13 +175,8 @@ def pnr_windows(pnr_stream):
     import specmod.preprocess as pre  # noqa: PLC0415
 
     stream = pnr_stream()
-    signal = pre.get_signal(
-        stream,
-        pre.cut_s,
-        rafp=0.8,
-        tafs=20,
-        time_after="absolute_time",
-        refine_window=True,
+    signal = pre.s_window(
+        stream, rafp=0.8, tafs=20, time_after="absolute_time", refine_window=True
     )
     noise = pre.get_noise_p(stream, signal)
 

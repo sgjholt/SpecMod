@@ -1,23 +1,97 @@
-# Upgrading from 0.1
+# Upgrading
+
+Two moves are documented here. Most readers want the first: `0.3.0` renamed
+ten functions in `specmod.preprocess` and changed what they do with the stream
+they are given.
+
+`0.x` ships breaking changes in minor bumps without a deprecation cycle,
+because shimming an API still being worked out costs more than it protects.
+See [Releasing the software](releasing.md#what-a-version-number-means-while-this-is-0x).
+
+## From 0.2 to 0.3
+
+**`specmod.preprocess` no longer modifies the stream it is given.** Every
+function returns a new one and leaves the caller's untouched — the rule
+`specmod.core` has always followed, and the last item 1.0 was waiting on.
+
+Every rename below exists *because* of that. A function that started returning
+instead of mutating while keeping its name would leave every existing call
+compiling, running, and silently doing nothing: un-cut records read as cut
+windows, and a wrong magnitude with no error anywhere. Renaming makes the break
+an `AttributeError` on the first line that uses one, which is the same reason
+nothing was aliased in `0.2`.
+
+| 0.2.x | 0.3.x |
+|---|---|
+| `set_stream_distance(st, ...)` | `st = with_distance(st, ...)` |
+| `set_picks(st, ...)` | `st = with_picks(st, ...)` |
+| `set_origin_time(tr, ot)` | `tr = with_origin_time(tr, ot)` |
+| `basic_set_theoreticals(st, ...)` | `st = with_theoretical_picks(st, ...)` |
+| `link_window_to_trace(tr, s, e)` | `tr = with_window(tr, s, e)` |
+| `cut_p(st, ...)` | `sig = p_window(st, ...)` |
+| `cut_s(st, ...)` | `sig = s_window(st, ...)` |
+| `cut_c(st, ...)` | `coda = coda_window(st, ...)` |
+| `pad_traces(st, ...)` | `st = padded(st, ...)` |
+| `get_signal(st, cut_s, **kw)` | `sig = s_window(st, **kw)` |
+
+`get_signal` is **removed** rather than renamed. It existed only to copy a
+stream before handing it to a mutating function; with the cutters returning new
+streams there is nothing left for it to do.
+
+`get_noise_p` and `get_noise_s` are unchanged. They already returned new
+streams, so neither their names nor their call sites move.
+
+### What a script looks like after
+
+```python
+import specmod.preprocess as pre
+
+# 0.2.x — every call wrote into `st`, and `get_signal` copied it first
+# so the cut did not consume the stream the noise still needed.
+pre.set_stream_distance(st, olat, olon, odep, otime, inventory=inv, dtype="mseed")
+pre.set_picks(st, "event.xml")
+sig = pre.get_signal(st, pre.cut_s, rafp=0.8, tafs=20)
+noise = pre.get_noise_p(st, sig)
+```
+
+```python
+import specmod.preprocess as pre
+
+# 0.3.x — each step returns the next stream, and `st` is still the
+# untouched record the noise is measured from.
+st = pre.with_distance(st, olat, olon, odep, otime, inventory=inv, dtype="mseed")
+st = pre.with_picks(st, "event.xml")
+sig = pre.s_window(st, rafp=0.8, tafs=20)
+noise = pre.get_noise_p(st, sig)
+```
+
+The mechanical rule: bind the result. A call whose result is discarded now
+does nothing at all, and that is the one mistake this rename cannot make loud
+for you.
+
+### Two deprecation shims are gone
+
+| Removed in 0.3.0 | Use instead |
+|---|---|
+| `preprocess.set_picks_from_pyrocko` | `preprocess.with_picks` |
+| `with_distance(dtype="none")` | `with_distance(dtype="list")` |
+
+`dtype="none"` now raises rather than warning, and names the accepted values.
+`fitting.PLOT_COLUMNS` is untouched and still dated `0.4.0`.
+
+## From 0.1.1 to 0.2
 
 The version the Magna paper used is `0.1.1`, preserved on the frozen
 [`master`](https://github.com/sgjholt/SpecMod/tree/master) branch. It was never
 tagged or published to PyPI, so "upgrading" here means moving code written
-against that branch onto a released `0.2.x`.
+against that branch onto a released `0.2.x` — and then through the section
+above.
 
 Nothing is aliased. Modules moved, were renamed to snake_case, and several were
 deleted outright — a `0.1` script will fail at its imports rather than run and
 give different numbers, which is the intended failure mode.
 
-:::{note}
-Only three names have deprecation shims, listed at the end. Everything else
-below is a hard rename or a removal. That is deliberate: `0.x` ships breaking
-changes in minor bumps without a deprecation cycle, because shimming an API
-still being worked out costs more than it protects. See
-[Releasing the software](releasing.md#what-a-version-number-means-while-this-is-0x).
-:::
-
-## Modules
+### Modules
 
 | 0.1.1 | 0.2.x | |
 |---|---|---|
@@ -33,7 +107,7 @@ still being worked out costs more than it protects. See
 The import that breaks first is usually `import specmod.PreProcess as pre`.
 It is `import specmod.preprocess as pre`.
 
-## Containers
+### Containers
 
 `Spectral.py` held `Spectrum`, `Signal`, `Noise`, `SNP` and `Spectra`. Those
 are replaced by two typed containers in `specmod.core.collection`:
@@ -53,7 +127,7 @@ returned a wrong seismic moment with no error anywhere. It is now a type error.
 
 See [§4](processing.md#4-amplitude-convention) for the conventions themselves.
 
-## Models and guesses
+### Models and guesses
 
 `Models.py` bound a source shape and a ground-motion domain together at import
 time — `MODEL = which_model(...)` and `MOTION` read from config — which is why
@@ -78,7 +152,7 @@ motion — written out in [§8](processing.md#8-source-model).
 old `simple_model` silently drops attenuation and motion, which is a wrong
 number rather than an error.
 
-## Persistence
+### Persistence
 
 `write_methods` and `read_methods` pickled. Nothing in the package can write a
 pickle now:
@@ -96,7 +170,7 @@ not depend on the code that wrote it.
 
 Reading and writing needs the `io` extra: `pip install "specmod[io]"`.
 
-## Configuration
+### Configuration
 
 Settings were module-level constants, read at import. They are now a layered
 `specmod.config` with semantic sections, resolved per access.
@@ -112,7 +186,7 @@ specmod config show      # resolved values, and which layer set each one
 specmod config freeze    # emit TOML to commit alongside a result
 ```
 
-## Results will not match `0.1.1` bit for bit
+### Results will not match `0.1.1` bit for bit
 
 **The pipeline is continuous in its input**, where `0.1.1` had discontinuities
 that made a last-bit difference between two machines move the noise by up to
@@ -124,27 +198,24 @@ Multitaper adaptive weighting is on by default, as it was in `0.1.1` and as
 `mtspec` had it, so nothing needs passing to keep it.
 [Choosing a transform](choosing-a-transform.md) explains why.
 
-## The three deprecation shims
+### The one remaining deprecation shim
 
-These still work and warn, rather than failing:
+One name still works and warns, rather than failing:
 
 | Name | Use instead | Removed |
 |---|---|---|
-| `preprocess.set_picks_from_pyrocko` | `preprocess.set_picks` | not yet dated |
-| `set_stream_distance(dtype="none")` | `dtype="list"` | not yet dated |
 | `fitting.PLOT_COLUMNS` | `fitting.plot_columns()` | **0.4.0** |
 
-`set_picks` is the rename that matters: it no longer reads only Pyrocko, and
-QuakeML is now the preferred format, so the old name said the opposite of what
-the function does.
+The two `preprocess` shims that used to sit beside it were removed in `0.3.0`
+— see [above](#two-deprecation-shims-are-gone).
 
 ## The shortest path
 
 If you are porting a script rather than a package, the
 [tutorial](tutorial/SpecModTutorial.ipynb) is the same pipeline written against
-`0.2.x`, executed on every documentation build so it cannot describe an API
-that no longer exists. Reading it beside your `0.1` script is usually faster
-than working through the tables above.
+the current release, executed on every documentation build so it cannot
+describe an API that no longer exists. Reading it beside your own script is
+usually faster than working through the tables above.
 
 For a stable, path-free surface that will move less than the internals,
 `specmod.api` is 21 names covering estimate, compare, fit and configure — see
