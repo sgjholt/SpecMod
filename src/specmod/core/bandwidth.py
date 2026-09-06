@@ -20,6 +20,17 @@ noise models and :mod:`specmod.transforms` handles estimators.
     Anchors on nothing, so it finds a wide low-frequency run that ``peak``
     would miss if the peak sits elsewhere.
 
+``fixed``
+    The band you name. Not a selection at all — see :class:`FixedBandwidth`
+    for when ignoring the data is the right answer and what it costs.
+
+Both automatic selectors walk while the *ratio* holds, which is why they can
+run to the top of the record: near Nyquist the signal and the noise are dying
+into the anti-alias roll-off together, so their ratio survives a region where
+neither carries information. Nothing in the walk knows that. The cap in
+``SnrConfig.max_nyquist_fraction`` is the answer to it, applied after
+selection rather than inside it — see :func:`cap_to_nyquist`.
+
 Returning ``None`` on failure is deliberate and differs from both legacy
 methods, which returned a band anyway and set a ``pass_snr`` flag beside it —
 so a caller reading the band without checking the flag got numbers that looked
@@ -37,8 +48,10 @@ from numpy.typing import NDArray
 __all__ = [
     "BANDWIDTH_SELECTORS",
     "BandwidthSelector",
+    "FixedBandwidth",
     "PeakBandwidth",
     "WidestBandwidth",
+    "cap_to_nyquist",
     "get_bandwidth_selector",
 ]
 
@@ -168,15 +181,76 @@ class WidestBandwidth:
         return float(freq[low]), float(freq[high])
 
 
+@dataclass(frozen=True)
+class FixedBandwidth:
+    """The band you name, whatever the signal-to-noise ratio says.
+
+    For when the band is a decision rather than a measurement: a corner the
+    instrument response imposes, a band held fixed across a study so its
+    events stay comparable, or one station whose automatic band you have
+    looked at and rejected.
+
+    **The ratio is ignored, not consulted and overruled.** A band chosen this
+    way carries no evidence that the data support it, which is the whole point
+    of it and also the whole risk: :meth:`~specmod.core.SpectrumPair.compare`
+    records ``band_imposed`` in the pair's metadata so a stored result still
+    says the band was asserted rather than found.
+
+    Intersected with the frequencies actually present, and ``None`` if that
+    leaves nothing. A band reaching past the end of the record would claim
+    resolution that is not there, and everything downstream slices its arrays
+    with these two numbers.
+    """
+
+    low: float
+    high: float
+
+    def __post_init__(self) -> None:
+        if not self.low < self.high:
+            raise ValueError(
+                f"a fixed band needs low < high, got low={self.low!r} "
+                f"high={self.high!r}"
+            )
+        if self.low < 0:
+            raise ValueError(f"a fixed band needs low >= 0, got {self.low!r}")
+
+    @property
+    def name(self) -> str:
+        return "fixed"
+
+    def select(
+        self,
+        freq: NDArray[np.float64],
+        snr: NDArray[np.float64],
+        threshold: float,
+    ) -> tuple[float, float] | None:
+        del snr, threshold  # deliberately unused; that is what "fixed" means
+        if freq.size == 0:
+            return None
+        low = max(self.low, float(freq.min()))
+        high = min(self.high, float(freq.max()))
+        if high <= low:
+            return None
+        return low, high
+
+
 #: Registered selectors, by the name configuration refers to them by.
-BANDWIDTH_SELECTORS: dict[str, type[PeakBandwidth] | type[WidestBandwidth]] = {
+BANDWIDTH_SELECTORS: dict[
+    str, type[PeakBandwidth] | type[WidestBandwidth] | type[FixedBandwidth]
+] = {
     "peak": PeakBandwidth,
     "widest": WidestBandwidth,
+    "fixed": FixedBandwidth,
 }
 
 
-def get_bandwidth_selector(name: str) -> BandwidthSelector:
-    """Resolve a registered selector by name, with its defaults."""
+def get_bandwidth_selector(name: str, **kwargs: object) -> BandwidthSelector:
+    """Resolve a registered selector by name, with its defaults.
+
+    Takes keyword arguments like :func:`specmod.transforms.get_estimator` and
+    :func:`specmod.smoothing.get_smoother`, because ``"fixed"`` has no
+    defaults to fall back on — the band is the whole of it.
+    """
     try:
         cls = BANDWIDTH_SELECTORS[name]
     except KeyError:
@@ -184,4 +258,48 @@ def get_bandwidth_selector(name: str) -> BandwidthSelector:
             f"Unknown bandwidth selector {name!r}. "
             f"Available: {sorted(BANDWIDTH_SELECTORS)}."
         ) from None
-    return cls()
+    try:
+        return cls(**kwargs)  # type: ignore[arg-type]
+    except TypeError as exc:
+        # The common case by far: `bandwidth_method = "fixed"` set in
+        # configuration with no band beside it. `TypeError: missing 2 required
+        # positional arguments` names the dataclass, not the setting.
+        raise ValueError(
+            f"bandwidth selector {name!r} cannot be built from {kwargs!r}: "
+            f"{exc}. The 'fixed' selector needs a band — set "
+            f"`[snr] fixed_band = [low, high]`, or pass "
+            f"FixedBandwidth(low, high) directly."
+        ) from exc
+
+
+def cap_to_nyquist(
+    band: tuple[float, float], sampling_rate: float, fraction: float
+) -> tuple[float, float] | None:
+    """Refuse the part of a band that sits too near the Nyquist frequency.
+
+    Applied *after* a selector has run, in the same way
+    ``_clamp_to_floor`` handles the other end, rather than being pushed into
+    each selector: it is a statement about the recording, not about how the
+    band was chosen, and it should therefore constrain every strategy the same
+    way — including ``fixed``.
+
+    The problem it answers is that both automatic selectors walk while the
+    signal-to-noise *ratio* holds. Approaching Nyquist the signal and the
+    noise roll off together, so the ratio can stay above threshold through a
+    region where neither is informative; on the shipped tutorial event the
+    median high edge lands at 66% of Nyquist and five of 28 pairs run past
+    90%, which is the anti-alias filter being fitted as though it were a
+    source spectrum.
+
+    ``None`` when the cap swallows the band entirely — the same answer the
+    selectors give when nothing survives, because a band whose low edge is
+    already above the ceiling is not a narrower measurement, it is no
+    measurement.
+    """
+    if not 0 < fraction <= 1:
+        raise ValueError(f"max_nyquist_fraction must be in (0, 1], got {fraction!r}")
+    ceiling = (sampling_rate / 2) * fraction
+    low, high = band
+    if low >= ceiling:
+        return None
+    return low, min(high, ceiling)

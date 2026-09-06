@@ -26,14 +26,14 @@ traces, so the only way to test the band search was to run the whole pipeline.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .bandwidth import get_bandwidth_selector
-from .noise import BoostNoise, NoiseModel, get_noise_model
+from .bandwidth import BandwidthSelector, cap_to_nyquist, get_bandwidth_selector
+from .noise import NOISE_MODELS, BoostNoise, NoiseModel, get_noise_model
 from .spectrum import Spectrum
 from .units import Motion
 
@@ -200,7 +200,7 @@ def find_bandwidth(
     snr: NDArray[np.float64],
     threshold: float,
     *,
-    method: str = "peak",
+    method: str | BandwidthSelector = "peak",
 ) -> tuple[float, float] | None:
     """Select the usable band with a named strategy.
 
@@ -208,8 +208,14 @@ def find_bandwidth(
     default is ``"peak"``, which is what the shipped configuration has always
     used — the legacy ``BW_METHOD = 2``. See that module for what the
     strategies assume and why the choice matters.
+
+    An already-constructed selector may be passed instead of a name, which is
+    how a strategy carrying parameters — :class:`FixedBandwidth`, or a
+    :class:`WidestBandwidth` with a different ``min_width`` — is used without
+    routing it through configuration.
     """
-    return get_bandwidth_selector(method).select(freq, snr, threshold)
+    selector = method if not isinstance(method, str) else get_bandwidth_selector(method)
+    return selector.select(freq, snr, threshold)
 
 
 @dataclass(frozen=True)
@@ -241,6 +247,58 @@ class SpectrumPair:
         """This pair as the flat view a fitter reads. See :class:`FittableView`."""
         return FittableView(pair=self, id=id)
 
+    def with_band(self, band: tuple[float, float] | None) -> SpectrumPair:
+        """This pair with a band you chose, as a new pair.
+
+        For the case configuration cannot reach: you have looked at the plot
+        for one station, disagreed with the automatic band, and want to refit
+        that one without changing what every other station did.
+
+        >>> corrected = spectra["LV.L001..HHE"].with_band((1.0, 25.0))
+
+        The band is intersected with the binned frequencies present, so it
+        cannot claim resolution the record does not have, and ``None`` is
+        accepted to reject a pair the selector accepted. Everything else —
+        the spectra, the binning, the ratio — is carried over untouched,
+        because the comparison itself is not in question; only the reading of
+        it is.
+
+        ``meta["band_imposed"]`` is set to ``"manual"``, for the same reason
+        :class:`~specmod.core.bandwidth.FixedBandwidth` sets it: a band that
+        no ratio chose should not be indistinguishable later from one that was
+        measured. The recorded ``compare`` settings are left alone, so
+        :meth:`to_motion` still replays how the pair was *built* — a domain
+        change re-runs the selector and the hand-chosen band does not survive
+        it, which is honest rather than convenient.
+        """
+        if band is not None:
+            low, high = float(band[0]), float(band[1])
+            if not low < high:
+                raise ValueError(f"a band needs low < high, got {band!r}")
+            freq = self.binned_signal.freq
+            if freq.size:
+                low = max(low, float(freq.min()))
+                high = min(high, float(freq.max()))
+            if high <= low:
+                raise ValueError(
+                    f"band {band!r} does not overlap the frequencies present "
+                    f"({float(freq.min()):.3g}-{float(freq.max()):.3g} Hz)"
+                )
+            band = (low, high)
+
+        meta = dict(self.meta)
+        meta["band_imposed"] = "manual"
+        return type(self)(
+            signal=self.signal,
+            noise=self.noise,
+            binned_signal=self.binned_signal,
+            binned_noise=self.binned_noise,
+            snr=self.snr,
+            resolution_floor=self.resolution_floor,
+            band=band,
+            meta=meta,
+        )
+
     @classmethod
     def compare(
         cls,
@@ -255,7 +313,8 @@ class SpectrumPair:
         resolution_floor: bool = True,
         rotate_noise: bool = True,
         noise_model: str | NoiseModel = "boost",
-        bandwidth: str = "peak",
+        bandwidth: str | BandwidthSelector = "peak",
+        max_nyquist_fraction: float | None = None,
         rotation_inc: float = 0.05,
         rotation_space: tuple[float, float] = (0.001, 1.001),
         meta: Mapping[str, Any] | None = None,
@@ -319,9 +378,15 @@ class SpectrumPair:
             )
 
         snr = binned_signal.amp / binned_noise.amp
-        band = find_bandwidth(binned_signal.freq, snr, threshold, method=bandwidth)
+        selector = _resolve_bandwidth(bandwidth)
+        band = find_bandwidth(binned_signal.freq, snr, threshold, method=selector)
         if band is not None and resolution_floor:
             band = _clamp_to_floor(band, floor)
+        # After the floor, and after the selector, because the ceiling is a
+        # statement about the recording rather than about how the band was
+        # chosen — so it has to constrain `fixed` as well as the two walks.
+        if band is not None and max_nyquist_fraction is not None:
+            band = cap_to_nyquist(band, signal.sampling_rate, max_nyquist_fraction)
 
         aligned_noise = Spectrum(
             freq=signal.freq,
@@ -346,11 +411,19 @@ class SpectrumPair:
             "scale_parseval": scale_parseval,
             "resolution_floor": resolution_floor,
             "rotate_noise": rotate_noise,
-            "noise_model": noise_model,
-            "bandwidth": bandwidth,
+            "noise_model": _strategy_record(noise_model),
+            "bandwidth": _strategy_record(bandwidth),
+            "max_nyquist_fraction": max_nyquist_fraction,
             "rotation_inc": rotation_inc,
             "rotation_space": rotation_space,
         }
+        # A band the ratio did not choose is marked as such, so a stored result
+        # — or one read back a year later — still distinguishes a measurement
+        # from an assertion. `passes` cannot make that distinction and was
+        # never meant to: it answers "is there a band", not "did the data
+        # choose it".
+        if getattr(selector, "name", None) == "fixed":
+            recorded["band_imposed"] = "fixed"
         return cls(
             signal=signal,
             noise=aligned_noise,
@@ -396,23 +469,65 @@ class SpectrumPair:
         )
 
 
+def _strategy_record(strategy: Any) -> Any:
+    """A JSON-safe settings entry for a strategy that may be an instance.
+
+    :meth:`SpectrumPair.compare` takes a name *or* an object for both the
+    noise model and the bandwidth selector, and records what it was given so
+    :meth:`SpectrumPair.to_motion` can replay it. An object does not survive
+    ``json.dumps``, so a pair built by passing one could not be saved at all —
+    ``io.save`` raised from inside its metadata dump, naming the dataclass
+    rather than the argument that caused it.
+
+    Recorded instead as the registered name plus the strategy's own fields,
+    which serialises, rebuilds, and makes the replay survive a save and reload
+    rather than only working in memory.
+    """
+    if isinstance(strategy, str):
+        return strategy
+    if is_dataclass(strategy) and not isinstance(strategy, type):
+        return {"name": getattr(strategy, "name", ""), **asdict(strategy)}
+    return getattr(strategy, "name", strategy)
+
+
+def _split_record(spec: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+    params = {k: v for k, v in spec.items() if k != "name"}
+    return str(spec["name"]), params
+
+
 def _resolve_noise_model(
-    noise_model: str | NoiseModel, space: tuple[float, float]
+    noise_model: str | NoiseModel | Mapping[str, Any], space: tuple[float, float]
 ) -> NoiseModel:
-    """Turn a name or an instance into a model, honouring the legacy ``space``.
+    """Turn a name, a record or an instance into a model, honouring ``space``.
 
     ``space`` is a parameter of the boost method alone, and it arrives here as
     a loose keyword rather than on the model because that is how the legacy
     configuration stored it. Passing an already-constructed model instead is
     the way to say what you mean; then the keyword is ignored, because the
-    instance already carries its own.
+    instance already carries its own — and a record written by
+    :func:`_strategy_record` carries it too, which is what keeps that true
+    across a save and reload.
     """
+    if isinstance(noise_model, Mapping):
+        name, params = _split_record(noise_model)
+        rebuilt: NoiseModel = NOISE_MODELS[name](**params)
+        return rebuilt
     if not isinstance(noise_model, str):
         return noise_model
     model = get_noise_model(noise_model)
     if isinstance(model, BoostNoise) and space != model.space:
         return BoostNoise(space=space)
     return model
+
+
+def _resolve_bandwidth(
+    bandwidth: str | BandwidthSelector | Mapping[str, Any],
+) -> str | BandwidthSelector:
+    """Turn a record back into a selector; names and instances pass through."""
+    if isinstance(bandwidth, Mapping):
+        name, params = _split_record(bandwidth)
+        return get_bandwidth_selector(name, **params)
+    return bandwidth
 
 
 def _clamp_to_floor(
