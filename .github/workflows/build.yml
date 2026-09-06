@@ -10,10 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # hatch-vcs derives the version from tags
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
       - run: uv python install 3.11
 
       - name: Build sdist and wheel
@@ -34,7 +34,7 @@ jobs:
           print('specmod', specmod.__version__, '- wheel imports cleanly')
           "
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
