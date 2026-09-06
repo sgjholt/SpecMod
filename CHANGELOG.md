@@ -9,6 +9,42 @@ release could have this problem — every later one has a real predecessor tag �
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.3.0](https://github.com/sgjholt/SpecMod/compare/v0.2.3...v0.3.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* the tutorial page moves from `/tutorial/SpecModTutorial.html` to `/tutorial/specmod-tutorial.html`.
+* the ten mutating functions in `specmod.preprocess` are renamed and now return a new stream or trace. `get_signal` is removed, and the two undated deprecation shims are gone.
+
+### Features
+
+* let the fitted band be capped, fixed or corrected by hand ([ba241a9](https://github.com/sgjholt/SpecMod/commit/ba241a95d94a298418b3c6f414a0026b9f310926))
+* preprocess returns new streams instead of mutating ([78aabeb](https://github.com/sgjholt/SpecMod/commit/78aabeb4856eda4208787fcd53b0df77bc50bd1c))
+
+
+### Bug Fixes
+
+* give the noise and bandwidth registries a documented home ([daeb2cc](https://github.com/sgjholt/SpecMod/commit/daeb2cc43eff2869e9617e4111f281f9bd4d33bb))
+* **transforms:** re-export every public name from base ([67c24c3](https://github.com/sgjholt/SpecMod/commit/67c24c3dda80f7fbc1bd51861861bde48d943eac))
+
+
+### Code Refactoring
+
+* **docs:** build the tutorial from a script too ([de846c6](https://github.com/sgjholt/SpecMod/commit/de846c6128fc7922df8e1e3c2c1c01f2b8bf95bb))
+* **docs:** one notebook builder per notebook, named after it ([0175f89](https://github.com/sgjholt/SpecMod/commit/0175f890f5f92668341a17bece7149f7d8f8c6b7))
+* split io and plotting into packages ([027b77f](https://github.com/sgjholt/SpecMod/commit/027b77f7d050716b7d98fc873a8a4e93098d1d68))
+
+
+### Documentation
+
+* adopt the academic theme from the branding manual ([76f0aa0](https://github.com/sgjholt/SpecMod/commit/76f0aa0a40a134eeb91b8ada04c8f5fa66243c54))
+* kebab-case the tutorial notebook, snake_case its builder ([5a65b73](https://github.com/sgjholt/SpecMod/commit/5a65b7336980bf5d7163c4cad28e7c273715c0a3))
+* measure the MathJax figure instead of asserting it ([cba7e01](https://github.com/sgjholt/SpecMod/commit/cba7e0116a09ba8d4565308ee8c0227d138b20cd))
+* render maths with KaTeX, served from this site ([902d3fe](https://github.com/sgjholt/SpecMod/commit/902d3fec4230e6af17ea1b7a9d32d9e9c153fd8e))
+* self-host the branding fonts ([c1e6f9f](https://github.com/sgjholt/SpecMod/commit/c1e6f9fe16f4ec48c5e788e6b29181c5ffc01bbf))
+* the decomposition is finished ([bbb2b71](https://github.com/sgjholt/SpecMod/commit/bbb2b7189b9f98c3baa48fe907bc2c414455f5d9))
+
 ## [0.2.3](https://github.com/sgjholt/SpecMod/compare/v0.2.2...v0.2.3) (2026-09-05)
 
 
