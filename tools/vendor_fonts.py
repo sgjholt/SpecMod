@@ -15,7 +15,8 @@ in the build to notice. That is not hypothetical: it is what the sandbox this
 was developed in did, and it is what any reader behind a corporate firewall
 gets. Self-hosting also stops the site telling Google who is reading it.
 
-The cost is eight files, about 350 KB, and this script to regenerate them.
+The cost is eight files, 322 KB with the licences, and this script to
+regenerate them.
 
 **Subsets are chosen, not taken wholesale.** Google serves each family split
 by ``unicode-range``; taking every subset would add Cyrillic and Vietnamese

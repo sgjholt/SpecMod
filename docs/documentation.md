@@ -360,9 +360,22 @@ built site for non-ASCII characters gives 33 distinct ones, and the Greek is
 real: `σ`, `τ`, `Ω` and others appear in the prose of `processing.md`. No page
 uses Cyrillic or Vietnamese, so those subsets are left behind.
 
-MathJax is still fetched from a CDN, and fails the same way — unrendered
-`\(x\)` rather than a wrong font. Self-hosting it is the same argument at
-about ten times the payload.
+MathJax is still fetched from a CDN, and fails the same way — a page of
+unrendered `\(x\)` rather than a wrong font. Self-hosting it is the same
+argument at ten times the size:
+
+| | vendored |
+|---|---|
+| the three branding families, three subsets | 322 KB |
+| `mathjax@4` `tex-mml-chtml.js` | 974 KB |
+| its CHTML `woff2` fonts | 1.6 MB |
+| its lazily-loaded glyph ranges | 538 KB |
+| **MathJax total** | **3.1 MB**, or 9.6× |
+
+That is the repository cost, not what a reader pays: MathJax fetches font
+ranges on demand, so a page transfers a fraction of it. The whole `mathjax`
+npm package is 20 MB, and its font package another 49 MB — neither is what a
+self-hosted site would carry, since both ship every output format.
 
 ### Numbers in prose
 
