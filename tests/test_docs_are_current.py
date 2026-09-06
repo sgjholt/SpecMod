@@ -15,6 +15,7 @@ Only the synthetic measurements are checked. The field ones read
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -78,3 +79,66 @@ def test_measurements_are_deterministic(measure: ModuleType) -> None:
     Without this, the check above would fail intermittently and get disabled.
     """
     assert measure.render(measure.SYNTHETIC) == measure.render(measure.SYNTHETIC)
+
+
+# ------------------------------------------------------- the notebook builders
+
+#: Builders live beside the notebooks they write and are named after them, with
+#: underscores where the notebook has hyphens. Anything ``_``-prefixed is shared
+#: machinery rather than a builder.
+BUILDERS = ROOT / "docs" / "notebooks" / "_builders"
+
+
+def _builders() -> list[Path]:
+    return sorted(p for p in BUILDERS.glob("*.py") if not p.name.startswith("_"))
+
+
+def _notebook_for(builder: Path) -> Path:
+    return BUILDERS.parent / f"{builder.stem.replace('_', '-')}.ipynb"
+
+
+def test_every_builder_names_the_notebook_it_writes() -> None:
+    """The convention, enforced rather than documented.
+
+    A builder with no notebook is one nobody has run; a notebook with no
+    builder is one nobody can rebuild. Either way the pair is the unit.
+    """
+    assert _builders(), "no notebook builders found"
+    for builder in _builders():
+        assert _notebook_for(builder).is_file(), (
+            f"{builder.name} builds {_notebook_for(builder).name}, which does not exist"
+        )
+    built = {_notebook_for(b) for b in _builders()}
+    for notebook in BUILDERS.parent.glob("*.ipynb"):
+        assert notebook in built, (
+            f"{notebook.name} has no builder. Add "
+            f"{BUILDERS.name}/{notebook.stem.replace('-', '_')}.py, or move the "
+            f"notebook out of docs/notebooks/ if it is maintained by hand."
+        )
+
+
+@pytest.mark.parametrize("builder", _builders(), ids=lambda p: p.stem)
+def test_rebuilding_a_notebook_changes_nothing(builder: Path) -> None:
+    """The builder is the source of truth, and can be shown to be.
+
+    This had already stopped being true: the notebook had been through
+    ``ruff format`` and had cell ids added, its builder had not, and the
+    builder had been edited five times against the notebook's two. Rebuilding
+    would have reverted the formatting of every code cell. The content still
+    agreed cell for cell, which is the only reason it was recoverable.
+
+    Running the builder is cheap — it writes strings, and imports nothing from
+    the package — so there is no reason for this not to be checked on every
+    run.
+    """
+    notebook = _notebook_for(builder)
+    before = notebook.read_bytes()
+    try:
+        subprocess.run([sys.executable, str(builder)], check=True, capture_output=True)
+        assert notebook.read_bytes() == before, (
+            f"{notebook.name} is not what {builder.name} builds. Run it and "
+            f"commit the result, or fix the builder — whichever is out of date."
+        )
+    finally:
+        # Never leave the tree dirty, whichever way the assertion went.
+        notebook.write_bytes(before)

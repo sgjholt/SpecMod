@@ -275,6 +275,53 @@ build or as a failed test. The cheaper checks around it — that every name the
 notebook imports resolves, and that deleted modules stay unmentioned even in
 prose — are unmarked, so they run in the `test` matrix job instead.
 
+### Generated notebooks
+
+`docs/notebooks/` holds notebooks that are **written by a script rather than by
+hand** — the opposite arrangement to the tutorial above. They are not published:
+`conf.py` excludes `notebooks/**`, and `choosing-a-transform.md` is the page
+that carries the same material.
+
+One builder per notebook, in `_builders/`, named after the notebook it writes
+with underscores where the notebook has hyphens:
+
+```text
+docs/notebooks/
+    _builders/
+        _notebook.py             shared: md(), code(), the envelope
+        choosing_a_transform.py  writes ../choosing-a-transform.ipynb
+    choosing-a-transform.ipynb
+```
+
+```sh
+uv run python docs/notebooks/_builders/choosing_a_transform.py
+```
+
+The correspondence is derived, not declared: `builder_for(__file__)` takes the
+output name from the calling script's filename, so the two cannot be given
+different names without renaming the file. That replaced a single
+`_build_notebook.py`, a name with nowhere to go once there were two notebooks.
+
+**The builder is the source of truth, and `tests/test_docs_are_current.py`
+holds it to that** — it runs every builder and fails if the notebook changes.
+Edit the builder and re-run it; do not edit the `.ipynb`. That test exists
+because the invariant had already been lost: the notebook had been through
+`ruff format` and had cell ids added, the builder had not, and the builder had
+been edited five times against the notebook's two. Rebuilding would have
+reverted the formatting of every code cell. The two still agreed cell for cell,
+which is the only reason it was recoverable.
+
+Consequences for writing one. Cell sources are emitted verbatim, so **write
+them already formatted** — the builder deliberately does not shell out to
+`ruff`, which is not importable from the docs environment and is pinned to
+three different versions across a local checkout, the pre-commit hook and CI.
+Cell ids are sequential rather than the random hex `nbformat` assigns, so a
+rebuild diffs only where content changed.
+
+`docs/notebooks/` is outside the ruff and mypy scopes on purpose — builders
+carry long prose lines and mathematical unicode that the source rules reject —
+so keep new builders there rather than under `tools/`.
+
 ### Numbers in prose
 
 Any table that came from a measurement is generated, not typed. Edit

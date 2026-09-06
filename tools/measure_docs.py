@@ -57,7 +57,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = [
     ROOT / "docs" / "choosing-a-transform.md",
     ROOT / "docs" / "notes" / "window-position.md",
-    ROOT / "docs" / "notebooks" / "_build_notebook.py",
+    ROOT / "docs" / "notebooks" / "_builders" / "choosing_a_transform.py",
 ]
 
 N = 2000
