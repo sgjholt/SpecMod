@@ -13,7 +13,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # hatch-vcs derives the version from tags
-      - uses: astral-sh/setup-uv@v10
+      # Pinned to a full version, unlike the other three. `astral-sh/setup-uv`
+      # publishes no bare major tag — `@v10` does not resolve, and using it
+      # fails every job at "Getting action download info", before a step runs.
+      # Bump this deliberately; do not "tidy" it to `@v10`.
+      - uses: astral-sh/setup-uv@v10.0.1
       - run: uv python install 3.11
 
       - name: Build sdist and wheel
