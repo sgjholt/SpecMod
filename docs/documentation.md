@@ -240,7 +240,8 @@ the same number of documented objects while calling an API Sphinx 10 removes.
 
 ### The tutorial notebook
 
-`tutorial/SpecModTutorial.ipynb` is published as part of the site and
+`tutorial/SpecModTutorial.ipynb` is written by
+[a builder](#the-notebook-builders), published as part of the site, and
 **executed on every build** (`nb_execution_mode = "force"`). Every figure and
 number on the page came from running that code against the code being
 documented, and a notebook that raises fails the build
@@ -275,50 +276,58 @@ build or as a failed test. The cheaper checks around it — that every name the
 notebook imports resolves, and that deleted modules stay unmentioned even in
 prose — are unmarked, so they run in the `test` matrix job instead.
 
-### Generated notebooks
+### The notebook builders
 
-`docs/notebooks/` holds notebooks that are **written by a script rather than by
-hand** — the opposite arrangement to the tutorial above. They are not published:
-`conf.py` excludes `notebooks/**`, and `choosing-a-transform.md` is the page
-that carries the same material.
-
-One builder per notebook, in `_builders/`, named after the notebook it writes
-with underscores where the notebook has hyphens:
+**Every notebook in the repository is written by a script**, one per notebook,
+named after the notebook it writes with underscores where the notebook has
+hyphens. `docs/_builders/` is the one place to look for all of them:
 
 ```text
-docs/notebooks/
-    _builders/
-        _notebook.py             shared: md(), code(), the envelope
-        choosing_a_transform.py  writes ../choosing-a-transform.ipynb
-    choosing-a-transform.ipynb
+docs/_builders/
+    _notebook.py             shared: md(), code(), the envelope
+    choosing_a_transform.py  writes docs/notebooks/choosing-a-transform.ipynb
+    SpecModTutorial.py       writes tutorial/SpecModTutorial.ipynb
 ```
 
 ```sh
-uv run python docs/notebooks/_builders/choosing_a_transform.py
+uv run python docs/_builders/SpecModTutorial.py
 ```
 
 The correspondence is derived, not declared: `builder_for(__file__)` takes the
 output name from the calling script's filename, so the two cannot be given
-different names without renaming the file. That replaced a single
-`_build_notebook.py`, a name with nowhere to go once there were two notebooks.
+different names without renaming the file. A stem with no underscore is left
+alone, which is how `SpecModTutorial.py` writes `SpecModTutorial.ipynb`
+without the convention needing an exception.
+
+The two notebooks are unlike each other and both live where they do for a
+reason. The tutorial is published and executed; it stays in `tutorial/`
+because it reads `tutorial/data/events/` through paths relative to itself, and
+`conf.py` copies it into `docs/tutorial/` at build time. The transform
+comparison is neither published nor executed — `choosing-a-transform.md` is
+the page that carries that material. So a builder says where its notebook
+goes with `into=`, and only the name is derived.
 
 **The builder is the source of truth, and `tests/test_docs_are_current.py`
-holds it to that** — it runs every builder and fails if the notebook changes.
-Edit the builder and re-run it; do not edit the `.ipynb`. That test exists
-because the invariant had already been lost: the notebook had been through
-`ruff format` and had cell ids added, the builder had not, and the builder had
-been edited five times against the notebook's two. Rebuilding would have
-reverted the formatting of every code cell. The two still agreed cell for cell,
-which is the only reason it was recoverable.
+holds it to that** — it runs every builder and fails if a notebook changes,
+and separately checks that every builder has a notebook and every notebook a
+builder. Edit the builder and re-run it; do not edit the `.ipynb`.
+
+That test exists because the invariant had already been lost once. The
+transform notebook had been through `ruff format` and had cell ids added, its
+builder had not, and the builder had been edited five times against the
+notebook's two — rebuilding would have reverted the formatting of every code
+cell. The two still agreed cell for cell, which is the only reason it was
+recoverable.
 
 Consequences for writing one. Cell sources are emitted verbatim, so **write
-them already formatted** — the builder deliberately does not shell out to
+them already formatted** — the builders deliberately do not shell out to
 `ruff`, which is not importable from the docs environment and is pinned to
 three different versions across a local checkout, the pre-commit hook and CI.
-Cell ids are sequential rather than the random hex `nbformat` assigns, so a
-rebuild diffs only where content changed.
+Sources are also stripped, so leading and trailing blank lines inside a cell
+do not survive a rebuild. Cell ids are sequential rather than the random hex
+`nbformat` assigns, so a rebuild diffs only where content changed.
 
-`docs/notebooks/` is outside the ruff and mypy scopes on purpose — builders
+`docs/_builders/` is outside the ruff and mypy scopes on purpose — builders
 carry long prose lines and mathematical unicode that the source rules reject —
 so keep new builders there rather than under `tools/`.
 

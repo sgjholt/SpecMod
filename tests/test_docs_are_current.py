@@ -86,35 +86,42 @@ def test_measurements_are_deterministic(measure: ModuleType) -> None:
 #: Builders live beside the notebooks they write and are named after them, with
 #: underscores where the notebook has hyphens. Anything ``_``-prefixed is shared
 #: machinery rather than a builder.
-BUILDERS = ROOT / "docs" / "notebooks" / "_builders"
+BUILDERS = ROOT / "docs" / "_builders"
+
+#: Where notebooks live. Two directories, because the tutorial is published and
+#: executed and reads ``tutorial/data/events/`` through paths relative to
+#: itself, while the transform comparison is neither published nor executed.
+NOTEBOOK_DIRS = [ROOT / "docs" / "notebooks", ROOT / "tutorial"]
 
 
 def _builders() -> list[Path]:
     return sorted(p for p in BUILDERS.glob("*.py") if not p.name.startswith("_"))
 
 
-def _notebook_for(builder: Path) -> Path:
-    return BUILDERS.parent / f"{builder.stem.replace('_', '-')}.ipynb"
+def _notebooks() -> list[Path]:
+    return sorted(p for d in NOTEBOOK_DIRS for p in d.glob("*.ipynb"))
 
 
-def test_every_builder_names_the_notebook_it_writes() -> None:
+def _stem(path: Path) -> str:
+    """The name a builder and its notebook share, hyphens normalised away."""
+    return path.stem.replace("-", "_")
+
+
+def test_every_notebook_has_a_builder_and_the_reverse() -> None:
     """The convention, enforced rather than documented.
 
     A builder with no notebook is one nobody has run; a notebook with no
-    builder is one nobody can rebuild. Either way the pair is the unit.
+    builder is one nobody can rebuild. Either way the pair is the unit, and
+    matching on the stem is what makes the pairing readable from a directory
+    listing rather than from a table someone has to maintain.
     """
     assert _builders(), "no notebook builders found"
-    for builder in _builders():
-        assert _notebook_for(builder).is_file(), (
-            f"{builder.name} builds {_notebook_for(builder).name}, which does not exist"
-        )
-    built = {_notebook_for(b) for b in _builders()}
-    for notebook in BUILDERS.parent.glob("*.ipynb"):
-        assert notebook in built, (
-            f"{notebook.name} has no builder. Add "
-            f"{BUILDERS.name}/{notebook.stem.replace('-', '_')}.py, or move the "
-            f"notebook out of docs/notebooks/ if it is maintained by hand."
-        )
+    builders = {_stem(b): b for b in _builders()}
+    notebooks = {_stem(n): n for n in _notebooks()}
+    assert builders.keys() == notebooks.keys(), (
+        f"builders without a notebook: {sorted(builders.keys() - notebooks.keys())}; "
+        f"notebooks without a builder: {sorted(notebooks.keys() - builders.keys())}"
+    )
 
 
 @pytest.mark.parametrize("builder", _builders(), ids=lambda p: p.stem)
@@ -131,7 +138,8 @@ def test_rebuilding_a_notebook_changes_nothing(builder: Path) -> None:
     the package — so there is no reason for this not to be checked on every
     run.
     """
-    notebook = _notebook_for(builder)
+    notebooks = {_stem(n): n for n in _notebooks()}
+    notebook = notebooks[_stem(builder)]
     before = notebook.read_bytes()
     try:
         subprocess.run([sys.executable, str(builder)], check=True, capture_output=True)

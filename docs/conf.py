@@ -54,17 +54,18 @@ extensions = [
 
 #: `REFACTOR_PLAN.md` is a working document, not documentation — it is written
 #: for whoever is doing the refactor and records decisions and their evidence.
-#: `notebooks/` holds the long-form transform comparison and the builders that
-#: write it; `choosing-a-transform.md` is the published page and carries the
-#: same measurements, so building the notebook too would duplicate it. The
-#: pattern has to reach the `_builders/` subdirectory as well, which is why it
-#: is `notebooks/**` rather than `notebooks/*`.
+#: `notebooks/` holds the long-form transform comparison;
+#: `choosing-a-transform.md` is the published page and carries the same
+#: measurements, so building the notebook too would duplicate it.
+#: `_builders/` holds the scripts that write both notebooks — the tutorial's
+#: included — and is source, not documentation.
 #: `notes/` *is* included: `choosing-a-transform.md` links to it for a
 #: per-trace table, so excluding it broke that link.
 exclude_patterns = [
     "_build",
     "REFACTOR_PLAN.md",
     "notebooks/**",
+    "_builders/**",
     "Thumbs.db",
     ".DS_Store",
 ]
