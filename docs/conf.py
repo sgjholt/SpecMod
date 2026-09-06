@@ -52,8 +52,11 @@ extensions = [
 #: extension calls an API Sphinx 10 removes — it emits a deprecation warning
 #: per module on Sphinx 9. One less dependency for no loss.
 
-#: `REFACTOR_PLAN.md` is a working document, not documentation — it is written
-#: for whoever is doing the refactor and records decisions and their evidence.
+#: `REFACTOR_PLAN.md` and `branding.md` are working documents, not
+#: documentation — the first records refactor decisions and their evidence, the
+#: second is the design source `_static/academic.css` and `tools/make_logo.py`
+#: are written against. Both are cited from source comments rather than linked
+#: from any built page, so neither has a URL to keep.
 #: `notebooks/` holds the long-form transform comparison;
 #: `choosing-a-transform.md` is the published page and carries the same
 #: measurements, so building the notebook too would duplicate it.
@@ -64,6 +67,7 @@ extensions = [
 exclude_patterns = [
     "_build",
     "REFACTOR_PLAN.md",
+    "branding.md",
     "notebooks/**",
     "_builders/**",
     "Thumbs.db",
@@ -169,25 +173,52 @@ intersphinx_disabled_reftypes = ["*"]
 
 # --------------------------------------------------------------------- html
 
-html_theme = "pydata_sphinx_theme"
+#: `furo`, per `branding.md`. It replaced `pydata_sphinx_theme`, and the
+#: navigation model is the substantive difference rather than the colours:
+#: pydata put top-level toctree entries in a *header* and gave the sidebar the
+#: current section's children, so the four section pages existed to give that
+#: sidebar something to nest. furo has one sidebar holding the whole tree, so
+#: those four pages now nest inside it instead — the structure still earns its
+#: keep, and `index.md`'s toctree is still what orders the site.
+html_theme = "furo"
 html_title = f"{project} {version}"
+
+#: Every colour the site uses, in one place, as the manual requires:
+#: `academic.css` reads them back through `var()` and hard-codes none.
 html_theme_options = {
-    "github_url": "https://github.com/sgjholt/SpecMod",
-    "show_prev_next": True,
-    "navigation_with_keys": False,
-    #: This theme puts *top-level* toctree entries in the header and gives the
-    #: sidebar the current section's children. A flat toctree therefore
-    #: produces a header of ten items and an empty sidebar, with `:caption:`
-    #: nowhere to render — which is what this site had. The four section pages
-    #: are what give the sidebar something to nest.
-    #:
-    #: `show_nav_level: 1` expands each section's own entries rather than
-    #: leaving them behind a disclosure triangle, so a reader can see a
-    #: section's contents without a click.
-    "show_nav_level": 1,
-    #: Deep enough for a section, its pages, and their headings — which is what
-    #: makes a long page like `processing` navigable from the sidebar rather
-    #: than by scrolling.
-    "navigation_depth": 3,
+    "light_css_variables": {
+        "color-background-primary": "#FDFBF7",  # warm manuscript off-white
+        "color-background-secondary": "#F8FAFC",
+        "color-background-border": "#E2E8F0",
+        "color-foreground-primary": "#1E293B",  # ink slate
+        "color-brand-primary": "#1E40AF",  # journal navy
+        "color-brand-content": "#C2410C",  # terracotta
+        #: Declared under `light` only. furo emits these on `body` as the base
+        #: declaration, so they carry into dark mode without a second copy.
+        "font-stack": "'Open Sans', sans-serif",
+        "font-stack--monospace": (
+            "'Fira Code', 'Computer Modern Typewriter', monospace"
+        ),
+    },
+    "dark_css_variables": {
+        "color-background-primary": "#0F172A",  # deep slate
+        "color-background-secondary": "#1E293B",
+        "color-background-border": "#334155",
+        "color-foreground-primary": "#F8FAFC",  # paper white
+        "color-brand-primary": "#60A5FA",  # soft navy
+        "color-brand-content": "#FB923C",  # soft terracotta
+    },
+    "light_logo": "specmod-logo-academic.svg",
+    "dark_logo": "specmod-logo-academic-dark.svg",
+    #: The logo carries the wordmark, so repeating the project name under it
+    #: says the same thing twice.
+    "sidebar_hide_name": True,
+    "source_repository": "https://github.com/sgjholt/SpecMod",
+    "source_branch": "main",
+    "source_directory": "docs/",
 }
-html_static_path: list[str] = []
+
+html_static_path = ["_static"]
+html_css_files = ["academic.css"]
+#: The square mark, which is the browser-tab half of the logo system.
+html_favicon = "_static/specmod-logo-academic-mark.svg"

@@ -74,7 +74,7 @@ dev = [
 # yet — see `docs/conf.py`.
 docs = [
     "sphinx>=7.3",
-    "pydata-sphinx-theme>=0.15",
+    "furo>=2024.1",
     "myst-parser>=3.0",
     "myst-nb>=1.1",
     # Collapsible admonitions, via `:class: dropdown`. Sphinx has no built-in
