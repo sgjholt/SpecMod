@@ -14,7 +14,7 @@ The two notebooks do not live in the same place, and should not:
     Not published. ``choosing-a-transform.md`` is the page that carries this
     material, and ``conf.py`` excludes ``notebooks/**``.
 
-``tutorial/SpecModTutorial.ipynb``
+``tutorial/specmod-tutorial.ipynb``
     Published, and executed on every docs build. It stays outside ``docs/``
     because it reads ``tutorial/data/events/`` through paths relative to
     itself, and because eight other files name that directory.
@@ -143,11 +143,10 @@ def builder_for(
     """The builder writing the notebook this script is named after.
 
     Pass ``__file__``. ``choosing_a_transform.py`` writes
-    ``choosing-a-transform.ipynb``: underscores become hyphens, because Python
-    module names cannot carry a hyphen and notebook filenames in this project
-    do. A stem with no underscore is left alone, which is how
-    ``SpecModTutorial.py`` writes ``SpecModTutorial.ipynb`` without the
-    convention needing an exception for it.
+    ``choosing-a-transform.ipynb``: underscores become hyphens, so each side
+    keeps the convention of its own language — ``snake_case`` for a Python
+    module, ``kebab-case`` for a file that becomes a URL on the published
+    site.
 
     Deriving the name rather than repeating it is what makes the convention
     hold. A builder and its notebook cannot be given different names without

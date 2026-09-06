@@ -111,6 +111,14 @@ to all required events when you install it."*
    Settings → Default version*. Until then it is `latest`, which is correct
    while there are no releases.
 
+**Renaming a published page needs a redirect here, not a commit.** A page
+filename is a URL, and every released version keeps serving the one it was
+built with — `/en/v0.2.3/…` is frozen and correct forever, but a link to
+`/en/stable/…` breaks the moment `stable` moves past the rename. *Admin →
+Redirects → Add redirect*, type **Page redirect**, applies across versions.
+The tutorial was renamed from `tutorial/SpecModTutorial.html` to
+`tutorial/specmod-tutorial.html` in `0.3.0` and wants one.
+
 **Do not add a webhook by hand.** It is possible, it delivers `200`s, and it
 will still leave the feature half-built: a manual webhook can trigger a build,
 but without the App's write access to commit statuses there is nothing able to
@@ -240,7 +248,7 @@ the same number of documented objects while calling an API Sphinx 10 removes.
 
 ### The tutorial notebook
 
-`tutorial/SpecModTutorial.ipynb` is written by
+`tutorial/specmod-tutorial.ipynb` is written by
 [a builder](#the-notebook-builders), published as part of the site, and
 **executed on every build** (`nb_execution_mode = "force"`). Every figure and
 number on the page came from running that code against the code being
@@ -286,18 +294,18 @@ hyphens. `docs/_builders/` is the one place to look for all of them:
 docs/_builders/
     _notebook.py             shared: md(), code(), the envelope
     choosing_a_transform.py  writes docs/notebooks/choosing-a-transform.ipynb
-    SpecModTutorial.py       writes tutorial/SpecModTutorial.ipynb
+    specmod_tutorial.py      writes tutorial/specmod-tutorial.ipynb
 ```
 
 ```sh
-uv run python docs/_builders/SpecModTutorial.py
+uv run python docs/_builders/specmod_tutorial.py
 ```
 
 The correspondence is derived, not declared: `builder_for(__file__)` takes the
-output name from the calling script's filename, so the two cannot be given
-different names without renaming the file. A stem with no underscore is left
-alone, which is how `SpecModTutorial.py` writes `SpecModTutorial.ipynb`
-without the convention needing an exception.
+output name from the calling script's filename and maps underscores to
+hyphens, so the two cannot be given different names without renaming the file.
+Each side gets the convention of its own language — `snake_case.py` for a
+Python module, `kebab-case.ipynb` for a file that becomes a URL.
 
 The two notebooks are unlike each other and both live where they do for a
 reason. The tutorial is published and executed; it stays in `tutorial/`

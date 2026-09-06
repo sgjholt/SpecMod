@@ -434,7 +434,7 @@ stress drop scales as $f_c^3$, that worst case is a factor of 27. It does not
 follow that the capped answer is the correct one — what follows is that the
 band is a decision with that much leverage, and it should be made deliberately
 rather than inherited from a default. The
-[tutorial](tutorial/SpecModTutorial.ipynb) works through all three levers on
+[tutorial](tutorial/specmod-tutorial.ipynb) works through all three levers on
 this event, including raising $R_{\min}$, which tightens both edges instead of
 one and begins rejecting stations entirely.
 

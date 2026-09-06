@@ -1,4 +1,4 @@
-"""Build ``SpecModTutorial.ipynb``.
+"""Build ``specmod-tutorial.ipynb``.
 
 The tutorial is published as part of the site and **executed on every docs
 build**, so the outputs below are always empty: what a reader sees is produced
@@ -12,7 +12,7 @@ machine last opened it. Editing the `.ipynb` directly is what
 
 Run it from anywhere:
 
-    uv run python docs/_builders/SpecModTutorial.py
+    uv run python docs/_builders/specmod_tutorial.py
 """
 
 from _notebook import ROOT, builder_for

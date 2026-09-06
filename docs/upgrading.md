@@ -79,6 +79,14 @@ for you.
 `dtype="none"` now raises rather than warning, and names the accepted values.
 `fitting.PLOT_COLUMNS` is untouched and still dated `0.4.0`.
 
+### The tutorial moved
+
+`tutorial/SpecModTutorial.ipynb` is now `tutorial/specmod-tutorial.ipynb`, and
+its page is `/tutorial/specmod-tutorial.html`. A filename is a URL, and the
+rest of the site kebab-cased its own before the first release; this one was
+missed. Bookmarks to released versions still work — `/en/v0.2.3/…` is frozen
+and keeps serving the old name — and a redirect covers `stable` and `latest`.
+
 ## From 0.1.1 to 0.2
 
 The version the Magna paper used is `0.1.1`, preserved on the frozen
@@ -212,7 +220,7 @@ The two `preprocess` shims that used to sit beside it were removed in `0.3.0`
 ## The shortest path
 
 If you are porting a script rather than a package, the
-[tutorial](tutorial/SpecModTutorial.ipynb) is the same pipeline written against
+[tutorial](tutorial/specmod-tutorial.ipynb) is the same pipeline written against
 the current release, executed on every documentation build so it cannot
 describe an API that no longer exists. Reading it beside your own script is
 usually faster than working through the tables above.
