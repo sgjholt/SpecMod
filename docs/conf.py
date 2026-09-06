@@ -46,23 +46,56 @@ extensions = [
     #: the screen it occupies, and a caveat nobody scrolls past is worse than
     #: one folded behind its own headline.
     "sphinx_togglebutton",
+    #: Maths. KaTeX rather than the built-in `sphinx.ext.mathjax`, and the
+    #: reason is the same one that vendored the fonts: MathJax is fetched from
+    #: jsdelivr at *read* time, so a reader who cannot reach it gets a page of
+    #: raw `\(x\)` instead of equations. `sphinxcontrib-katex` serves the
+    #: JavaScript from `_static/`, and `tools/vendor_katex.py` puts the
+    #: stylesheet there too, so the page requests nothing from outside.
+    #:
+    #: Checked before switching: all 129 equations on this site parse under
+    #: KaTeX's strictest mode, and render within a couple of percent of
+    #: MathJax's width on every one.
+    "sphinxcontrib.katex",
 ]
+
+#: Rendered in the browser rather than at build time. Pre-rendering removes
+#: the runtime entirely and would let the maths survive with JavaScript off,
+#: but it needs a Node toolchain in both `.readthedocs.yaml` and the docs CI
+#: job, and it inlines the markup — `processing.html` goes from 72 KB to
+#: 296 KB. Measured, and judged not worth those two for this site.
+katex_prerender = False
+
+#: Vendored beside the JavaScript the extension ships. The default is a
+#: jsdelivr URL, which would leave the CDN dependency in place for the one
+#: file that decides whether the maths is *legible* rather than whether it
+#: renders at all — the stylesheet is version-coupled to the JavaScript, and a
+#: mismatch mis-sizes delimiters quietly. `tools/vendor_katex.py` reads the
+#: version from the extension so the two cannot drift.
+katex_css_path = "katex/katex.min.css"
 #: `sphinx_autodoc_typehints` is deliberately not used. `autodoc_typehints`
 #: below is built into `sphinx.ext.autodoc` and does the same job here, and the
 #: extension calls an API Sphinx 10 removes — it emits a deprecation warning
 #: per module on Sphinx 9. One less dependency for no loss.
 
-#: `REFACTOR_PLAN.md` is a working document, not documentation — it is written
-#: for whoever is doing the refactor and records decisions and their evidence.
-#: `notebooks/` holds the source for the transform comparison, which
-#: `tools/measure_docs.py` renders into `choosing-a-transform.md`; the page is
-#: what is published, so building the notebook too would duplicate it.
+#: `REFACTOR_PLAN.md` and `branding.md` are working documents, not
+#: documentation — the first records refactor decisions and their evidence, the
+#: second is the design source `_static/academic.css` and `tools/make_logo.py`
+#: are written against. Both are cited from source comments rather than linked
+#: from any built page, so neither has a URL to keep.
+#: `notebooks/` holds the long-form transform comparison;
+#: `choosing-a-transform.md` is the published page and carries the same
+#: measurements, so building the notebook too would duplicate it.
+#: `_builders/` holds the scripts that write both notebooks — the tutorial's
+#: included — and is source, not documentation.
 #: `notes/` *is* included: `choosing-a-transform.md` links to it for a
 #: per-trace table, so excluding it broke that link.
 exclude_patterns = [
     "_build",
     "REFACTOR_PLAN.md",
-    "notebooks/*",
+    "branding.md",
+    "notebooks/**",
+    "_builders/**",
     "Thumbs.db",
     ".DS_Store",
 ]
@@ -166,25 +199,54 @@ intersphinx_disabled_reftypes = ["*"]
 
 # --------------------------------------------------------------------- html
 
-html_theme = "pydata_sphinx_theme"
+#: `furo`, per `branding.md`. It replaced `pydata_sphinx_theme`, and the
+#: navigation model is the substantive difference rather than the colours:
+#: pydata put top-level toctree entries in a *header* and gave the sidebar the
+#: current section's children, so the four section pages existed to give that
+#: sidebar something to nest. furo has one sidebar holding the whole tree, so
+#: those four pages now nest inside it instead — the structure still earns its
+#: keep, and `index.md`'s toctree is still what orders the site.
+html_theme = "furo"
 html_title = f"{project} {version}"
+
+#: Every colour the site uses, in one place, as the manual requires:
+#: `academic.css` reads them back through `var()` and hard-codes none.
 html_theme_options = {
-    "github_url": "https://github.com/sgjholt/SpecMod",
-    "show_prev_next": True,
-    "navigation_with_keys": False,
-    #: This theme puts *top-level* toctree entries in the header and gives the
-    #: sidebar the current section's children. A flat toctree therefore
-    #: produces a header of ten items and an empty sidebar, with `:caption:`
-    #: nowhere to render — which is what this site had. The four section pages
-    #: are what give the sidebar something to nest.
-    #:
-    #: `show_nav_level: 1` expands each section's own entries rather than
-    #: leaving them behind a disclosure triangle, so a reader can see a
-    #: section's contents without a click.
-    "show_nav_level": 1,
-    #: Deep enough for a section, its pages, and their headings — which is what
-    #: makes a long page like `processing` navigable from the sidebar rather
-    #: than by scrolling.
-    "navigation_depth": 3,
+    "light_css_variables": {
+        "color-background-primary": "#FDFBF7",  # warm manuscript off-white
+        "color-background-secondary": "#F8FAFC",
+        "color-background-border": "#E2E8F0",
+        "color-foreground-primary": "#1E293B",  # ink slate
+        "color-brand-primary": "#1E40AF",  # journal navy
+        "color-brand-content": "#C2410C",  # terracotta
+        #: Declared under `light` only. furo emits these on `body` as the base
+        #: declaration, so they carry into dark mode without a second copy.
+        "font-stack": "'Open Sans', sans-serif",
+        "font-stack--monospace": (
+            "'Fira Code', 'Computer Modern Typewriter', monospace"
+        ),
+    },
+    "dark_css_variables": {
+        "color-background-primary": "#0F172A",  # deep slate
+        "color-background-secondary": "#1E293B",
+        "color-background-border": "#334155",
+        "color-foreground-primary": "#F8FAFC",  # paper white
+        "color-brand-primary": "#60A5FA",  # soft navy
+        "color-brand-content": "#FB923C",  # soft terracotta
+    },
+    "light_logo": "specmod-logo-academic.svg",
+    "dark_logo": "specmod-logo-academic-dark.svg",
+    #: The logo carries the wordmark, so repeating the project name under it
+    #: says the same thing twice.
+    "sidebar_hide_name": True,
+    "source_repository": "https://github.com/sgjholt/SpecMod",
+    "source_branch": "main",
+    "source_directory": "docs/",
 }
-html_static_path: list[str] = []
+
+html_static_path = ["_static"]
+#: `fonts.css` first: it declares the `@font-face` rules `academic.css` and the
+#: theme variables then refer to by name. Generated by `tools/vendor_fonts.py`.
+html_css_files = ["fonts.css", "academic.css"]
+#: The square mark, which is the browser-tab half of the logo system.
+html_favicon = "_static/specmod-logo-academic-mark.svg"

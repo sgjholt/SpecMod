@@ -1,0 +1,70 @@
+/* SpecMod academic theme — see docs/branding.md.
+ *
+ * Every colour here is a CSS custom property furo emits from `conf.py`, so a
+ * palette change is one edit there and none here.
+ *
+ * The fonts are served from this site, by `fonts.css` — generated, and loaded
+ * ahead of this file by `html_css_files`. The manual specifies an `@import`
+ * from fonts.googleapis.com instead; that puts the typography behind a third
+ * party being reachable from the *reader's* browser, and it fails silently to
+ * Georgia and a system sans. See `tools/vendor_fonts.py`.
+ */
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Merriweather', Georgia, serif;
+    color: var(--color-foreground-primary);
+}
+
+/* `!important` on the background alone, and it is load-bearing: Pygments ships
+ * its own `.highlight { background: #202020 }` in the dark stylesheet, which
+ * otherwise wins and leaves code blocks near-black against Deep Slate. Light
+ * mode does not need it. Measured, not assumed — see docs/branding.md. */
+div.highlight {
+    background-color: var(--color-background-secondary) !important;
+    border: 1px solid var(--color-background-border);
+    border-radius: 4px;
+    padding: 0.75em;
+    overflow-x: auto;
+}
+
+code, pre {
+    font-family: var(--font-stack--monospace);
+    font-size: 0.875rem;
+}
+
+/* As the manual specifies: the primary accent marks navigation and
+ * interaction, so every link takes it. Note this overrides furo's own split
+ * between sidebar links (`--color-brand-primary`) and in-content links
+ * (`--color-brand-content`), which means the secondary accent set in
+ * `conf.py` never appears on the site — it is reserved for plot curves. */
+a {
+    color: var(--color-brand-primary);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Wide content scrolls inside its own box rather than widening the page. The
+ * API reference has signatures well past any sensible column, and `processing`
+ * has nine-column tables. */
+table.docutils {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* Notebook output. `myst-nb` emits these on the tutorial page, and furo styles
+ * neither, so without this the executed cells sit flush against the prose with
+ * no indication of which is which. */
+div.cell_output {
+    border-left: 3px solid var(--color-background-border);
+    padding-left: 0.9em;
+    margin-left: 0.1em;
+}
+
+div.cell_output img {
+    max-width: 100%;
+    height: auto;
+}

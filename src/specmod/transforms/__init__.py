@@ -6,7 +6,19 @@ test suite pins every one of them.
 
 from __future__ import annotations
 
-from .base import SpectralEstimator, TaperCorrection
+# Everything `base.__all__` names public is re-exported here, so no public
+# name is reachable only through a submodule path. `specmod.api` publishes
+# `make_window` and `window_correction`, and `docs/api.md` documents packages
+# at the path you import from — a name missing here has nowhere to be
+# documented, and its viewcode backlink points at an anchor that is never
+# written.
+from .base import (
+    SpectralEstimator,
+    TaperCorrection,
+    make_window,
+    prepare_record,
+    window_correction,
+)
 from .cwt import CWTEstimator
 from .fft import FFTEstimator, WelchEstimator
 from .multitaper import MultitaperEstimator
@@ -47,4 +59,7 @@ __all__ = [
     "TaperCorrection",
     "WelchEstimator",
     "get_estimator",
+    "make_window",
+    "prepare_record",
+    "window_correction",
 ]

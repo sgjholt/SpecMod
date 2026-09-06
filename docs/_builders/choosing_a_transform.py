@@ -1,31 +1,18 @@
-"""Build the transforms tutorial notebook."""
+"""Build ``choosing-a-transform.ipynb``.
 
-import json
-import pathlib
+One builder per notebook, named after the notebook it writes — see
+``_notebook.py`` for why the correspondence is derived rather than declared.
 
-cells = []
+Run it from anywhere:
 
+    uv run python docs/notebooks/_builders/choosing_a_transform.py
+"""
 
-def md(text):
-    cells.append(
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": text.strip().splitlines(True),
-        }
-    )
+from _notebook import builder_for
 
-
-def code(text):
-    cells.append(
-        {
-            "cell_type": "code",
-            "execution_count": None,
-            "metadata": {},
-            "outputs": [],
-            "source": text.strip().splitlines(True),
-        }
-    )
+notebook = builder_for(__file__)
+md = notebook.md
+code = notebook.code
 
 
 md("""
@@ -69,8 +56,14 @@ def energy(x):
     return float(np.sum((x - x.mean()) ** 2) * DT)
 
 
-plt.rcParams.update({"figure.figsize": (9, 3.4), "axes.spines.top": False,
-                     "axes.spines.right": False, "figure.dpi": 110})
+plt.rcParams.update(
+    {
+        "figure.figsize": (9, 3.4),
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "figure.dpi": 110,
+    }
+)
 """)
 
 md("""
@@ -89,11 +82,17 @@ code("""
 t = np.arange(N) * DT
 x = 2.5 * np.sin(2 * np.pi * 5.0 * t)
 
-for est in (FFTEstimator(taper="boxcar"), FFTEstimator(), MultitaperEstimator(),
-            WelchEstimator()):
+for est in (
+    FFTEstimator(taper="boxcar"),
+    FFTEstimator(),
+    MultitaperEstimator(),
+    WelchEstimator(),
+):
     s = est.estimate(x, DT)
-    print(f"{est.name:<11} peak {s.amp.max():7.2f} {s.unit:<8} "
-          f"energy recovered {s.energy() / energy(x):.3f}")
+    print(
+        f"{est.name:<11} peak {s.amp.max():7.2f} {s.unit:<8} "
+        f"energy recovered {s.energy() / energy(x):.3f}"
+    )
 
 print(f"\\nexpected peak = A0 * T = {2.5 * DURATION}")
 """)
@@ -133,8 +132,11 @@ for k in range(1, 5):
     ax.plot(t, tapers[k], color="0.8", lw=1.2)
 ax.plot(t, tapers[0], color="#2a78d6", lw=2.2, label="taper 0")
 ax.axhline(0, color="0.85", lw=0.8)
-ax.set(xlabel="time in window (s)", yticks=[],
-       title="DPSS tapers: your record is multiplied by each of these")
+ax.set(
+    xlabel="time in window (s)",
+    yticks=[],
+    title="DPSS tapers: your record is multiplied by each of these",
+)
 ax.legend(frameon=False)
 plt.show()
 """)
@@ -157,7 +159,7 @@ burst = rng.normal(0, 1e-6, WIDTH) * np.exp(-np.arange(WIDTH) / 60.0)
 def place(start):
     \"\"\"The same burst, at a chosen start sample.\"\"\"
     x = np.zeros(N)
-    x[start:start + WIDTH] = burst
+    x[start : start + WIDTH] = burst
     return x
 
 
@@ -176,9 +178,12 @@ fig, ax = plt.subplots(figsize=(9, 4))
 for (name, r), c in zip(ratios.items(), ["#eb6834", "#2a78d6", "#1baf7a"]):
     ax.plot(starts / N * 100, r, "o-", ms=4, lw=2, color=c, label=name)
 ax.axhline(1.0, color="0.5", ls="--", lw=1.2)
-ax.set(xlabel="position of the burst in the window (%)",
-       ylabel="energy recovered\\n(1.0 = truth)", ylim=(0, 1.6),
-       title="The same signal, estimated at different positions")
+ax.set(
+    xlabel="position of the burst in the window (%)",
+    ylabel="energy recovered\\n(1.0 = truth)",
+    ylim=(0, 1.6),
+    title="The same signal, estimated at different positions",
+)
 ax.legend(frameon=False)
 plt.show()
 """)
@@ -220,10 +225,14 @@ weak = rng.normal(0, 1e-9, N)
 x = 1e-3 * np.sin(2 * np.pi * 2.0 * np.arange(N) * DT) + weak
 
 truth = FFTEstimator().estimate(weak, DT).band(20, 49)
-for name, est in [("flat", MultitaperEstimator(adaptive=False)),
-                  ("adaptive", MultitaperEstimator(adaptive=True))]:
+for name, est in [
+    ("flat", MultitaperEstimator(adaptive=False)),
+    ("adaptive", MultitaperEstimator(adaptive=True)),
+]:
     s = est.estimate(x, DT).band(20, 49)
-    print(f"{name:<10} recovered floor is {np.median(s.amp / truth.amp):7.1f}x the truth")
+    print(
+        f"{name:<10} recovered floor is {np.median(s.amp / truth.amp):7.1f}x the truth"
+    )
 """)
 
 md("""
@@ -252,7 +261,7 @@ n = np.arange(WIDTH)
 carrier = rng.normal(0, 1e-6, WIDTH)
 envelopes = {
     "causal (like an arrival)": np.exp(-n / 60.0),
-    "symmetric (zero-phase)": np.exp(-((n - WIDTH / 2) / 80.0) ** 2),
+    "symmetric (zero-phase)": np.exp(-(((n - WIDTH / 2) / 80.0) ** 2)),
 }
 
 est = MultitaperEstimator(adaptive=True)
@@ -263,7 +272,7 @@ for pos in (0.10, 0.50, 0.90):
         x = np.zeros(N)
         s = int(N * pos) - int((env * n).sum() / env.sum())
         s = max(0, min(N - WIDTH, s))
-        x[s:s + WIDTH] = carrier * env
+        x[s : s + WIDTH] = carrier * env
         row += f"{est.estimate(x, DT).energy() / energy(x):>26.3f}"
     print(f"{pos:<12.0%}{row}")
 """)
@@ -279,14 +288,14 @@ But "not phase" would be too quick. Let us separate phase properly: keep
 code("""
 from scipy.signal import hilbert
 
-base = place(200)                              # burst near the start
+base = place(200)  # burst near the start
 X = np.fft.rfft(base)
 
-shifted = np.roll(base, 800)                   # (A) LINEAR ramp = a time shift
-rotated = np.imag(hilbert(base))               # (B) CONSTANT 90 degree rotation
+shifted = np.roll(base, 800)  # (A) LINEAR ramp = a time shift
+rotated = np.imag(hilbert(base))  # (B) CONSTANT 90 degree rotation
 phi = rng.uniform(0, 2 * np.pi, X.size)
-phi[0] = phi[-1] = 0                           # DC and Nyquist must stay real
-scrambled = np.fft.irfft(np.abs(X) * np.exp(1j * phi), n=N)   # (C) RANDOM phase
+phi[0] = phi[-1] = 0  # DC and Nyquist must stay real
+scrambled = np.fft.irfft(np.abs(X) * np.exp(1j * phi), n=N)  # (C) RANDOM phase
 
 # DC and Nyquist are constrained to be real for a real signal, so any phase
 # manipulation necessarily disturbs them. They carry no meaningful power here,
@@ -297,12 +306,18 @@ mag = np.abs(X)[interior]
 
 est = MultitaperEstimator()
 print(f"{'case':<32}{'|X| changed':>13}{'centroid':>11}{'estimate':>11}")
-for name, y in (("base", base), ("(A) linear ramp = shift", shifted),
-                ("(B) constant 90 deg", rotated), ("(C) random phase", scrambled)):
+for name, y in (
+    ("base", base),
+    ("(A) linear ramp = shift", shifted),
+    ("(B) constant 90 deg", rotated),
+    ("(C) random phase", scrambled),
+):
     dm = np.abs(np.abs(np.fft.rfft(y))[interior] - mag).max() / mag.max()
     e = (y - y.mean()) ** 2
-    print(f"{name:<32}{dm:>13.1e}{(np.arange(N) * e).sum() / e.sum() / N:>11.1%}"
-          f"{est.estimate(y, DT).energy() / energy(y):>11.3f}")
+    print(
+        f"{name:<32}{dm:>13.1e}{(np.arange(N) * e).sum() / e.sum() / N:>11.1%}"
+        f"{est.estimate(y, DT).energy() / energy(y):>11.3f}"
+    )
 """)
 
 md("""
@@ -366,9 +381,11 @@ centred = MultitaperEstimator(center=True)
 print(f"{'start':>7}{'center=False':>15}{'center=True':>14}")
 for s in starts[::4]:
     x = place(s)
-    print(f"{s / N:>7.0%}"
-          f"{plain.estimate(x, DT).energy() / energy(x):>15.3f}"
-          f"{centred.estimate(x, DT).energy() / energy(x):>14.3f}")
+    print(
+        f"{s / N:>7.0%}"
+        f"{plain.estimate(x, DT).energy() / energy(x):>15.3f}"
+        f"{centred.estimate(x, DT).energy() / energy(x):>14.3f}"
+    )
 """)
 
 md("""
@@ -421,11 +438,15 @@ before enabling it.**
 """)
 
 code("""
-x = place(60)   # a badly-placed burst
-for kw in ({}, {"normalize_to_variance": True},
-           {"adaptive": True}, {"adaptive": True, "normalize_to_variance": True}):
+x = place(60)  # a badly-placed burst
+for kw in (
+    {},
+    {"normalize_to_variance": True},
+    {"adaptive": True},
+    {"adaptive": True, "normalize_to_variance": True},
+):
     r = MultitaperEstimator(**kw).estimate(x, DT).energy() / energy(x)
-    print(f"{str(kw):<52} energy {r:.3f}")
+    print(f"{kw!s:<52} energy {r:.3f}")
 """)
 
 md("""
@@ -484,22 +505,31 @@ paths = PNR_2019.directory("../..")
 inv = obspy.read_inventory(str(paths.inventory))
 
 st = obspy.read(paths.waveform_glob("*HH[EN]*"))
-pre.set_stream_distance(st, PNR_2019.latitude, PNR_2019.longitude, PNR_2019.depth_km,
-                        obspy.UTCDateTime(PNR_2019.origin),
-                        inventory=inv, dtype="mseed")
-pre.set_picks(st, str(paths.picks_file()))
+st = pre.with_distance(
+    st,
+    PNR_2019.latitude,
+    PNR_2019.longitude,
+    PNR_2019.depth_km,
+    obspy.UTCDateTime(PNR_2019.origin),
+    inventory=inv,
+    dtype="mseed",
+)
+st = pre.with_picks(st, str(paths.picks_file()))
 st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
-st.detrend("linear"); st.detrend("demean"); st.taper(0.05)
+st.detrend("linear")
+st.detrend("demean")
+st.taper(0.05)
 st.remove_response(inv, output="VEL")
 
-sig = pre.get_signal(st, pre.cut_s, rafp=0.8, tafs=20,
-                     time_after="absolute_time", refine_window=True)
+sig = pre.s_window(
+    st, rafp=0.8, tafs=20, time_after="absolute_time", refine_window=True
+)
 
 
 def energy_midpoint(tr):
     \"\"\"Where the 50%-energy point sits, as a fraction through the window.\"\"\"
     d = tr.data - tr.data.mean()
-    c = np.concatenate([[0.0], cumulative_trapezoid(d ** 2)])
+    c = np.concatenate([[0.0], cumulative_trapezoid(d**2)])
     return float(np.interp(0.5, c / c[-1], np.arange(c.size)) / (c.size - 1))
 
 
@@ -510,15 +540,20 @@ fig, ax = plt.subplots(figsize=(9, 4))
 ax.scatter(dist, pos * 100, s=45, color="#2a78d6", zorder=3)
 ax.axhspan(0, 20, color="#eb6834", alpha=0.13, zorder=0)
 ax.text(23, 9, "most biased", color="#eb6834", fontsize=10, ha="right")
-ax.set(xlabel="epicentral distance (km)",
-       ylabel="50%-energy point\\n(% through window)", ylim=(0, 80),
-       title="Where the arrival lands, by distance")
+ax.set(
+    xlabel="epicentral distance (km)",
+    ylabel="50%-energy point\\n(% through window)",
+    ylim=(0, 80),
+    title="Where the arrival lands, by distance",
+)
 ax.grid(axis="y", color="0.9")
 ax.set_axisbelow(True)
 plt.show()
 
-print(f"n = {len(pos)}   median {np.median(pos):.1%}   "
-      f"range {pos.min():.1%}-{pos.max():.1%}   below 20%: {(pos < 0.2).mean():.0%}")
+print(
+    f"n = {len(pos)}   median {np.median(pos):.1%}   "
+    f"range {pos.min():.1%}-{pos.max():.1%}   below 20%: {(pos < 0.2).mean():.0%}"
+)
 """)
 
 md("""
@@ -548,18 +583,29 @@ meaningful. Every smoother records what it did.
 code("""
 from specmod.smoothing import is_smoothed
 
-raw = MultitaperEstimator().estimate(sig[0].data.astype(float),
-                                     sig[0].stats.delta, motion="velocity")
+raw = MultitaperEstimator().estimate(
+    sig[0].data.astype(float), sig[0].stats.delta, motion="velocity"
+)
 binned = LogBinner(n_bins=60).smooth(raw)
 ko = KonnoOhmachi(bandwidth=40).smooth(raw)
 
 fig, ax = plt.subplots(figsize=(9, 4.2))
 ax.loglog(raw.freq, raw.amp, color="0.8", lw=1, label="raw")
 ax.loglog(ko.freq, ko.amp, color="#2a78d6", lw=2, label="Konno-Ohmachi (b=40)")
-ax.loglog(binned.freq, binned.amp, "o-", ms=3.5, color="#eb6834", lw=1.6,
-          label="log bins (60)")
-ax.set(xlabel="frequency (Hz)", ylabel=f"amplitude [{raw.unit}]",
-       title=f"{sig[0].id}: smoothing choices")
+ax.loglog(
+    binned.freq,
+    binned.amp,
+    "o-",
+    ms=3.5,
+    color="#eb6834",
+    lw=1.6,
+    label="log bins (60)",
+)
+ax.set(
+    xlabel="frequency (Hz)",
+    ylabel=f"amplitude [{raw.unit}]",
+    title=f"{sig[0].id}: smoothing choices",
+)
 ax.legend(frameon=False)
 plt.show()
 
@@ -590,8 +636,10 @@ print(f"derived edges -> {len(a1)} vs {len(a2)} points  (cannot be compared)")
 pinned = LogBinner(f_min=0.5, f_max=40.0, n_bins=60, drop_empty=False)
 p1 = pinned.smooth(MultitaperEstimator().estimate(s_tr.data.astype(float), DT))
 p2 = pinned.smooth(MultitaperEstimator().estimate(n_tr.data.astype(float), DT))
-print(f"pinned edges  -> {len(p1)} vs {len(p2)} points  "
-      f"identical axis: {np.array_equal(p1.freq, p2.freq)}")
+print(
+    f"pinned edges  -> {len(p1)} vs {len(p2)} points  "
+    f"identical axis: {np.array_equal(p1.freq, p2.freq)}"
+)
 """)
 
 md("""
@@ -625,11 +673,14 @@ resolved configuration, a hash of it, and the SpecMod version.
 code("""
 from specmod.config import config_hash, load_config
 
-study = load_config(project_file="../../studies/magna_2020_paper.toml",
-                    use_local=False, use_env=False)
+study = load_config(
+    project_file="../../studies/magna_2020_paper.toml", use_local=False, use_env=False
+)
 tf = study.config.transform
 print(f"estimator             {tf.estimator}")
-print(f"adaptive              {tf.adaptive}   <- {study.source_of('transform.adaptive')}")
+print(
+    f"adaptive              {tf.adaptive}   <- {study.source_of('transform.adaptive')}"
+)
 print(f"normalize_to_variance {tf.normalize_to_variance}")
 print(f"\\nconfig hash: {config_hash(study.config)}")
 """)
@@ -658,26 +709,4 @@ the cost of needing the smoother. Whichever you pick, pin it in a study config
 so the result can be reproduced.
 """)
 
-nb = {
-    "cells": cells,
-    "metadata": {
-        "kernelspec": {
-            "display_name": "Python 3",
-            "language": "python",
-            "name": "python3",
-        },
-        "language_info": {"name": "python", "version": "3.11"},
-    },
-    "nbformat": 4,
-    "nbformat_minor": 5,
-}
-
-# Relative to this script, not to whoever happened to run it: the path was
-# hardcoded to one machine's checkout, so the script only worked there.
-out = pathlib.Path(__file__).resolve().parent / "choosing-a-transform.ipynb"
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps(nb, indent=1) + "\n")
-print(
-    f"wrote {out} — {len(cells)} cells "
-    f"({sum(c['cell_type'] == 'code' for c in cells)} code)"
-)
+notebook.write()

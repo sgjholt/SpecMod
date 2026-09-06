@@ -66,9 +66,7 @@ def pair() -> Any:
     import obspy  # noqa: PLC0415, isort: skip
 
     stream = obspy.Stream([_trace("S00", seed=11)])
-    signal = pre.get_signal(
-        stream, pre.cut_s, rafp=0.0, tafs=WINDOW_S, time_after="absolute_time"
-    )
+    signal = pre.s_window(stream, rafp=0.0, tafs=WINDOW_S, time_after="absolute_time")
     noise = pre.get_noise_p(stream, signal)
     sig, noi = signal[0], noise[0]
     return api.compare_spectra(

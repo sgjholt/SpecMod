@@ -21,14 +21,14 @@ for the exact scope of that promise.
 .. automodule:: specmod.exceptions
 ```
 
-The names excluded above are re-exports, documented at the path they are
-defined — `Spectrum` and `SpectrumPair` under [Spectra](#spectra), `Config`
-and `load_config` under [Configuration](#configuration), `make_window` and
-`window_correction` under [Transforms](#transforms). Documenting them twice
-gives every cross-reference to them two targets and makes all of them
-ambiguous, which is the same trap package-level `automodule` set earlier on
-this page. `specmod.api.__all__` is the authoritative list, and
-`tests/test_api_surface.py` asserts it.
+The names excluded above are re-exports, documented once under the section
+that owns them — `Spectrum` and `SpectrumPair` under [Spectra](#spectra),
+`Config` and `load_config` under [Configuration](#configuration), and
+`make_window` and `window_correction` under
+[Transforms](#transforms-and-smoothing). Documenting them twice gives every
+cross-reference to them two targets and makes all of them ambiguous, which is
+the same trap described below. `specmod.api.__all__` is the authoritative
+list, and `tests/test_api_surface.py` asserts it.
 
 Packages are documented at the path you import from — `specmod.picks.PickSet`,
 not `specmod.picks.base.PickSet`. Documenting both the package and its
@@ -61,6 +61,8 @@ cross-reference to it ambiguous.
 .. automodule:: specmod.pipeline
 .. automodule:: specmod.core.spectrum
 .. automodule:: specmod.core.collection
+.. automodule:: specmod.core.noise
+.. automodule:: specmod.core.bandwidth
 .. automodule:: specmod.core.units
 .. automodule:: specmod.core.scalogram
 ```
@@ -70,7 +72,6 @@ cross-reference to it ambiguous.
 ```{eval-rst}
 .. automodule:: specmod.transforms
    :imported-members:
-.. automodule:: specmod.transforms.base
 .. automodule:: specmod.smoothing
    :imported-members:
 ```
@@ -109,9 +110,21 @@ working around that.
 
 ```{eval-rst}
 .. automodule:: specmod.io
+   :imported-members:
+.. autodata:: specmod.io.FORMAT_VERSION
+   :annotation: = 1
 .. automodule:: specmod.tables
 .. automodule:: specmod.plotting
+   :imported-members:
 ```
+
+`FORMAT_VERSION` is named explicitly because `:imported-members:` does not
+reach it. Autodoc reads a constant's documentation from the `#:` comment above
+its assignment, and the assignment is in `specmod.io.layout`, which is where
+the format is defined — importing the name into the package carries the value
+but not the comment. Documenting `io.layout` as well would give every
+re-exported name in it two targets, which is the trap described at the top of
+this page.
 
 ## Configuration
 

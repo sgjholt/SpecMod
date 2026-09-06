@@ -15,6 +15,7 @@ Only the synthetic measurements are checked. The field ones read
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -78,3 +79,74 @@ def test_measurements_are_deterministic(measure: ModuleType) -> None:
     Without this, the check above would fail intermittently and get disabled.
     """
     assert measure.render(measure.SYNTHETIC) == measure.render(measure.SYNTHETIC)
+
+
+# ------------------------------------------------------- the notebook builders
+
+#: Builders live beside the notebooks they write and are named after them, with
+#: underscores where the notebook has hyphens. Anything ``_``-prefixed is shared
+#: machinery rather than a builder.
+BUILDERS = ROOT / "docs" / "_builders"
+
+#: Where notebooks live. Two directories, because the tutorial is published and
+#: executed and reads ``tutorial/data/events/`` through paths relative to
+#: itself, while the transform comparison is neither published nor executed.
+NOTEBOOK_DIRS = [ROOT / "docs" / "notebooks", ROOT / "tutorial"]
+
+
+def _builders() -> list[Path]:
+    return sorted(p for p in BUILDERS.glob("*.py") if not p.name.startswith("_"))
+
+
+def _notebooks() -> list[Path]:
+    return sorted(p for d in NOTEBOOK_DIRS for p in d.glob("*.ipynb"))
+
+
+def _stem(path: Path) -> str:
+    """The name a builder and its notebook share, hyphens normalised away."""
+    return path.stem.replace("-", "_")
+
+
+def test_every_notebook_has_a_builder_and_the_reverse() -> None:
+    """The convention, enforced rather than documented.
+
+    A builder with no notebook is one nobody has run; a notebook with no
+    builder is one nobody can rebuild. Either way the pair is the unit, and
+    matching on the stem is what makes the pairing readable from a directory
+    listing rather than from a table someone has to maintain.
+    """
+    assert _builders(), "no notebook builders found"
+    builders = {_stem(b): b for b in _builders()}
+    notebooks = {_stem(n): n for n in _notebooks()}
+    assert builders.keys() == notebooks.keys(), (
+        f"builders without a notebook: {sorted(builders.keys() - notebooks.keys())}; "
+        f"notebooks without a builder: {sorted(notebooks.keys() - builders.keys())}"
+    )
+
+
+@pytest.mark.parametrize("builder", _builders(), ids=lambda p: p.stem)
+def test_rebuilding_a_notebook_changes_nothing(builder: Path) -> None:
+    """The builder is the source of truth, and can be shown to be.
+
+    This had already stopped being true: the notebook had been through
+    ``ruff format`` and had cell ids added, its builder had not, and the
+    builder had been edited five times against the notebook's two. Rebuilding
+    would have reverted the formatting of every code cell. The content still
+    agreed cell for cell, which is the only reason it was recoverable.
+
+    Running the builder is cheap — it writes strings, and imports nothing from
+    the package — so there is no reason for this not to be checked on every
+    run.
+    """
+    notebooks = {_stem(n): n for n in _notebooks()}
+    notebook = notebooks[_stem(builder)]
+    before = notebook.read_bytes()
+    try:
+        subprocess.run([sys.executable, str(builder)], check=True, capture_output=True)
+        assert notebook.read_bytes() == before, (
+            f"{notebook.name} is not what {builder.name} builds. Run it and "
+            f"commit the result, or fix the builder — whichever is out of date."
+        )
+    finally:
+        # Never leave the tree dirty, whichever way the assertion went.
+        notebook.write_bytes(before)

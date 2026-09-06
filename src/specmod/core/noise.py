@@ -113,6 +113,7 @@ from numpy.typing import NDArray
 __all__ = [
     "NOISE_MODELS",
     "BoostNoise",
+    "NoNoiseModel",
     "NoiseModel",
     "RotateNoise",
     "boost_noise",

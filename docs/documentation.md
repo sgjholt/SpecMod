@@ -111,6 +111,14 @@ to all required events when you install it."*
    Settings → Default version*. Until then it is `latest`, which is correct
    while there are no releases.
 
+**Renaming a published page needs a redirect here, not a commit.** A page
+filename is a URL, and every released version keeps serving the one it was
+built with — `/en/v0.2.3/…` is frozen and correct forever, but a link to
+`/en/stable/…` breaks the moment `stable` moves past the rename. *Admin →
+Redirects → Add redirect*, type **Page redirect**, applies across versions.
+The tutorial was renamed from `tutorial/SpecModTutorial.html` to
+`tutorial/specmod-tutorial.html` in `0.3.0` and wants one.
+
 **Do not add a webhook by hand.** It is possible, it delivers `200`s, and it
 will still leave the feature half-built: a manual webhook can trigger a build,
 but without the App's write access to commit statuses there is nothing able to
@@ -240,7 +248,8 @@ the same number of documented objects while calling an API Sphinx 10 removes.
 
 ### The tutorial notebook
 
-`tutorial/SpecModTutorial.ipynb` is published as part of the site and
+`tutorial/specmod-tutorial.ipynb` is written by
+[a builder](#the-notebook-builders), published as part of the site, and
 **executed on every build** (`nb_execution_mode = "force"`). Every figure and
 number on the page came from running that code against the code being
 documented, and a notebook that raises fails the build
@@ -274,6 +283,110 @@ Roughly 40 seconds, paid twice, to catch a broken notebook either as a failed
 build or as a failed test. The cheaper checks around it — that every name the
 notebook imports resolves, and that deleted modules stay unmentioned even in
 prose — are unmarked, so they run in the `test` matrix job instead.
+
+### The notebook builders
+
+**Every notebook in the repository is written by a script**, one per notebook,
+named after the notebook it writes with underscores where the notebook has
+hyphens. `docs/_builders/` is the one place to look for all of them:
+
+```text
+docs/_builders/
+    _notebook.py             shared: md(), code(), the envelope
+    choosing_a_transform.py  writes docs/notebooks/choosing-a-transform.ipynb
+    specmod_tutorial.py      writes tutorial/specmod-tutorial.ipynb
+```
+
+```sh
+uv run python docs/_builders/specmod_tutorial.py
+```
+
+The correspondence is derived, not declared: `builder_for(__file__)` takes the
+output name from the calling script's filename and maps underscores to
+hyphens, so the two cannot be given different names without renaming the file.
+Each side gets the convention of its own language — `snake_case.py` for a
+Python module, `kebab-case.ipynb` for a file that becomes a URL.
+
+The two notebooks are unlike each other and both live where they do for a
+reason. The tutorial is published and executed; it stays in `tutorial/`
+because it reads `tutorial/data/events/` through paths relative to itself, and
+`conf.py` copies it into `docs/tutorial/` at build time. The transform
+comparison is neither published nor executed — `choosing-a-transform.md` is
+the page that carries that material. So a builder says where its notebook
+goes with `into=`, and only the name is derived.
+
+**The builder is the source of truth, and `tests/test_docs_are_current.py`
+holds it to that** — it runs every builder and fails if a notebook changes,
+and separately checks that every builder has a notebook and every notebook a
+builder. Edit the builder and re-run it; do not edit the `.ipynb`.
+
+That test exists because the invariant had already been lost once. The
+transform notebook had been through `ruff format` and had cell ids added, its
+builder had not, and the builder had been edited five times against the
+notebook's two — rebuilding would have reverted the formatting of every code
+cell. The two still agreed cell for cell, which is the only reason it was
+recoverable.
+
+Consequences for writing one. Cell sources are emitted verbatim, so **write
+them already formatted** — the builders deliberately do not shell out to
+`ruff`, which is not importable from the docs environment and is pinned to
+three different versions across a local checkout, the pre-commit hook and CI.
+Sources are also stripped, so leading and trailing blank lines inside a cell
+do not survive a rebuild. Cell ids are sequential rather than the random hex
+`nbformat` assigns, so a rebuild diffs only where content changed.
+
+`docs/_builders/` is outside the ruff and mypy scopes on purpose — builders
+carry long prose lines and mathematical unicode that the source rules reject —
+so keep new builders there rather than under `tools/`.
+
+### Fonts and the theme
+
+The theme is `furo`, configured against `branding.md`: the palettes live in
+`html_theme_options` as CSS custom properties and `_static/academic.css` reads
+them back with `var()`, so a colour change is one edit in `conf.py`.
+
+**The fonts are served from this site, not from Google.** `_static/fonts/`
+holds eight woff2 files and their licences, and `_static/fonts.css` is
+generated — run `python tools/vendor_fonts.py` to refresh them or to add a
+family. The manual specifies an `@import` from `fonts.googleapis.com`; that
+puts the typography behind a third party being reachable from the *reader's*
+browser, and when it is not the page silently falls back to Georgia and a
+system sans with nothing in the build to notice. It is not hypothetical — it
+is what a corporate firewall does, and what the sandbox this was written in
+did.
+
+Only the `latin`, `latin-ext` and `greek` subsets are vendored. Scanning the
+built site for non-ASCII characters gives 33 distinct ones, and the Greek is
+real: `σ`, `τ`, `Ω` and others appear in the prose of `processing.md`. No page
+uses Cyrillic or Vietnamese, so those subsets are left behind.
+
+**Maths is KaTeX, served from this site too.** `sphinxcontrib-katex` replaces
+the built-in `sphinx.ext.mathjax`, which fetched a 974 KB bundle from jsdelivr
+at read time — the same failure as the fonts, and a louder one: an unreachable
+CDN leaves a page of raw `\(x\)` instead of equations. The extension serves
+its JavaScript from `_static/`, and `python tools/vendor_katex.py` puts the
+stylesheet there as well; the default for that is still a CDN URL.
+
+The version is read from the extension, never typed. KaTeX's markup and its
+stylesheet are coupled, and a mismatch mis-sizes delimiters *quietly* rather
+than failing — the prototype for this vendored 0.18.7 against the bundled
+0.16.22 before anyone checked.
+
+Switching engines was checked rather than assumed. All 129 distinct equations
+on the site parse under KaTeX's strictest mode, and rendered side by side
+against MathJax 4 they agree to a median width ratio of 0.998 across the whole
+set.
+
+Maths is rendered in the browser rather than at build time. Pre-rendering
+would remove the runtime entirely and let equations survive with JavaScript
+disabled, but it needs a Node toolchain in both `.readthedocs.yaml` and the
+docs CI job, and it inlines the markup — `processing.html` goes from 72 KB to
+296 KB. Both were measured; neither buys enough for this site.
+
+**Nothing on the published site is fetched from anywhere else.** No CDN, no
+Google Fonts, no jsdelivr. Grepping a built tree for `https://cdn` or
+`fonts.googleapis` returns nothing, which is the check worth repeating if
+someone adds an extension.
 
 ### Numbers in prose
 

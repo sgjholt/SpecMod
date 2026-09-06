@@ -88,7 +88,7 @@ def test_fit_spectra_reset_uses_the_right_attribute() -> None:
     assert "self.models[" in src
 
 
-# -------------------------------------------- §2.5 cut_p window ordering bug
+# -------------------------------------------- §2.5 p_window window ordering bug
 
 
 def _trace_with_picks() -> obspy.Trace:
@@ -105,8 +105,8 @@ def _trace_with_picks() -> obspy.Trace:
     return tr
 
 
-def test_cut_p_window_end_is_not_displaced_by_the_start_shift() -> None:
-    """cut_p computed p_end from the already-shifted p_start; cut_s did not.
+def test_p_window_end_is_not_displaced_by_the_start_shift() -> None:
+    """p_window computed p_end from the already-shifted p_start; s_window did not.
 
     The two functions disagreed, so an identical refinement produced different
     window lengths depending on which phase you cut.
@@ -114,8 +114,8 @@ def test_cut_p_window_end_is_not_displaced_by_the_start_shift() -> None:
     st = obspy.Stream([_trace_with_picks()])
     unrefined = obspy.Stream([_trace_with_picks()])
 
-    pre.cut_p(st, refine_window=True)
-    pre.cut_p(unrefined, refine_window=False)
+    st = pre.p_window(st, refine_window=True)
+    unrefined = pre.p_window(unrefined, refine_window=False)
 
     tr = st[0]
     length = tr.stats["wend"] - tr.stats["wstart"]
@@ -126,14 +126,14 @@ def test_cut_p_window_end_is_not_displaced_by_the_start_shift() -> None:
     assert tr.stats["wend"] > tr.stats["wstart"]
 
 
-def test_cut_s_has_no_dead_parameter() -> None:
-    """`bf` was accepted by cut_s and never referenced in the body."""
-    sig = inspect.signature(pre.cut_s)
-    src = inspect.getsource(pre.cut_s)
+def test_s_window_has_no_dead_parameter() -> None:
+    """`bf` was accepted by s_window and never referenced in the body."""
+    sig = inspect.signature(pre.s_window)
+    src = inspect.getsource(pre.s_window)
     for name in sig.parameters:
         if name == "st":
             continue
-        assert name in src.split("\n", 1)[1], f"{name} is never used in cut_s"
+        assert name in src.split("\n", 1)[1], f"{name} is never used in s_window"
 
 
 def test_no_pickle_survives_anywhere_in_the_package() -> None:

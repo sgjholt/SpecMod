@@ -36,6 +36,8 @@ import numpy as np
 
 from .config import load_config
 from .core import AmplitudeKind, Motion, Spectrum, SpectrumPair, SpectrumSet
+from .core.bandwidth import FixedBandwidth
+from .exceptions import InvalidInputError
 from .transforms import ESTIMATORS
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -217,11 +219,34 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
         "rotate_noise": config.snr.rotate_noise,
         "noise_model": config.snr.rotation_method,
         "resolution_floor": config.snr.resolution_floor,
-        "bandwidth": config.snr.bandwidth_method,
+        "bandwidth": _configured_bandwidth(config),
+        "max_nyquist_fraction": config.snr.max_nyquist_fraction,
         "rotation_space": config.snr.rotation_space,
     }
     settings.update(overrides or {})
     return settings
+
+
+def _configured_bandwidth(config: Any) -> Any:
+    """The selector configuration asks for, built where it takes parameters.
+
+    ``"fixed"`` is the only one carrying a band, and it is carried in a
+    separate setting because a TOML value cannot be both a name and a pair of
+    numbers. Resolving it here means the error for "fixed with no band" is
+    raised once, where the configuration is read, rather than per pair from
+    inside the comparison.
+    """
+    method = config.snr.bandwidth_method
+    if method != "fixed":
+        return method
+    band = config.snr.fixed_band
+    if band is None:
+        raise InvalidInputError(
+            'bandwidth_method = "fixed" needs a band: set '
+            "`[snr] fixed_band = [low, high]` in the configuration, or leave "
+            'bandwidth_method as "peak" or "widest" to read it off the data.'
+        )
+    return FixedBandwidth(float(band[0]), float(band[1]))
 
 
 def pair_from_traces(

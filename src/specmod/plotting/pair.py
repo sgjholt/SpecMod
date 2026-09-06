@@ -1,48 +1,19 @@
-"""Looking at a spectrum, a pair, or a whole event.
-
-Replaces ``spectral.SNP.quick_vis`` and ``spectral.Spectra.quick_vis``, which
-were methods on the mutable containers and went with them. A spectral package
-where you cannot look at a spectrum is not usable, so this is not optional
-furniture.
-
-**Functions over methods.** The legacy version was a method, so plotting a
-spectrum required owning the container it lived in — which is why the fitter
-grew its own near-duplicate rather than reusing it. These take a
-:class:`~specmod.core.SpectrumPair` and draw it; anything that has one can
-call them, and a caller supplying their own ``Axes`` gets full control of the
-figure.
-
-Nothing here mutates its argument, and nothing calls ``plt.show()``. Returning
-the axes is what lets a caller compose these into a larger figure, annotate
-them, or save without a window ever opening — which is also what makes them
-usable from a script and from a notebook without behaving differently.
-"""
+"""One signal-and-noise pair, and the band it selected."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.ticker import NullFormatter, StrMethodFormatter
+
+from .style import tidy_frequency_axis
 
 if TYPE_CHECKING:  # pragma: no cover
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
 
-    from .core import SpectrumPair, SpectrumSet
+    from ..core import SpectrumPair
 
-__all__ = ["plot_pair", "plot_set"]
-
-
-def _tidy_frequency_axis(ax: Axes) -> None:
-    """Plain decimal tick labels on a log axis.
-
-    Matplotlib's default on a log scale is ``10^0``-style exponents, which for
-    a band running 1 to 40 Hz is less readable than the numbers themselves.
-    """
-    ax.xaxis.set_major_formatter(StrMethodFormatter("{x:.2f}"))
-    ax.xaxis.set_minor_formatter(NullFormatter())
+__all__ = ["plot_pair"]
 
 
 def _fits(fit: Any) -> list[tuple[str, Any]]:
@@ -153,51 +124,8 @@ def plot_pair(
             label="resolution floor",
         )
 
-    _tidy_frequency_axis(ax)
+    tidy_frequency_axis(ax)
     ax.legend(fontsize="small")
     ax.set_xlabel("frequency [Hz]")
     ax.set_ylabel(f"amplitude [{pair.signal.unit}]")
     return ax
-
-
-def plot_set(
-    spectra: SpectrumSet,
-    *,
-    fits: Any = None,
-    columns: int | None = None,
-    passing_only: bool = False,
-    **kwargs: Any,
-) -> Figure:
-    """Draw every pair in an event on one grid.
-
-    ``fits`` may be a :class:`~specmod.fitting.FitSpectra`, or any mapping from
-    trace id to a fit; each pair gets its own model overlaid where one exists.
-
-    ``columns`` defaults to ``viz.plot_columns`` in the configuration, which is
-    the one place that number lives now — it used to be defined in both the
-    ``SPECTRAL`` and ``FITTING`` dicts, where the two copies could disagree.
-    """
-    from .config import load_config  # noqa: PLC0415  (circular at module level)
-
-    if columns is None:
-        columns = load_config().config.viz.plot_columns
-
-    ids = [k for k in spectra.ids() if not passing_only or spectra[k].passes]
-    if not ids:
-        raise ValueError("nothing to plot: no pair in this set has a usable band")
-
-    models = getattr(fits, "models", fits) or {}
-    rows = int(np.ceil(len(ids) / columns))
-    figure, axes = plt.subplots(
-        rows, columns, figsize=(6 * columns, 4 * rows), squeeze=False
-    )
-    flat = axes.ravel()
-
-    for ax, id in zip(flat, ids, strict=False):
-        plot_pair(spectra[id], ax, id=id, fit=models.get(id), **kwargs)
-    for ax in flat[len(ids) :]:
-        ax.set_visible(False)
-
-    figure.suptitle(spectra.event or "spectra")
-    figure.tight_layout()
-    return figure

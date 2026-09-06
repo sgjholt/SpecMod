@@ -113,7 +113,7 @@ def _trace(station: str, seed: int) -> Any:
     )
     start = trace.stats.starttime
     trace.stats["otime"] = start
-    # `cut_s` with rafp=0 opens the window at the P pick, so putting P on the
+    # `s_window` with rafp=0 opens the window at the P pick, so putting P on the
     # first sample of the synthetic makes the cut window the synthetic exactly.
     trace.stats["p_time"] = start + NOISE_PAD_S
     trace.stats["s_time"] = start + NOISE_PAD_S + 1.0
@@ -126,13 +126,8 @@ def _trace(station: str, seed: int) -> Any:
 def measured() -> Any:
     """Three synthetic stations, cut and transformed."""
     stream = obspy.Stream([_trace(f"S{i:02d}", seed=11 + i) for i in range(3)])
-    signal = pre.get_signal(
-        stream,
-        pre.cut_s,
-        rafp=0.0,
-        tafs=WINDOW_S,
-        time_after="absolute_time",
-        refine_window=True,
+    signal = pre.s_window(
+        stream, rafp=0.0, tafs=WINDOW_S, time_after="absolute_time", refine_window=True
     )
     noise = pre.get_noise_p(stream, signal)
     return spectrum_set_from_streams(signal, noise, estimator="fft")

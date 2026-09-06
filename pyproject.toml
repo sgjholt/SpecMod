@@ -74,13 +74,17 @@ dev = [
 # yet — see `docs/conf.py`.
 docs = [
     "sphinx>=7.3",
-    "pydata-sphinx-theme>=0.15",
+    "furo>=2024.1",
     "myst-parser>=3.0",
     "myst-nb>=1.1",
     # Collapsible admonitions, via `:class: dropdown`. Sphinx has no built-in
     # spelling for one, and the alternative is raw <details>, which the theme
     # does not style. Small and single-purpose.
     "sphinx-togglebutton>=0.3",
+    # Maths, rendered by KaTeX from `_static/` rather than by MathJax from a
+    # CDN. See the note in `docs/conf.py`; `tools/vendor_katex.py` vendors the
+    # matching stylesheet.
+    "sphinxcontrib-katex>=0.9",
 ]
 tutorial = [ # for running the tutorial notebook, which is not part of the package
     "ipykernel>=7.0",

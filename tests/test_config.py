@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -12,6 +13,9 @@ from specmod import config
 from specmod.config import Config, SnrConfig, config_hash, load_config
 from specmod.config.provenance import Provenance
 from specmod.config.serialize import to_toml
+from specmod.core.bandwidth import FixedBandwidth
+from specmod.exceptions import InvalidInputError
+from specmod.pipeline import _compare_settings
 
 STUDIES = Path(__file__).resolve().parents[1] / "studies"
 
@@ -271,3 +275,41 @@ def test_the_legacy_config_module_is_gone() -> None:
     assert not (Path(specmod.__file__).parent / "_config_legacy.py").exists()
     assert not hasattr(config, "SPECTRAL")
     assert not hasattr(config, "FITTING")
+
+
+# ------------------------------------------------------- bandwidth overrides
+
+
+def test_the_shipped_defaults_impose_no_band(isolated: Path) -> None:
+    """Both overrides are opt-in. The right ceiling is a property of the
+    instrument, not of this package, so nothing is imposed by default."""
+    cfg = load_config(isolated, use_local=False, use_env=False).config
+    assert cfg.snr.max_nyquist_fraction is None
+    assert cfg.snr.fixed_band is None
+    assert cfg.snr.bandwidth_method == "peak"
+
+
+def test_a_configured_cap_reaches_the_comparison(isolated: Path) -> None:
+    (isolated / "specmod.toml").write_text("[snr]\nmax_nyquist_fraction = 0.8\n")
+    with mock.patch("specmod.pipeline.load_config", return_value=load_config(isolated)):
+        assert _compare_settings()["max_nyquist_fraction"] == 0.8
+
+
+def test_a_configured_fixed_band_becomes_a_selector(isolated: Path) -> None:
+    (isolated / "specmod.toml").write_text(
+        '[snr]\nbandwidth_method = "fixed"\nfixed_band = [1.5, 25.0]\n'
+    )
+    with mock.patch("specmod.pipeline.load_config", return_value=load_config(isolated)):
+        selector = _compare_settings()["bandwidth"]
+    assert selector == FixedBandwidth(1.5, 25.0)
+
+
+def test_fixed_without_a_band_says_which_setting_is_missing(isolated: Path) -> None:
+    """The failure has to name `fixed_band`. Raised where configuration is
+    read, so it happens once per run rather than once per pair."""
+    (isolated / "specmod.toml").write_text('[snr]\nbandwidth_method = "fixed"\n')
+    with (
+        mock.patch("specmod.pipeline.load_config", return_value=load_config(isolated)),
+        pytest.raises(InvalidInputError, match="fixed_band"),
+    ):
+        _compare_settings()

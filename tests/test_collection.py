@@ -36,7 +36,9 @@ from specmod.core import noise as noise_module  # noqa: E402
 from specmod.core.bandwidth import (  # noqa: E402
     BANDWIDTH_SELECTORS,
     BandwidthSelector,
+    FixedBandwidth,
     WidestBandwidth,
+    cap_to_nyquist,
     get_bandwidth_selector,
 )
 from specmod.core.collection import (  # noqa: E402
@@ -481,18 +483,30 @@ def test_boost_is_continuous_where_the_noise_crosses_the_signal() -> None:
 # --------------------------------------------------------- bandwidth selectors
 
 
+#: What each registered selector needs to be built. Only ``fixed`` takes
+#: anything: the band is the whole of it, so there is no default to fall back
+#: on. The band chosen here sits inside the passing run the protocol test uses,
+#: so every selector is judged against the same expectation.
+_SELECTOR_KWARGS: dict[str, dict[str, Any]] = {"fixed": {"low": 6.0, "high": 29.0}}
+
+#: The selectors that read the band off the signal-to-noise ratio. ``fixed``
+#: is not one of them by design, so invariants about how the ratio is *used*
+#: cannot be stated over it.
+_AUTOMATIC = sorted(set(BANDWIDTH_SELECTORS) - {"fixed"})
+
+
 def test_every_registered_selector_satisfies_the_protocol() -> None:
     freq = np.linspace(1.0, 50.0, 100)
     snr = np.where((freq > 5.0) & (freq < 30.0), 10.0, 0.5)
 
     for name in BANDWIDTH_SELECTORS:
-        selector = get_bandwidth_selector(name)
+        selector = get_bandwidth_selector(name, **_SELECTOR_KWARGS.get(name, {}))
         assert isinstance(selector, BandwidthSelector), name
         assert selector.name == name
         band = selector.select(freq, snr, 3.0)
         assert band is not None, name
         low, high = band
-        assert 5.0 < low < high < 30.0, f"{name} strayed outside the passing run"
+        assert 5.0 <= low < high <= 30.0, f"{name} strayed outside the passing run"
 
 
 def test_an_unknown_selector_names_the_available_ones() -> None:
@@ -500,10 +514,16 @@ def test_an_unknown_selector_names_the_available_ones() -> None:
         get_bandwidth_selector("percentile")
 
 
-def test_every_selector_declines_rather_than_guessing() -> None:
+def test_every_automatic_selector_declines_rather_than_guessing() -> None:
+    """Stated over the automatic selectors only.
+
+    ``fixed`` returns its band against any ratio, including this one — that is
+    what it is for, and ``TestFixedBandwidth`` pins it. Including it here would
+    either fail or force the invariant to be weakened for every selector.
+    """
     freq = np.linspace(1.0, 50.0, 100)
     nothing_passes = np.full_like(freq, 0.1)
-    for name in BANDWIDTH_SELECTORS:
+    for name in _AUTOMATIC:
         assert get_bandwidth_selector(name).select(freq, nothing_passes, 3.0) is None, (
             name
         )
@@ -642,3 +662,207 @@ def test_the_view_hands_out_metadata_the_fitter_can_copy(pnr_windows) -> None:
 # There is no longer anything to bridge from: `specmod.pipeline` builds a
 # `SpectrumSet` from waveforms directly, and `tests/test_pipeline.py` covers
 # that path including fitting a `SpectrumSet` end to end.
+
+
+# ------------------------------------------------- imposing and capping bands
+
+
+def _passing_pair(sampling_rate: float = 100.0) -> SpectrumPair:
+    """A pair whose ratio passes everywhere, so the band runs to the top.
+
+    Which is the situation the cap exists for: the walk has nothing to stop it
+    but the end of the array.
+    """
+    freq = np.linspace(1.0, sampling_rate / 2, 400)
+    signal = _spectrum(freq, np.full(freq.size, 1e-4))
+    noise = _spectrum(freq, np.full(freq.size, 1e-6))
+    object.__setattr__(signal, "sampling_rate", sampling_rate)
+    object.__setattr__(noise, "sampling_rate", sampling_rate)
+    return SpectrumPair.compare(signal, noise, threshold=3.0, rotate_noise=False)
+
+
+class TestFixedBandwidth:
+    def test_it_returns_the_band_it_was_given(self) -> None:
+        freq = np.linspace(1.0, 50.0, 200)
+        snr = np.ones(freq.size)  # fails the threshold everywhere
+        assert FixedBandwidth(5.0, 20.0).select(freq, snr, 3.0) == (5.0, 20.0)
+
+    def test_it_ignores_the_ratio_entirely(self) -> None:
+        """The distinguishing property: `peak` and `widest` both return None
+        for a ratio this bad, and `fixed` does not consult it at all."""
+        freq = np.linspace(1.0, 50.0, 200)
+        dead = np.zeros(freq.size)
+        assert find_bandwidth(freq, dead, 3.0, method="peak") is None
+        assert find_bandwidth(freq, dead, 3.0, method="widest") is None
+        assert find_bandwidth(freq, dead, 3.0, method=FixedBandwidth(5.0, 20.0)) == (
+            5.0,
+            20.0,
+        )
+
+    def test_it_is_intersected_with_the_frequencies_present(self) -> None:
+        freq = np.linspace(2.0, 30.0, 200)
+        got = FixedBandwidth(0.1, 500.0).select(freq, np.ones(freq.size), 3.0)
+        assert got == (2.0, 30.0)
+
+    def test_a_band_outside_the_record_is_no_band(self) -> None:
+        freq = np.linspace(2.0, 30.0, 200)
+        assert (
+            FixedBandwidth(100.0, 200.0).select(freq, np.ones(freq.size), 3.0) is None
+        )
+
+    def test_an_inverted_band_is_rejected_at_construction(self) -> None:
+        with pytest.raises(ValueError, match="needs low < high"):
+            FixedBandwidth(20.0, 5.0)
+
+    def test_it_is_in_the_registry_and_needs_a_band(self) -> None:
+        assert "fixed" in BANDWIDTH_SELECTORS
+        assert isinstance(
+            get_bandwidth_selector("fixed", low=1.0, high=9.0), BandwidthSelector
+        )
+        # The common mistake: `bandwidth_method = "fixed"` with nothing beside
+        # it. The message has to name the setting, not the dataclass.
+        with pytest.raises(ValueError, match="needs a band"):
+            get_bandwidth_selector("fixed")
+
+    def test_compare_records_that_the_band_was_imposed(self) -> None:
+        pair = _passing_pair()
+        chosen = SpectrumPair.compare(
+            pair.signal,
+            pair.noise,
+            threshold=3.0,
+            rotate_noise=False,
+            bandwidth=FixedBandwidth(5.0, 20.0),
+        )
+        assert chosen.meta["band_imposed"] == "fixed"
+        # An automatic band is not marked, or the flag would say nothing.
+        assert "band_imposed" not in pair.meta
+
+
+class TestNyquistCap:
+    def test_it_trims_only_the_high_edge(self) -> None:
+        assert cap_to_nyquist((1.0, 48.0), 100.0, 0.8) == (1.0, 40.0)
+
+    def test_a_band_already_inside_the_ceiling_is_untouched(self) -> None:
+        assert cap_to_nyquist((1.0, 20.0), 100.0, 0.8) == (1.0, 20.0)
+
+    def test_a_band_entirely_above_the_ceiling_is_no_band(self) -> None:
+        """Not a narrower measurement — no measurement. Same answer the
+        selectors give when nothing survives."""
+        assert cap_to_nyquist((45.0, 48.0), 100.0, 0.8) is None
+
+    def test_the_fraction_is_validated(self) -> None:
+        with pytest.raises(ValueError, match="must be in"):
+            cap_to_nyquist((1.0, 10.0), 100.0, 1.5)
+
+    def test_it_scales_with_the_sampling_rate(self) -> None:
+        """The reason it is a fraction and not a frequency: one setting has to
+        mean the same thing on a 100 Hz and a 200 Hz station."""
+        assert cap_to_nyquist((1.0, 99.0), 100.0, 0.8) == (1.0, 40.0)
+        assert cap_to_nyquist((1.0, 99.0), 200.0, 0.8) == (1.0, 80.0)
+
+    def test_compare_applies_it(self) -> None:
+        uncapped = _passing_pair()
+        assert uncapped.band is not None
+        capped = SpectrumPair.compare(
+            uncapped.signal,
+            uncapped.noise,
+            threshold=3.0,
+            rotate_noise=False,
+            max_nyquist_fraction=0.5,
+        )
+        assert capped.band is not None
+        assert capped.band[1] <= 25.0
+        assert capped.band[1] < uncapped.band[1]
+        assert capped.band[0] == uncapped.band[0]
+
+    def test_it_constrains_a_fixed_band_too(self) -> None:
+        """The cap is a statement about the recording, not about how the band
+        was chosen, so it has to reach the one strategy that ignores the data."""
+        pair = _passing_pair()
+        capped = SpectrumPair.compare(
+            pair.signal,
+            pair.noise,
+            threshold=3.0,
+            rotate_noise=False,
+            bandwidth=FixedBandwidth(1.0, 49.0),
+            max_nyquist_fraction=0.5,
+        )
+        assert capped.band is not None
+        assert capped.band[1] <= 25.0
+
+
+class TestWithBand:
+    def test_it_returns_a_new_pair_and_leaves_the_original(self) -> None:
+        pair = _passing_pair()
+        corrected = pair.with_band((2.0, 10.0))
+        assert corrected.band == (2.0, 10.0)
+        assert pair.band != (2.0, 10.0)
+        assert corrected is not pair
+
+    def test_the_comparison_itself_is_carried_over(self) -> None:
+        """Only the reading of the ratio is in question, not the ratio."""
+        pair = _passing_pair()
+        corrected = pair.with_band((2.0, 10.0))
+        assert corrected.snr is pair.snr
+        assert corrected.signal is pair.signal
+        assert corrected.resolution_floor == pair.resolution_floor
+
+    def test_it_is_marked_as_imposed(self) -> None:
+        assert _passing_pair().with_band((2.0, 10.0)).meta["band_imposed"] == "manual"
+
+    def test_it_is_intersected_with_the_frequencies_present(self) -> None:
+        pair = _passing_pair()
+        widest = pair.with_band((1e-6, 1e6))
+        assert widest.band is not None
+        assert widest.band[0] >= float(pair.binned_signal.freq.min())
+        assert widest.band[1] <= float(pair.binned_signal.freq.max())
+
+    def test_a_band_missing_the_record_is_an_error(self) -> None:
+        with pytest.raises(ValueError, match="does not overlap"):
+            _passing_pair().with_band((500.0, 900.0))
+
+    def test_an_inverted_band_is_an_error(self) -> None:
+        with pytest.raises(ValueError, match="needs low < high"):
+            _passing_pair().with_band((10.0, 2.0))
+
+    def test_none_rejects_a_pair_the_selector_accepted(self) -> None:
+        pair = _passing_pair()
+        assert pair.passes
+        assert not pair.with_band(None).passes
+
+
+def test_a_pair_built_with_a_strategy_object_can_still_be_saved() -> None:
+    """`compare` accepts a name or an object, and records what it was given so
+    `to_motion` can replay it. An object does not survive `json.dumps`, so
+    passing one used to make the pair unsaveable — `io.save` raised from inside
+    its metadata dump, naming the dataclass rather than the argument.
+    """
+    import json  # noqa: PLC0415
+
+    pair = _passing_pair()
+    for strategy in (FixedBandwidth(2.0, 20.0), "peak"):
+        built = SpectrumPair.compare(
+            pair.signal,
+            pair.noise,
+            threshold=3.0,
+            rotate_noise=False,
+            bandwidth=strategy,
+        )
+        json.dumps(dict(built.meta))  # would raise on a bare dataclass
+
+
+def test_a_recorded_strategy_rebuilds_on_replay() -> None:
+    """Recording the name and its fields, rather than the object, is what
+    makes `to_motion` survive a save and reload rather than only working in
+    memory."""
+    pair = _passing_pair()
+    built = SpectrumPair.compare(
+        pair.signal,
+        pair.noise,
+        threshold=3.0,
+        rotate_noise=False,
+        bandwidth=FixedBandwidth(2.0, 20.0),
+    )
+    recorded = built.meta[SpectrumPair.SETTINGS_KEY]["bandwidth"]
+    assert recorded == {"name": "fixed", "low": 2.0, "high": 20.0}
+    assert built.to_motion("displacement").band is not None

@@ -5,7 +5,7 @@ for either (``obspy-stubs``, ``types-obspy``, ``lmfit-stubs`` — all 404). So
 ``stubs/`` in this repository is what makes ``st: Stream`` and
 ``result: ModelResult`` mean anything. That is worth having — wiring them in
 found four latent defects that ``Any`` had hidden: an unguarded ``None``
-inventory in ``set_stream_distance``, an unguarded ``None`` signal stream in
+inventory in ``with_distance``, an unguarded ``None`` signal stream in
 ``plot_traces``, an unguarded ``None`` result behind every private reader on
 ``FitSpectrum``, and ``2 * stderr`` where ``stderr`` is ``None`` under the
 shipped minimiser.
@@ -292,7 +292,7 @@ def test_the_arithmetic_the_stub_overloads_behaves_as_declared() -> None:
 
     Declared as an overload, which is the one place the stub says something a
     reader might doubt. It is also the asymmetry that produced a real bug in
-    ``cut_c`` — ``float + UTCDateTime`` raises, because there is no
+    ``coda_window`` — ``float + UTCDateTime`` raises, because there is no
     ``__radd__``.
     """
     t0 = obspy.UTCDateTime("2019-08-26T07:49:24.2")

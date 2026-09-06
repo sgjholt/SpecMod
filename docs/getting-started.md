@@ -15,12 +15,12 @@ but cannot write a result. The other extras are listed in the
 While this is `0.x`, pin an exact version in anything you intend to publish.
 The [roadmap](roadmap.md) says what has shipped and what 1.0 will mean.
 
-[Tutorial](tutorial/SpecModTutorial.ipynb)
+[Tutorial](tutorial/specmod-tutorial.ipynb)
 : One event from waveforms and picks to source parameters. Every figure and
   number on the page is produced by executing the notebook when this site is
   built, so it cannot describe an API that no longer exists. **Start here.**
 
-[Upgrading from 0.1](upgrading.md)
+[Upgrading](upgrading.md)
 : For code written against the pre-refactor `0.1.1` on `master`. Modules moved,
   were renamed to snake_case, and several were deleted, so old code fails at
   its imports rather than running and quietly giving different numbers.
@@ -36,6 +36,6 @@ the tutorial has run.
 :maxdepth: 2
 :hidden:
 
-tutorial/SpecModTutorial
+tutorial/specmod-tutorial
 upgrading
 ```

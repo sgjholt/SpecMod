@@ -110,13 +110,21 @@ going quietly stale, which is why it was a 1.0 requirement.
 
 ### Finishing the decomposition
 
-Breaking the remaining large modules into packages with narrow
-responsibilities. The spectral core, the fitting layer and the pick readers
-are already packages, and the type-checking backlog is empty.
+**Done, and unreleased.** This was the last item 1.0 was waiting on.
 
-What is left: `io.py` and `plotting.py` are still single modules, and the
-operations that mutate in place need to return new objects instead. Neither is
-large — the split is about responsibilities, not line count.
+`io.py` and `plotting.py` are now packages, alongside the spectral core, the
+fitting layer and the pick readers; the type-checking backlog is empty. The
+split is by responsibility rather than line count — for `io/`, what a file
+contains against how one is written against where the optional dependency
+lives.
+
+**`specmod.preprocess` no longer modifies the stream it is given.** Every
+function returns a new one, which is the package-wide rule the containers have
+always followed and the only place it did not hold. Ten functions were renamed
+to say so — `cut_s` is `s_window`, `set_picks` is `with_picks` — because a
+function that starts returning instead of mutating while keeping its name
+leaves every existing call running and silently doing nothing.
+[Upgrading](upgrading.md#from-02-to-03) is the table.
 
 ### The documentation 1.0 asked for
 
@@ -125,21 +133,23 @@ convention, the Parseval contract, and now the moment and magnitude equations
 with their constants, in
 [How a spectrum is processed](processing.md) — in the sections that apply them,
 signposted from [Guides](guides.md) rather than split onto a page of their own.
-[Upgrading from 0.1](upgrading.md) covers moving code off the pre-refactor
+[Upgrading](upgrading.md) covers moving code off the pre-refactor
 `master`.
 
 ## Planned
 
 ### 1.0 — the API stops moving
 
-**The documentation this was waiting on is done.** What remains is finishing
-the decomposition above — it changes signatures, so it belongs before the
-promise rather than after — and then the release itself, which says that names
-and signatures stop moving without a deprecation cycle.
+**Everything this was waiting on is now done** — the documentation, and the
+decomposition above with the signature changes it implied. What remains is the
+release itself, which says that names and signatures stop moving without a
+deprecation cycle.
 
 That promise is the whole content of the number, which is why it has to be a
 decision rather than something a breaking commit does on its way past. Until it
-is made, breaking changes bump the minor.
+is made, breaking changes bump the minor. The honest test before making it is
+whether a release goes by without one — the API is not settled because the
+backlog is empty, it is settled when it stops moving.
 
 ## After 1.0
 

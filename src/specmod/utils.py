@@ -268,7 +268,8 @@ def stream_distance_sort(st: Stream, dist_met: str = "repi") -> Stream:
     except KeyError:
         warnings.warn(
             f"No {dist_met!r} on these traces, so the stream is returned "
-            "unsorted. Set distances with `preprocess.set_stream_distance`.",
+            "unsorted. `preprocess.with_distance` returns a stream carrying "
+            "distances.",
             stacklevel=2,
         )
 

@@ -25,7 +25,7 @@ $X(f)$.
 | # | Stage | Code |
 | --- | --- | --- |
 | 1 | Instrument correction and detrending | `preprocess` |
-| 2 | Window selection and refinement | `preprocess.cut_s`, `signal_intensity` |
+| 2 | Window selection and refinement | `preprocess.s_window`, `signal_intensity` |
 | 3 | Spectral estimation | `transforms/` |
 | 4 | Amplitude convention | `core.Spectrum.to_kind` |
 | 5 | Log binning | `core.collection.log_bin` |
@@ -357,7 +357,7 @@ $$R_i = \bar{A}^{\,\text{signal}}_i \big/ \bar{A}^{\,\text{noise}}_i$$
 
 Which bins that leaves is a **registry**, `core.bandwidth.BANDWIDTH_SELECTORS`,
 in the same way the noise models in [§6](#6-noise-rescaling-and-rotation) are.
-Two are shipped, and they can disagree completely:
+Three are shipped; the two automatic ones can disagree completely:
 
 `peak` — **the default** (`[snr] bandwidth_method`)
 : Walk outward from the bin with the highest ratio until $R_i$ falls below
@@ -370,9 +370,16 @@ Two are shipped, and they can disagree completely:
   single failing bin so one noisy bin does not end a band, subject to a
   `min_width` (default 3).
 
-Either returns nothing — not a band plus a flag — when no band survives. So
-does the resolution floor below, which can reject a pair outright rather than
-only narrowing it.
+`fixed`
+: Not a selection. Returns the band named in `[snr] fixed_band`, intersected
+  with the frequencies present, whatever the ratio says. For a band held
+  constant across a study, or one imposed by an instrument. The pair records
+  `band_imposed` in its metadata, so a result read back later still
+  distinguishes a band that was asserted from one that was measured.
+
+Either automatic selector returns nothing — not a band plus a flag — when no
+band survives. So does the resolution floor below, and the Nyquist ceiling,
+both of which can reject a pair outright rather than only narrowing it.
 
 **They are not cosmetic variants.** On a spectrum with a wide low-frequency
 passing run beneath a narrow high-SNR peak, `peak` and `widest` return disjoint
@@ -398,6 +405,38 @@ which refuses the region where the noise level is `np.interp`'s repeated edge
 value rather than a measurement. On the 28 PNR pairs, 6 selected a band
 opening below the noise window's own $1/T$ before this existed. Set
 `snr.resolution_floor = false` to reproduce a run made before it.
+
+**Nyquist ceiling.** The other end has the opposite problem, and it is not
+guarded by default. Both automatic selectors walk while the *ratio* holds, and
+approaching Nyquist the signal and the noise roll off into the anti-alias
+filter together — so $R_i$ can stay above $R_{\min}$ through a region where
+neither is informative, and the walk runs until it reaches the end of the
+array. On the 28 PNR pairs the median high edge lands at 66% of Nyquist and
+five run past 90%, which is the anti-alias response being fitted as though it
+were a source spectrum.
+
+$$f_{\text{high}} \le \tfrac{1}{2} f_s \cdot \phi$$
+
+where $\phi$ is `[snr] max_nyquist_fraction`, unset by default. A fraction
+rather than a frequency because a network mixes sampling rates — the PNR
+stations record at both 100 and 200 Hz — and the roll-off moves with the rate.
+The right value is a property of the instrument rather than of this package,
+which is why nothing is imposed.
+
+It is applied *after* the selector and after the floor, so it constrains every
+strategy the same way, `fixed` included: it is a statement about the recording,
+not about how the band was chosen.
+
+**This is not a presentational setting.** Capping the PNR event at
+$\phi = 0.8$ moves 10 of the 28 bands, and on those the fitted corner frequency
+changes by a median of 16% and by a factor of three at the worst station. Since
+stress drop scales as $f_c^3$, that worst case is a factor of 27. It does not
+follow that the capped answer is the correct one — what follows is that the
+band is a decision with that much leverage, and it should be made deliberately
+rather than inherited from a default. The
+[tutorial](tutorial/specmod-tutorial.ipynb) works through all three levers on
+this event, including raising $R_{\min}$, which tightens both edges instead of
+one and begins rejecting stations entirely.
 
 ## 8. Source model
 

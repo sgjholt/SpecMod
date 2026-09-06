@@ -175,7 +175,29 @@ class SnrConfig:
     #: This said ``"integral"`` while the registry said ``"widest"``, from the
     #: period when the selector was still a percentile of a sign integral —
     #: a config value that named nothing the code would accept.
-    bandwidth_method: Literal["widest", "peak"] = "peak"
+    bandwidth_method: Literal["widest", "peak", "fixed"] = "peak"
+
+    #: The band ``bandwidth_method = "fixed"`` uses, in Hz. Required by that
+    #: method and ignored by the other two, which read the band off the data.
+    fixed_band: tuple[float, float] | None = None
+
+    #: Ceiling on the high edge, as a fraction of each trace's own Nyquist
+    #: frequency. ``None`` — the shipped default — leaves the selector's
+    #: answer alone.
+    #:
+    #: Both automatic selectors walk outward while the signal-to-noise *ratio*
+    #: holds, and near Nyquist the signal and the noise roll off together, so
+    #: the ratio can survive a region where neither is informative. On the
+    #: tutorial event the median high edge lands at 66% of Nyquist and five of
+    #: 28 pairs run past 90%, which is the anti-alias filter being fitted as a
+    #: source spectrum. ``0.8`` is a reasonable starting point; the right value
+    #: is a property of the instrument, not of this package, which is why
+    #: nothing is imposed by default.
+    #:
+    #: A fraction rather than a frequency because a network mixes sampling
+    #: rates — the tutorial's runs at both 100 and 200 Hz — and the roll-off
+    #: this guards against moves with the rate.
+    max_nyquist_fraction: float | None = None
 
     #: Impose a low-frequency floor from the window length (~1/T), or the cone
     #: of influence when the spectrum came from a CWT. Nothing enforced this

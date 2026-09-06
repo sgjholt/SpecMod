@@ -262,7 +262,12 @@ class TestTheLayout:
         argument was about: a scalogram is ~1 MB per trace.
         """
         h5py = pytest.importorskip("h5py")
-        from specmod.io import _COMPRESS_ABOVE_BYTES, _dataset  # noqa: PLC0415
+        # Internal to the format, so it lives in `io.layout` rather than on
+        # the package surface — see `specmod/io/__init__.py`.
+        from specmod.io.layout import (  # noqa: PLC0415
+            COMPRESS_ABOVE_BYTES,
+            dataset,
+        )
 
         spectra = _spectra(pnr_windows)
         path = save(tmp_path / "event", spectra)
@@ -272,7 +277,7 @@ class TestTheLayout:
 
         big = tmp_path / "big.h5"
         with h5py.File(big, "w") as handle:
-            _dataset(handle, "big", np.zeros(_COMPRESS_ABOVE_BYTES))
+            dataset(handle, "big", np.zeros(COMPRESS_ABOVE_BYTES))
             assert handle["big"].compression == "gzip"
 
     def test_a_pair_with_no_band_omits_it_rather_than_storing_a_sentinel(
@@ -433,7 +438,7 @@ class TestPlotPair:
         """A `FitSpectrum` that was built but never fitted has no `result`.
         Drawing it would raise; skipping lets a partial run still plot."""
         from specmod.fitting import FitSpectrum  # noqa: PLC0415
-        from specmod.plotting import _fits  # noqa: PLC0415
+        from specmod.plotting.pair import _fits  # noqa: PLC0415
 
         spectra = _spectra(pnr_windows)
         id = spectra.ids()[0]

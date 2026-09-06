@@ -122,13 +122,13 @@ changes nothing else.
 
 ## Reading picks
 
-Arrivals are attached to traces by `set_picks`, which detects the format from
-the file rather than from its name:
+`with_picks` returns a stream with arrivals attached, detecting the format
+from the file rather than from its name:
 
 ```python
 import specmod.preprocess as pre
 
-pre.set_picks(stream, "event.xml")
+stream = pre.with_picks(stream, "event.xml")
 ```
 
 Everything `obspy.read_events` parses is read through one delegate — QuakeML,
