@@ -110,9 +110,21 @@ working around that.
 
 ```{eval-rst}
 .. automodule:: specmod.io
+   :imported-members:
+.. autodata:: specmod.io.FORMAT_VERSION
+   :annotation: = 1
 .. automodule:: specmod.tables
 .. automodule:: specmod.plotting
+   :imported-members:
 ```
+
+`FORMAT_VERSION` is named explicitly because `:imported-members:` does not
+reach it. Autodoc reads a constant's documentation from the `#:` comment above
+its assignment, and the assignment is in `specmod.io.layout`, which is where
+the format is defined — importing the name into the package carries the value
+but not the comment. Documenting `io.layout` as well would give every
+re-exported name in it two targets, which is the trap described at the top of
+this page.
 
 ## Configuration
 
