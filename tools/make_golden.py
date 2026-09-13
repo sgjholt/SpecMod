@@ -28,6 +28,7 @@ import obspy
 import scipy
 
 import specmod.preprocess as pre
+from specmod.config import config_hash, load_config
 from specmod.datasets import PNR_2019
 from specmod.pipeline import spectrum_set_from_streams
 
@@ -207,12 +208,51 @@ def capture_windows() -> dict:
     return out
 
 
+def _configuration() -> dict:
+    """The settings these numbers were produced under.
+
+    The pipeline reads ``load_config()`` ambiently at a dozen call sites, and
+    nothing pins one here, so a regenerated reference adopts whatever defaults
+    — or whatever local override — happened to be current. That is the
+    residual gap in ``docs/REFACTOR_PLAN.md`` §6.6: the numbers are frozen by
+    the committed file, the settings behind them were not recorded at all.
+
+    **Recording them does not close it.** Pinning a study file, as §6.6
+    proposes, is what would, and that needs a way to hold a configuration
+    across an ambient read which does not exist yet. What this does is make a
+    settings change visible: it lands as a diff in this file and as a named key
+    in ``test_the_settings_behind_the_reference_are_still_current``, instead of
+    as nine numeric failures with no cause attached to them.
+    """
+    resolved = load_config()
+    #: `sources` carries only what a layer above the defaults set, so anything
+    #: here came from a `specmod.toml`, a gitignored local file or the
+    #: environment — none of which the repository can reproduce.
+    non_default = {k: v for k, v in resolved.sources.items() if v != "default"}
+    if non_default:
+        print(
+            f"WARNING: {len(non_default)} setting(s) come from a layer above "
+            f"the defaults, e.g. {sorted(non_default)[:3]}. Regenerating under "
+            "an override bakes it into the reference — rerun without it."
+        )
+    return {
+        "hash": config_hash(resolved.config),
+        "values": resolved.config.to_dict(),
+        "non_default": dict(sorted(non_default.items())),
+    }
+
+
 def _environment() -> dict:
     """What produced these numbers.
 
     Recorded because parts of the pipeline are not reproducible across builds
     — see ``tests/test_golden_reference.py``. The strict noise and SNR checks
     only run where this matches.
+
+    The configuration nests inside rather than sitting beside it because every
+    consumer of these files iterates the top level as ``estimator -> windows``
+    and skips exactly one key. A second metadata key at the top level would be
+    read as an estimator whose windows are config sections.
     """
     return {
         "system": platform.system(),
@@ -220,6 +260,7 @@ def _environment() -> dict:
         "python": ".".join(platform.python_version_tuple()[:2]),
         "numpy": np.__version__,
         "scipy": scipy.__version__,
+        "config": _configuration(),
     }
 
 
