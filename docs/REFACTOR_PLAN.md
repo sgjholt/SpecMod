@@ -3561,9 +3561,15 @@ needed and neither can be made from a git client:
 
 Also tag `453c77c` as `v0.1.1` — no longer optional now that §8 records it as
 the commit the paper cites. A branch is discoverable and a tag is immutable,
-and a citation should resolve to the immutable one. It is safe to add late:
-`453c77c` is an ancestor of `main` and every release tag since outranks it, so
-no version derives from it.
+and a citation should resolve to the immutable one.
+
+Tagging it publishes nothing. No workflow triggers on tags; the PyPI upload is
+gated on release-please's `release_created`, which only a merged release PR on
+`main` can set; and `git describe` takes the nearest tag, which is a release
+far ahead of this one. **Do not create a GitHub Release from the tag**, which
+is the one action that would publish: Zenodo listens to the release webhook and
+would mint a DOI for the pre-refactor code. The commit has no `pyproject.toml`
+and is not packageable.
 
 > Note on tooling limits: tag pushes are blocked in the automation environment
 > this plan was written in (HTTP 403 on `push origin v0.1.1`, while branch
