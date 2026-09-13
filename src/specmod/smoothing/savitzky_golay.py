@@ -1,42 +1,21 @@
 """Savitzky-Golay smoothing, fitted in log-log.
 
 A least-squares polynomial through a sliding window, evaluated at its centre.
-Unlike a moving average it has a shape to fit with, so it flattens a peak far
-less: the classic use is preserving the height and width of a spectral line
-that a running mean would erode.
+Having a shape to fit with, it flattens a peak far less than a moving average
+of the same width.
 
-Two adaptations are needed before it suits a seismic spectrum, and both are
-here rather than left to the caller:
+Two adaptations make it suit a spectrum, and both are applied here. The fit is
+to ``log10(amp)`` against ``log10(f)``, where a source spectrum is close to two
+straight lines and a knee, so a low order goes a long way and a negative
+amplitude is unreachable. And the window is constant in log frequency rather
+than in samples: the spectrum is resampled onto a uniform log-frequency grid,
+filtered, and interpolated back, which makes the window a constant fraction of
+a decade.
 
-**It is fitted to** ``log10(amp)`` **against** ``log10(f)``. A source spectrum
-spans orders of magnitude in both, and a polynomial fitted to raw amplitude
-against raw frequency spends its degrees of freedom on the falloff and has
-nothing left for the corner. In log-log the same model is close to the thing
-being fitted — two straight lines and a knee — so a low order goes a long way.
-It also cannot return a negative amplitude, which a polynomial fitted to raw
-amplitude can and does in the noise floor.
-
-**The window is constant in log frequency, not in samples.** Savitzky-Golay
-assumes uniform spacing, and a Fourier axis is uniform in Hz, so a fixed sample
-count spans a decade at the bottom of the axis and a per-cent at the top. The
-spectrum is resampled onto a uniform log-frequency grid, filtered there, and
-interpolated back — which makes the window a constant fraction of a decade, the
-same constant-relative-bandwidth idea as
-:class:`~specmod.smoothing.log_window.LogWindow` and Konno-Ohmachi.
-
-What it costs
--------------
-- **Ringing.** A polynomial fitted across a sharp step overshoots on both sides
-  of it. On a spectrum that mostly matters at the corner and at the Nyquist
-  roll-off, where a visible lobe can appear that the data does not have.
-- **Two resamplings.** Going onto the log grid and back is interpolation, so
-  the result is not exactly a filtered version of the input samples. Raising
-  ``points_per_decade`` reduces that and costs time.
-- **It is not a weighted mean**, so unlike the window smoothers it has no
-  guarantee of staying inside the range of its input.
-
-Worth it where the corner frequency is the measurement and the spectrum is
-noisy enough to need smoothing at all; ``LogWindow`` is the safer default.
+It rings. A polynomial fitted across a sharp transition overshoots on both
+sides of it, which on a spectrum shows at the corner and at the Nyquist
+roll-off. :class:`~specmod.smoothing.log_window.LogWindow` is the safer
+default; this is for when the corner is the measurement.
 
 References
 ----------

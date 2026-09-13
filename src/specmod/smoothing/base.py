@@ -45,12 +45,10 @@ class Smoother(Protocol):
 
 @dataclass(frozen=True)
 class NoSmoothing:
-    """Return the spectrum unchanged, and say so in its metadata.
+    """Return the spectrum unchanged.
 
-    Not a placeholder. ``[smoothing] method = "none"`` has to mean something a
-    caller can select, and "the identity, recorded" is the only reading of it
-    that leaves a spectrum's history honest — a pair built this way carries no
-    smoothing record, which is exactly what downstream energy checks look for.
+    What ``[smoothing] method = "none"`` selects. It records nothing, so
+    :func:`is_smoothed` stays ``False`` and the Parseval contract still holds.
     """
 
     name: str = "none"
