@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import tomllib
+from dataclasses import replace
 from pathlib import Path
+from typing import get_args, get_type_hints
 from unittest import mock
 
 import pytest
 
 import specmod
 from specmod import config
-from specmod.config import Config, SnrConfig, config_hash, load_config
+from specmod.config import (
+    Config,
+    SmoothingConfig,
+    SnrConfig,
+    config_hash,
+    load_config,
+)
 from specmod.config.provenance import Provenance
 from specmod.config.serialize import to_toml
 from specmod.core.bandwidth import FixedBandwidth
 from specmod.exceptions import InvalidInputError
 from specmod.pipeline import _compare_settings
+from specmod.smoothing import SMOOTHERS
 
 STUDIES = Path(__file__).resolve().parents[1] / "studies"
 
@@ -256,29 +265,33 @@ def test_an_override_reaches_the_comparison() -> None:
     assert _compare_settings()["n_bins"] == load_config().config.smoothing.n_bins
 
 
-class TestSmoothingMethodIsNotSilentlyIgnored:
-    """``[smoothing] method`` selected nothing, and said nothing about it.
+class TestEverySmoothingMethodIsWiredUp:
+    """``[smoothing] method`` has to select something, and nothing checked it.
 
-    The registry in :mod:`specmod.smoothing` exists, the key validates against
-    its ``Literal``, and no code anywhere reads it: the comparison bins with
-    ``LogBinner`` unconditionally. Measured on the 28 PNR windows before this
-    was written, ``log_bins``, ``konno_ohmachi`` and ``none`` produced
-    bit-identical output — including ``none``, which reads as "do not smooth
-    my spectra" and left every one of them binned.
+    It selected nothing at all until this was written: the registry existed,
+    the key validated against its ``Literal``, and no code read it. All three
+    values then accepted produced bit-identical output on the 28 PNR windows,
+    ``none`` included — which reads as "do not smooth my spectra" and left
+    every one of them binned. Same shape as the three defects in
+    ``docs/REFACTOR_PLAN.md`` §6.6: a setting, a claim about it, and nothing
+    joining the two.
 
-    Same defect class as the three in ``docs/REFACTOR_PLAN.md`` §6.6: a
-    setting, a claim about it, and nothing joining the two. Raising does not
-    wire the other smoothers up — that is a design change, recorded in §8 —
-    but it stops the configuration lying.
+    So the joining is what is asserted here, per method rather than in general:
+    the name resolves, the section's parameters reach the object, and adding a
+    value to the ``Literal`` without wiring it fails rather than going quiet.
     """
 
-    def test_log_bins_is_accepted(self) -> None:
-        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+    #: Every value `[smoothing] method` accepts, read off the annotation so a
+    #: new one cannot be added without appearing here.
+    METHODS = sorted(get_args(get_type_hints(SmoothingConfig)["method"]))
 
-        assert _compare_settings()["n_bins"] == load_config().config.smoothing.n_bins
+    def test_the_literal_and_the_registry_agree(self) -> None:
+        """`log_bins` is the one name that does not come from the registry --
+        it is `core.collection.log_bin`, which is not `LogBinner`."""
+        assert set(self.METHODS) - {"log_bins"} <= set(SMOOTHERS)
 
-    @pytest.mark.parametrize("method", ["konno_ohmachi", "none"])
-    def test_an_unwired_method_is_refused(
+    @pytest.mark.parametrize("method", METHODS)
+    def test_each_method_resolves(
         self, isolated: Path, monkeypatch: pytest.MonkeyPatch, method: str
     ) -> None:
         from specmod.pipeline import _compare_settings  # noqa: PLC0415
@@ -286,21 +299,59 @@ class TestSmoothingMethodIsNotSilentlyIgnored:
         (isolated / "specmod.toml").write_text(f'[smoothing]\nmethod = "{method}"\n')
         monkeypatch.chdir(isolated)
 
-        with pytest.raises(ValueError, match="not wired into the pipeline"):
-            _compare_settings()
+        smoother = _compare_settings()["smoother"]
+        if method == "log_bins":
+            assert smoother is None
+        else:
+            assert isinstance(smoother, SMOOTHERS[method])
 
-    def test_the_error_says_what_the_pipeline_actually_does(
-        self, isolated: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Naming ``LogBinner`` is the whole value of the message: the reader
-        needs to know their spectra were binned, not left alone."""
+    def test_the_defaults_still_bin(self) -> None:
+        """The shipped default is the path every committed number came from."""
         from specmod.pipeline import _compare_settings  # noqa: PLC0415
 
-        (isolated / "specmod.toml").write_text('[smoothing]\nmethod = "none"\n')
+        settings = _compare_settings()
+        assert settings["smoother"] is None
+        assert settings["n_bins"] == load_config().config.smoothing.n_bins
+
+    def test_the_section_parameters_reach_the_smoother(
+        self, isolated: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The half that a registry lookup alone would not give: a bandwidth
+        or a window set in the file has to arrive on the object."""
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        (isolated / "specmod.toml").write_text(
+            '[smoothing]\nmethod = "log_window"\n'
+            'window = "bartlett"\noctave_fraction = 0.5\n'
+        )
         monkeypatch.chdir(isolated)
 
-        with pytest.raises(ValueError, match="LogBinner"):
-            _compare_settings()
+        smoother = _compare_settings()["smoother"]
+        assert smoother.window == "bartlett"
+        assert smoother.octave_fraction == 0.5
+
+    def test_konno_ohmachi_takes_its_bandwidth_from_the_section(
+        self, isolated: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        (isolated / "specmod.toml").write_text(
+            '[smoothing]\nmethod = "konno_ohmachi"\nkonno_ohmachi_bandwidth = 20.0\n'
+        )
+        monkeypatch.chdir(isolated)
+
+        assert _compare_settings()["smoother"].bandwidth == 20.0
+
+    def test_a_registered_method_with_no_parameters_mapped_is_refused(self) -> None:
+        """The failure mode this replaces: a name that resolves and then
+        silently runs with defaults the configuration meant to set."""
+        from specmod.pipeline import _configured_smoother  # noqa: PLC0415
+
+        config = load_config(use_local=False, use_env=False).config
+        rogue = replace(config, smoothing=replace(config.smoothing, method="invented"))
+
+        with pytest.raises(ValueError, match="no parameters mapped"):
+            _configured_smoother(rogue)
 
 
 def test_the_configured_names_resolve_in_their_registries() -> None:

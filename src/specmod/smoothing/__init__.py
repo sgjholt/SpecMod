@@ -12,14 +12,22 @@ from ..core.spectrum import Spectrum
 # `record_smoothing` is re-exported because anything implementing `Smoother`
 # needs it to leave the same metadata trail the shipped smoothers do — it is
 # to `Smoother` what `prepare_record` is to `SpectralEstimator`.
-from .base import Smoother, record_smoothing
+from .base import NoSmoothing, Smoother, record_smoothing
 from .konno_ohmachi import KonnoOhmachi
 from .log_bins import LogBinner
+from .log_window import WINDOWS, LogWindow
+from .savitzky_golay import SavitzkyGolay
 
-#: Name -> smoother, for resolving `SmoothingConfig.method`.
+#: Name -> smoother. This is what `[smoothing] method` resolves through, and
+#: `tests/test_smoothing.py` asserts that every entry is reachable from the
+#: configuration and survives the pipeline. The comment here used to claim the
+#: resolution and no code performed it; see REFACTOR_PLAN §6.6.
 SMOOTHERS: dict[str, type[Smoother]] = {
     "log_bins": LogBinner,
     "konno_ohmachi": KonnoOhmachi,
+    "log_window": LogWindow,
+    "savitzky_golay": SavitzkyGolay,
+    "none": NoSmoothing,
 }
 
 
@@ -46,8 +54,12 @@ def is_smoothed(spectrum: Spectrum) -> bool:
 
 __all__ = [
     "SMOOTHERS",
+    "WINDOWS",
     "KonnoOhmachi",
     "LogBinner",
+    "LogWindow",
+    "NoSmoothing",
+    "SavitzkyGolay",
     "Smoother",
     "get_smoother",
     "is_smoothed",

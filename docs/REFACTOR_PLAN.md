@@ -3431,25 +3431,30 @@ been audited once is worth more than one that reads confidently throughout.
 | "`commitlint`-enforced" again, in §6.4 | The §7 instance was corrected and this one was left standing, in the same document. §6.4 corrected. |
 | `publish.yml` "GitHub Release published → PyPI" | It would never have run. release-please creates the release with the default `GITHUB_TOKEN`, and events triggered by that token do not start a workflow. The publish job moved into `release.yml`, gated on `release_created`. §6.5 corrected. |
 
-**A fourth of the same shape, found later and fixed differently** — the three
-above were corrected in the prose; this one was a live setting:
+**A fourth of the same shape, found later** — the three above were corrected in
+the prose; this one was a live setting:
 
 > `[smoothing] method` — "Name -> smoother, for resolving `SmoothingConfig.method`"
 
-`SMOOTHERS` exists, `method` validates against its `Literal`, and **no code
-anywhere reads it**. The comparison bins with `LogBinner` unconditionally.
-Measured on the 28 PNR windows, `log_bins`, `konno_ohmachi` and `none` produce
+`SMOOTHERS` existed, `method` validated against its `Literal`, and **no code
+anywhere read it**. The comparison binned with `log_bin` unconditionally.
+Measured on the 28 PNR windows, `log_bins`, `konno_ohmachi` and `none` produced
 bit-identical output — `none` included, which reads as "leave my spectra
 unsmoothed" while every spectrum went on being binned exactly as before.
 
-`spectrum_set_from_streams` now raises on the two unwired values
-(`tests/test_config.py::TestSmoothingMethodIsNotSilentlyIgnored`). That is not
-the fix: wiring Konno–Ohmachi in is a design change, because it preserves the
-frequency axis where log-binning replaces it and the comparison, the bandwidth
-selector and the stored `bsnr` are all keyed to the binned axis. It is recorded
-in §8 as what it blocks — **the FFT-plus-Konno–Ohmachi default of §8.1 is not
-selectable today**, which is worth knowing before that decision is made rather
-than after.
+**Fixed rather than documented.** `SpectrumPair.compare` now takes a `smoother`,
+`[smoothing] method` resolves to one, and the registry gained `log_window`
+(constant-relative-bandwidth smoothing with a selectable window shape, and a
+median option) and `savitzky_golay` beside the two that were there.
+`tests/test_config.py::TestEverySmoothingMethodIsWiredUp` and
+`tests/test_pipeline.py::TestTheConfiguredSmootherReachesTheComparison` are the
+mechanism the comment claimed: each accepted value resolves, carries its
+section's parameters, and survives the whole path on real windows.
+
+`log_bins` stays `core.collection.log_bin` rather than `smoothing.LogBinner` —
+the two differ in clamping and in what `n_bins` counts, and the difference is
+every committed golden number. The default path is unchanged, which the golden
+suite asserts and which is why this could land without moving a number.
 
 **A claim whose mechanism is absent but whose property holds — for a different
 reason, which matters:**
@@ -3698,45 +3703,32 @@ changes anything shipped.
 ### Still open
 
 1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
-   Konno–Ohmachi (more conventional in engineering seismology)? **Leaning
-   FFT, and blocked on §6.6's dead `[smoothing] method`:** the
-   Konno–Ohmachi half of that option cannot be selected today, so what is
-   actually on offer is FFT with log-binning, which is a different proposal.
+   Konno–Ohmachi (more conventional in engineering seismology)? **No longer
+   blocked** — §6.6's dead `[smoothing] method` is wired up, so the second
+   option is selectable — and now measured, on the 28 PNR windows with each
+   station fitted freely:
 
-   Measured before deciding, on the 28 PNR windows, `fft` against the shipped
-   `multitaper`, each station fitted freely (stage one):
+   | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station range | `fc` ratio |
+   |---|---|---|---|
+   | `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
+   | `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
 
-   | Quantity | Median | Range across stations |
-   |---|---|---|
-   | Δlog₁₀(Ω) → ΔMw | −0.090 dex → **−0.06 Mw** | −1.27 to +1.05 dex → −0.85 to +0.70 Mw |
-   | `fc` ratio | 0.985 | 0.031 to 4.93 |
-   | `t*` ratio | 0.980 | 0.393 to 1.98 |
-   | Selected band | 0.94–38.1 Hz vs 0.81–43.7 Hz | 28/28 banded either way |
+   **The smoothing is what makes the switch defensible, not the estimator.**
+   FFT with the shipped binner moves a station by up to 1.9 magnitude units,
+   because `log_bins` reduces the axis without reducing the variance — 151 log
+   bins over a few hundred Fourier samples is roughly one sample per bin.
+   Pairing it with a real smoother halves the worst excursion and pulls the
+   `fc` range in by a third. The median station barely moves either way.
 
-   **The typical station barely moves and individual stations move enormously**,
-   which is the periodogram's variance showing through log-binning: FFT is
-   "fastest, highest variance — pair it with a smoother", and the smoother it
-   is paired with by default is the one that bins rather than the one that
-   smooths.
+   What this event cannot settle: the *event* corner is unconstrained under all
+   three (stage-one spread 895% to 1042% of the event value), so the ensemble
+   number is not evidence. Deciding on the ensemble needs an event where it is
+   constrained.
 
-   The event corner goes 19.24 Hz → 2.61 Hz, and that number should not be
-   used to decide anything: the stage-one spread is 1028% and 831% of the
-   event value respectively, so on this event neither estimator constrains
-   `fc` and the weighted mean is reacting to two near stations. Station-median
-   `fc` is 2.13 Hz against 2.40 Hz.
+   Speed, measured rather than assumed and far too small to decide on: the
+   transform is 0.209 s against 0.323 s for the 28 windows, and the smoothing
+   adds 0.14 s (`log_bins`) to 0.83 s (`konno_ohmachi`) on top.
 
-   Speed, measured rather than assumed — transform plus comparison over the 28
-   windows, best of three on one machine: **fft 0.209 s, multitaper 0.323 s**,
-   a ratio of 1.5x and a difference of 0.11 s. True, and far too small to
-   decide a default on at this scale; it would matter for a catalogue of
-   10⁴ events, which is the case to measure if speed is the argument.
-
-   So the honest order is: wire `method` up, measure FFT + Konno–Ohmachi
-   against multitaper on the same windows, then choose. Flipping the default
-   to FFT + log-binning today buys a tenth of a second and spends per-station
-   stability, and it would be a behaviour change in every default run — which
-   restarts §7's clock for 1.0, since that waits on a release going by without
-   one.
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
 3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook
    (§5.1) shrinks the *working tree* but leaves both in history, so a fresh clone

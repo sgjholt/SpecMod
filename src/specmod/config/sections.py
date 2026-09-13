@@ -140,30 +140,46 @@ class TransformConfig:
 
 @dataclass(frozen=True, slots=True)
 class SmoothingConfig:
-    """Spectral smoothing and log-space binning.
+    """What the signal-to-noise comparison smooths with, and how.
 
-    The pipeline applies ``log_bins`` only; the other values raise. Smoothing
-    a spectrum by hand is unaffected — see
-    :func:`specmod.smoothing.get_smoother`.
+    ``log_bins`` replaces the frequency axis with bin centres; every other
+    method keeps it. See :mod:`specmod.smoothing` for what each one does to a
+    seismic spectrum and ``docs/choosing-a-transform.md`` for the measured
+    comparison.
     """
 
-    #: The pipeline's comparison bins with `LogBinner` unconditionally and
-    #: nothing here selects otherwise, so `konno_ohmachi` and `none` raise
-    #: rather than being accepted and discarded. Wiring them up is a design
-    #: change — KO preserves the frequency axis where log-binning replaces it,
-    #: and the comparison, the bandwidth selector and the stored `bsnr` are all
-    #: keyed to the binned axis. `docs/REFACTOR_PLAN.md` §6.6 and §8.1.
-    method: Literal["log_bins", "konno_ohmachi", "none"] = "log_bins"
+    #: Resolved through `specmod.smoothing.SMOOTHERS`. Only the parameters
+    #: belonging to the chosen method are read.
+    method: Literal[
+        "log_bins", "konno_ohmachi", "log_window", "savitzky_golay", "none"
+    ] = "log_bins"
 
-    #: Log bin edges. ``None`` derives them from the record: fmin from 1/T,
-    #: fmax from Nyquist. The old code hardcoded 0.001-200 Hz regardless.
+    #: Log bin edges, for `log_bins`. ``None`` derives them from the record:
+    #: fmin from 1/T, fmax from Nyquist. The old code hardcoded 0.001-200 Hz
+    #: regardless.
     f_min: float | None = 0.001
     f_max: float | None = 200.0
     n_bins: int = 151
 
-    #: Konno-Ohmachi bandwidth ``b``. Smaller smooths harder. Used only by a
-    #: `KonnoOhmachi` built by hand; the pipeline never builds one.
+    #: Konno-Ohmachi bandwidth ``b``. Smaller smooths harder.
     konno_ohmachi_bandwidth: float = 40.0
+
+    #: `log_window`: window width in octaves, its shape, and how the samples
+    #: it covers are combined. The shapes are listed in
+    #: `specmod.smoothing.WINDOWS`; `bartlett` is the triangular one.
+    #: `statistic = "median"` ignores the shape and rejects spikes instead of
+    #: averaging them in.
+    octave_fraction: float = 1.0 / 3.0
+    window: Literal["boxcar", "bartlett", "hann", "hamming", "blackman", "gaussian"] = (
+        "hann"
+    )
+    statistic: Literal["geometric", "mean", "median"] = "geometric"
+
+    #: `savitzky_golay`: the fit is done on a uniform log-frequency grid, so
+    #: the window is a fraction of a decade rather than a count of Fourier bins.
+    savgol_window_length: int = 41
+    savgol_polyorder: int = 3
+    savgol_points_per_decade: int = 200
 
 
 @dataclass(frozen=True, slots=True)

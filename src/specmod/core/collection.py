@@ -317,19 +317,27 @@ class SpectrumPair:
         max_nyquist_fraction: float | None = None,
         rotation_inc: float = 0.05,
         rotation_space: tuple[float, float] = (0.001, 1.001),
+        smoother: Any = None,
         meta: Mapping[str, Any] | None = None,
     ) -> SpectrumPair:
         """Pair the two and select the band.
 
         The order matters and is not arbitrary. The noise is rescaled and moved
-        onto the signal's frequency axis *before* binning, which is what makes
-        the two binned arrays share bin edges — the element-wise ratio below is
-        only meaningful because of it, and it holds for every estimator
-        including those whose native axes differ in length.
+        onto the signal's frequency axis *before* smoothing, which is what
+        makes the two reduced arrays share an axis — the element-wise ratio
+        below is only meaningful because of it, and it holds for every
+        estimator including those whose native axes differ in length.
 
         The floor is captured from the two spectra before the interpolation,
         because afterwards the noise carries the signal's axis and its own
         lowest resolvable frequency is unrecoverable.
+
+        ``smoother`` chooses what reduces the two spectra before the ratio.
+        ``None`` is :func:`log_bin` with the ``f_min``/``f_max``/``n_bins``
+        above — what this has always done, and what every committed result was
+        produced with. Anything else is a :mod:`specmod.smoothing` smoother,
+        which keeps the frequency axis rather than replacing it with bin
+        centres, so ``snr`` is then as long as the spectrum.
         """
         floor = max(_resolution_floor(signal), _resolution_floor(noise))
 
@@ -338,16 +346,32 @@ class SpectrumPair:
             noise_amp = noise_amp * parseval_scale(signal.amp.size, noise.amp.size)
         noise_amp = interpolate_onto(signal.freq, noise.freq, noise_amp)
 
-        binned_signal = log_bin(
-            signal.freq,
-            np.asarray(signal.amp),
-            f_min=f_min,
-            f_max=f_max,
-            n_bins=n_bins,
-        )
-        binned_noise = log_bin(
-            signal.freq, noise_amp, f_min=f_min, f_max=f_max, n_bins=n_bins
-        )
+        reducer = _resolve_smoother(smoother)
+
+        def reduce(amp: NDArray[np.float64], like: Spectrum) -> BinnedSpectrum:
+            if reducer is None:
+                return log_bin(
+                    signal.freq, amp, f_min=f_min, f_max=f_max, n_bins=n_bins
+                )
+            smoothed = reducer.smooth(
+                Spectrum(
+                    freq=signal.freq,
+                    amp=amp,
+                    motion=like.motion,
+                    kind=like.kind,
+                    duration=like.duration,
+                    sampling_rate=like.sampling_rate,
+                    meta=dict(like.meta),
+                )
+            )
+            return BinnedSpectrum(
+                freq=np.asarray(smoothed.freq, dtype=np.float64),
+                amp=np.asarray(smoothed.amp, dtype=np.float64),
+            )
+
+        binned_signal = reduce(np.asarray(signal.amp, dtype=np.float64), signal)
+        binned_noise = reduce(noise_amp, noise)
+        _require_shared_axis(binned_signal, binned_noise, reducer)
 
         if rotate_noise:
             # The factor is derived on the binned axis — that is where the
@@ -373,9 +397,7 @@ class SpectrumPair:
             noise_amp = noise_amp * interpolate_onto(
                 signal.freq, binned_noise.freq, factor
             )
-            binned_noise = log_bin(
-                signal.freq, noise_amp, f_min=f_min, f_max=f_max, n_bins=n_bins
-            )
+            binned_noise = reduce(noise_amp, noise)
 
         snr = binned_signal.amp / binned_noise.amp
         selector = _resolve_bandwidth(bandwidth)
@@ -416,6 +438,7 @@ class SpectrumPair:
             "max_nyquist_fraction": max_nyquist_fraction,
             "rotation_inc": rotation_inc,
             "rotation_space": rotation_space,
+            "smoother": _strategy_record(smoother),
         }
         # A band the ratio did not choose is marked as such, so a stored result
         # — or one read back a year later — still distinguishes a measurement
@@ -493,6 +516,76 @@ def _strategy_record(strategy: Any) -> Any:
 def _split_record(spec: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
     params = {k: v for k, v in spec.items() if k != "name"}
     return str(spec["name"]), params
+
+
+def _resolve_smoother(smoother: Any) -> Any:
+    """Turn a name, a record or an instance into a smoother, or ``None``.
+
+    ``None`` and ``"log_bins"`` both mean :func:`log_bin` — this module's own
+    binner, which is **not** :class:`specmod.smoothing.LogBinner`. The two
+    differ deliberately: ``log_bin`` clamps the requested range to the record
+    and counts ``n_bins`` as edges, which is what every committed golden number
+    was produced with, while ``LogBinner`` honours explicit edges exactly and
+    can keep empty bins. Routing the configured ``log_bins`` here rather than
+    through the registry is what keeps the default path bit-identical.
+    """
+    if smoother is None or smoother == "log_bins":
+        return None
+    # Imported here because `specmod.smoothing` imports `specmod.core`, and at
+    # module level that is a cycle.
+    from ..smoothing import SMOOTHERS  # noqa: PLC0415
+
+    if isinstance(smoother, Mapping):
+        name, params = _split_record(smoother)
+        if name == "log_bins":
+            return None
+        return SMOOTHERS[name](**params)
+    if isinstance(smoother, str):
+        try:
+            return SMOOTHERS[smoother]()
+        except KeyError:
+            raise ValueError(
+                f"Unknown smoother {smoother!r}. Available: {sorted(SMOOTHERS)}."
+            ) from None
+    return smoother
+
+
+def _require_shared_axis(
+    signal: BinnedSpectrum, noise: BinnedSpectrum, reducer: Any
+) -> None:
+    """The ratio is element-wise, so the two axes have to be the same one.
+
+    Every shipped smoother keeps the axis it is given, and both are given the
+    signal's, so this cannot fail for them. It can for a caller's own smoother
+    that re-grids — ``LogBinner`` with derived edges is the obvious example,
+    since it takes its range from each spectrum's own duration and the noise
+    window is not the signal window.
+
+    **Equal lengths are not enough**, which is why this compares the axes
+    themselves. Two log binnings with the same ``n_bins`` and different derived
+    edges produce arrays of the same shape over different frequencies: the
+    ratio then divides the signal at one frequency by the noise at another,
+    broadcasts cleanly, and is wrong everywhere with nothing to show for it.
+    """
+    name = getattr(reducer, "name", reducer)
+    if signal.freq.shape != noise.freq.shape:
+        raise ValueError(
+            f"The smoother {name!r} produced {len(signal)} points for the "
+            f"signal and {len(noise)} for the noise, so the signal-to-noise "
+            f"ratio has no element-wise meaning. A smoother used here must "
+            f"leave the frequency axis alone, or pin its own axis explicitly "
+            f"(for LogBinner, by setting f_min and f_max rather than deriving "
+            f"them)."
+        )
+    if not np.allclose(signal.freq, noise.freq, rtol=1e-12, atol=0.0):
+        worst = int(np.argmax(np.abs(signal.freq - noise.freq)))
+        raise ValueError(
+            f"The smoother {name!r} put the signal and the noise on different "
+            f"frequencies — {signal.freq[worst]:.6g} Hz against "
+            f"{noise.freq[worst]:.6g} Hz at index {worst} — so the ratio has "
+            f"no element-wise meaning even though the two are the same length. "
+            f"Pin the axis explicitly (for LogBinner, set f_min and f_max)."
+        )
 
 
 def _resolve_noise_model(
