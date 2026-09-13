@@ -35,7 +35,10 @@ The version before this one, `0.1.1`, is the pre-refactor code that produced
 the published Magna results. It is preserved unchanged on the
 [`master`](https://github.com/sgjholt/SpecMod/tree/master) branch, which is
 protected and frozen — it was never tagged or published to PyPI, so that
-branch is the only reference to it. Everything below is the delta between it
+branch is the only reference to it. Its tip,
+[`453c77c`](https://github.com/sgjholt/SpecMod/commit/453c77c), is the commit
+the paper cites as v0.1.1; cite that rather than the branch name, which is a
+moving target in principle even though this one will not move. Everything below is the delta between it
 and v0.2.0, which is why the first changelog is enormous and correctly so.
 
 ### An installable package
