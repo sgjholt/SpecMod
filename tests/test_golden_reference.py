@@ -232,6 +232,76 @@ def _reference() -> dict[str, Any]:
     return json.loads(_REFERENCE.read_text())
 
 
+def _flatten(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        f"{section}.{key}": value
+        for section, values in config.items()
+        for key, value in values.items()
+    }
+
+
+def test_the_settings_behind_the_reference_are_still_current() -> None:
+    """Which configuration produced these numbers, and is it still the one.
+
+    The gap this closes is narrow and worth stating exactly.
+    ``docs/REFACTOR_PLAN.md`` §6.6 records that nothing pins a config here: the
+    pipeline reads ``load_config()`` ambiently, so this suite runs against
+    whatever the defaults currently are. The numbers are frozen by the
+    committed file, which is why moving a default fails the amplitude tests
+    loudly — 9 of 25 of them, measured, when ``smoothing.n_bins`` was bumped
+    from 151 to 158.
+
+    What it did not do is say *why*. Nine numeric failures name stations and
+    ratios, not the setting behind them, and a **regenerated** reference
+    adopted the new default silently. So the generator now stamps the resolved
+    configuration into the file, and this test is the assertion over it: the
+    failure names the key that moved, and a regeneration under changed settings
+    shows up as a diff in ``_environment.config`` rather than as numbers alone.
+
+    It is not the pin §6.6 asks for. Pinning needs a way to hold a
+    configuration across an ambient read, which does not exist yet; until then
+    the protection is "the numbers are frozen, and the settings behind them are
+    recorded", not "the settings are frozen".
+    """
+    from specmod.config import config_hash, load_config  # noqa: PLC0415
+
+    stamp = _reference()["_environment"].get("config")
+    assert stamp is not None, (
+        "the reference carries no configuration stamp. Regenerate it with "
+        "`python tools/make_golden.py`, which records one."
+    )
+    assert stamp["non_default"] == {}, (
+        f"the reference was generated with {sorted(stamp['non_default'])} set "
+        "by a layer above the defaults — a local file or the environment, "
+        "neither of which the repository can reproduce. Regenerate it without."
+    )
+
+    resolved = load_config()
+    if config_hash(resolved.config) == stamp["hash"]:
+        return
+
+    was, now = _flatten(stamp["values"]), _flatten(resolved.config.to_dict())
+    moved = [
+        f"  {key}: {was.get(key, '<absent>')!r} -> {now.get(key, '<absent>')!r}"
+        for key in sorted(set(was) | set(now))
+        if was.get(key) != now.get(key)
+    ]
+    raise AssertionError(
+        "\n".join(
+            [
+                f"{len(moved)} setting(s) differ from those the reference was "
+                "captured under:",
+                *moved,
+                "",
+                "If the change is intended, the numbers this suite compares "
+                "against were produced under the old ones. Regenerate with "
+                "`python tools/make_golden.py` and say in the commit message "
+                "which numbers moved and by how much.",
+            ]
+        )
+    )
+
+
 @functools.cache
 def _run(estimator: str) -> Any:
     """The pipeline's output, built by :mod:`specmod.pipeline`.
