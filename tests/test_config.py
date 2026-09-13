@@ -256,6 +256,53 @@ def test_an_override_reaches_the_comparison() -> None:
     assert _compare_settings()["n_bins"] == load_config().config.smoothing.n_bins
 
 
+class TestSmoothingMethodIsNotSilentlyIgnored:
+    """``[smoothing] method`` selected nothing, and said nothing about it.
+
+    The registry in :mod:`specmod.smoothing` exists, the key validates against
+    its ``Literal``, and no code anywhere reads it: the comparison bins with
+    ``LogBinner`` unconditionally. Measured on the 28 PNR windows before this
+    was written, ``log_bins``, ``konno_ohmachi`` and ``none`` produced
+    bit-identical output — including ``none``, which reads as "do not smooth
+    my spectra" and left every one of them binned.
+
+    Same defect class as the three in ``docs/REFACTOR_PLAN.md`` §6.6: a
+    setting, a claim about it, and nothing joining the two. Raising does not
+    wire the other smoothers up — that is a design change, recorded in §8 —
+    but it stops the configuration lying.
+    """
+
+    def test_log_bins_is_accepted(self) -> None:
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        assert _compare_settings()["n_bins"] == load_config().config.smoothing.n_bins
+
+    @pytest.mark.parametrize("method", ["konno_ohmachi", "none"])
+    def test_an_unwired_method_is_refused(
+        self, isolated: Path, monkeypatch: pytest.MonkeyPatch, method: str
+    ) -> None:
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        (isolated / "specmod.toml").write_text(f'[smoothing]\nmethod = "{method}"\n')
+        monkeypatch.chdir(isolated)
+
+        with pytest.raises(ValueError, match="not wired into the pipeline"):
+            _compare_settings()
+
+    def test_the_error_says_what_the_pipeline_actually_does(
+        self, isolated: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Naming ``LogBinner`` is the whole value of the message: the reader
+        needs to know their spectra were binned, not left alone."""
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        (isolated / "specmod.toml").write_text('[smoothing]\nmethod = "none"\n')
+        monkeypatch.chdir(isolated)
+
+        with pytest.raises(ValueError, match="LogBinner"):
+            _compare_settings()
+
+
 def test_the_configured_names_resolve_in_their_registries() -> None:
     """``BW_METHOD`` and ``ROT_METHOD`` were integers naming a branch.
 

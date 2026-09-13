@@ -210,6 +210,7 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
     about what the configuration said.
     """
     config = load_config().config
+    _reject_unwired_smoothing(config)
     settings: dict[str, Any] = {
         "threshold": config.snr.tolerance,
         "f_min": config.smoothing.f_min,
@@ -225,6 +226,36 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
     }
     settings.update(overrides or {})
     return settings
+
+
+def _reject_unwired_smoothing(config: Any) -> None:
+    """``[smoothing] method`` selects nothing, so refuse to look as if it does.
+
+    The comparison below bins with :class:`~specmod.smoothing.LogBinner` and
+    always has. Nothing reads ``method``: the registry exists, the key
+    validates, and the two values other than ``log_bins`` were silently
+    discarded. ``none`` is the one that could cost someone a result — it reads
+    as "leave my spectra alone" and every spectrum went on being binned
+    exactly as before.
+
+    Measured before writing this, on the 28 PNR windows: ``log_bins``,
+    ``konno_ohmachi`` and ``none`` produce bit-identical output.
+
+    Raising is the honest interim. It is not the fix — see
+    :class:`~specmod.config.SmoothingConfig` for why wiring the other two up
+    is a design change — but a configuration that is refused is one nobody
+    can be misled by.
+    """
+    method = config.smoothing.method
+    if method == "log_bins":
+        return
+    raise ValueError(
+        f"[smoothing] method = {method!r} is not wired into the pipeline, "
+        "which bins with LogBinner unconditionally. It was accepted and "
+        "ignored until now, so this is a configuration that never did what it "
+        "said. Use 'log_bins', or apply a smoother yourself with "
+        "specmod.smoothing.get_smoother(...) on the spectra you want smoothed."
+    )
 
 
 def _configured_bandwidth(config: Any) -> Any:

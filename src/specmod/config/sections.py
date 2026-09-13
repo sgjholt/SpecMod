@@ -140,7 +140,27 @@ class TransformConfig:
 
 @dataclass(frozen=True, slots=True)
 class SmoothingConfig:
-    """Spectral smoothing and log-space binning."""
+    """Spectral smoothing and log-space binning.
+
+    **The pipeline honours only ``log_bins``.** Its signal-to-noise comparison
+    bins with :class:`~specmod.smoothing.LogBinner` unconditionally, and
+    nothing reads this ``method`` to choose otherwise — so setting
+    ``konno_ohmachi`` here changed nothing, and setting ``none`` also changed
+    nothing, which is worse: it read as "no smoothing" while every spectrum
+    went on being binned. Measured across all three values on the 28 PNR
+    windows, the output was identical to the last bit.
+
+    :func:`specmod.pipeline.spectrum_set_from_streams` now raises on the two
+    unwired values rather than ignoring them. Smoothing a spectrum by hand,
+    with any smoother, is unaffected — see :func:`specmod.smoothing.get_smoother`.
+
+    Wiring the other two up is a design change rather than an oversight to
+    patch: Konno-Ohmachi preserves the frequency axis where log-binning
+    replaces it, and the comparison, the bandwidth selector and the stored
+    ``bsnr`` are all keyed to the binned axis. ``docs/REFACTOR_PLAN.md`` §8
+    records it as the open decision it blocks — the FFT-plus-Konno-Ohmachi
+    default cannot be chosen until this is real.
+    """
 
     method: Literal["log_bins", "konno_ohmachi", "none"] = "log_bins"
 
@@ -150,7 +170,9 @@ class SmoothingConfig:
     f_max: float | None = 200.0
     n_bins: int = 151
 
-    #: Konno-Ohmachi bandwidth ``b``. Smaller smooths harder.
+    #: Konno-Ohmachi bandwidth ``b``. Smaller smooths harder. Read only by
+    #: :class:`~specmod.smoothing.KonnoOhmachi` when constructed by hand; the
+    #: pipeline never builds one, for the reason above.
     konno_ohmachi_bandwidth: float = 40.0
 
 
