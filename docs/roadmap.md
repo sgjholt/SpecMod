@@ -106,11 +106,11 @@ build**, so every figure and number on the page came from running the code
 being documented. A notebook that stops working fails the build rather than
 going quietly stale, which is why it was a 1.0 requirement.
 
-## In progress — not yet released
+## Shipped in v0.3.0
 
-### Finishing the decomposition
+### The decomposition, finished
 
-**Done, and unreleased.** This was the last item 1.0 was waiting on.
+This was the last item 1.0 was waiting on.
 
 `io.py` and `plotting.py` are now packages, alongside the spectral core, the
 fitting layer and the pick readers; the type-checking backlog is empty. The
@@ -140,9 +140,9 @@ signposted from [Guides](guides.md) rather than split onto a page of their own.
 
 ### 1.0 — the API stops moving
 
-**Everything this was waiting on is now done** — the documentation, and the
-decomposition above with the signature changes it implied. What remains is the
-release itself, which says that names and signatures stop moving without a
+**Everything this was waiting on shipped in v0.3.0** — the documentation, and
+the decomposition above with the signature changes it implied. What remains is
+the release itself, which says that names and signatures stop moving without a
 deprecation cycle.
 
 That promise is the whole content of the number, which is why it has to be a
@@ -150,6 +150,13 @@ decision rather than something a breaking commit does on its way past. Until it
 is made, breaking changes bump the minor. The honest test before making it is
 whether a release goes by without one — the API is not settled because the
 backlog is empty, it is settled when it stops moving.
+
+**By that test, 1.0 is not ready.** v0.3.0 is the release that emptied the
+backlog and it carried two breaking changes itself: the ten renamed
+`preprocess` functions, and the tutorial's page moving. So what 1.0 now waits
+on is the next release going out without one — which is a thing that has to be
+observed rather than declared, and cannot be brought forward by finishing
+anything.
 
 ## After 1.0
 
@@ -175,7 +182,16 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two.
+shipped, and this page does not blur the two. **There is no such section right
+now**, because nothing is merged and unreleased; that is the state the page
+should be in between releases, not a section that went missing.
+
+The move at release time is the step this page got wrong once. The v0.3.0 work
+sat under *In progress — not yet released* for a week after v0.3.0 was
+released, because `release-please` writes the changelog and the manifest and
+knows nothing about this file. `tests/test_release_config.py` now fails when
+the released minor version is ahead of every version this page names, which is
+the check that was missing rather than a rule that was.
 
 Before v0.2.0 this was a list of stages, because there was no released version
 to point at and "done" could only mean merged. The full changelog for every
