@@ -3431,6 +3431,26 @@ been audited once is worth more than one that reads confidently throughout.
 | "`commitlint`-enforced" again, in §6.4 | The §7 instance was corrected and this one was left standing, in the same document. §6.4 corrected. |
 | `publish.yml` "GitHub Release published → PyPI" | It would never have run. release-please creates the release with the default `GITHUB_TOKEN`, and events triggered by that token do not start a workflow. The publish job moved into `release.yml`, gated on `release_created`. §6.5 corrected. |
 
+**A fourth of the same shape, found later and fixed differently** — the three
+above were corrected in the prose; this one was a live setting:
+
+> `[smoothing] method` — "Name -> smoother, for resolving `SmoothingConfig.method`"
+
+`SMOOTHERS` exists, `method` validates against its `Literal`, and **no code
+anywhere reads it**. The comparison bins with `LogBinner` unconditionally.
+Measured on the 28 PNR windows, `log_bins`, `konno_ohmachi` and `none` produce
+bit-identical output — `none` included, which reads as "leave my spectra
+unsmoothed" while every spectrum went on being binned exactly as before.
+
+`spectrum_set_from_streams` now raises on the two unwired values
+(`tests/test_config.py::TestSmoothingMethodIsNotSilentlyIgnored`). That is not
+the fix: wiring Konno–Ohmachi in is a design change, because it preserves the
+frequency axis where log-binning replaces it and the comparison, the bandwidth
+selector and the stored `bsnr` are all keyed to the binned axis. It is recorded
+in §8 as what it blocks — **the FFT-plus-Konno–Ohmachi default of §8.1 is not
+selectable today**, which is worth knowing before that decision is made rather
+than after.
+
 **A claim whose mechanism is absent but whose property holds — for a different
 reason, which matters:**
 
@@ -3678,7 +3698,45 @@ changes anything shipped.
 ### Still open
 
 1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
-   Konno–Ohmachi (faster, more conventional in engineering seismology)?
+   Konno–Ohmachi (more conventional in engineering seismology)? **Leaning
+   FFT, and blocked on §6.6's dead `[smoothing] method`:** the
+   Konno–Ohmachi half of that option cannot be selected today, so what is
+   actually on offer is FFT with log-binning, which is a different proposal.
+
+   Measured before deciding, on the 28 PNR windows, `fft` against the shipped
+   `multitaper`, each station fitted freely (stage one):
+
+   | Quantity | Median | Range across stations |
+   |---|---|---|
+   | Δlog₁₀(Ω) → ΔMw | −0.090 dex → **−0.06 Mw** | −1.27 to +1.05 dex → −0.85 to +0.70 Mw |
+   | `fc` ratio | 0.985 | 0.031 to 4.93 |
+   | `t*` ratio | 0.980 | 0.393 to 1.98 |
+   | Selected band | 0.94–38.1 Hz vs 0.81–43.7 Hz | 28/28 banded either way |
+
+   **The typical station barely moves and individual stations move enormously**,
+   which is the periodogram's variance showing through log-binning: FFT is
+   "fastest, highest variance — pair it with a smoother", and the smoother it
+   is paired with by default is the one that bins rather than the one that
+   smooths.
+
+   The event corner goes 19.24 Hz → 2.61 Hz, and that number should not be
+   used to decide anything: the stage-one spread is 1028% and 831% of the
+   event value respectively, so on this event neither estimator constrains
+   `fc` and the weighted mean is reacting to two near stations. Station-median
+   `fc` is 2.13 Hz against 2.40 Hz.
+
+   Speed, measured rather than assumed — transform plus comparison over the 28
+   windows, best of three on one machine: **fft 0.209 s, multitaper 0.323 s**,
+   a ratio of 1.5x and a difference of 0.11 s. True, and far too small to
+   decide a default on at this scale; it would matter for a catalogue of
+   10⁴ events, which is the case to measure if speed is the argument.
+
+   So the honest order is: wire `method` up, measure FFT + Konno–Ohmachi
+   against multitaper on the same windows, then choose. Flipping the default
+   to FFT + log-binning today buys a tenth of a second and spends per-station
+   stability, and it would be a behaviour change in every default run — which
+   restarts §7's clock for 1.0, since that waits on a release going by without
+   one.
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
 3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook
    (§5.1) shrinks the *working tree* but leaves both in history, so a fresh clone
