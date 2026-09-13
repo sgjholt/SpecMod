@@ -209,21 +209,12 @@ def capture_windows() -> dict:
 
 
 def _configuration() -> dict:
-    """The settings these numbers were produced under.
-
-    The pipeline reads ``load_config()`` ambiently at a dozen call sites, and
-    nothing pins one here, so a regenerated reference adopts whatever defaults
-    — or whatever local override — happened to be current. That is the
-    residual gap in ``docs/REFACTOR_PLAN.md`` §6.6: the numbers are frozen by
-    the committed file, the settings behind them were not recorded at all.
-
-    **Recording them does not close it.** Pinning a study file, as §6.6
-    proposes, is what would, and that needs a way to hold a configuration
-    across an ambient read which does not exist yet. What this does is make a
-    settings change visible: it lands as a diff in this file and as a named key
-    in ``test_the_settings_behind_the_reference_are_still_current``, instead of
-    as nine numeric failures with no cause attached to them.
-    """
+    """The settings these numbers were produced under."""
+    # Nothing pins a config here — the pipeline reads `load_config()` ambiently
+    # — so a regenerated reference adopts whatever defaults were current. This
+    # does not close that gap (REFACTOR_PLAN §6.6); it makes a settings change
+    # land as a diff in this file and as a named key in the test failure,
+    # rather than as nine numeric failures with no cause attached.
     resolved = load_config()
     #: `sources` carries only what a layer above the defaults set, so anything
     #: here came from a `specmod.toml`, a gitignored local file or the
@@ -248,12 +239,11 @@ def _environment() -> dict:
     Recorded because parts of the pipeline are not reproducible across builds
     — see ``tests/test_golden_reference.py``. The strict noise and SNR checks
     only run where this matches.
-
-    The configuration nests inside rather than sitting beside it because every
-    consumer of these files iterates the top level as ``estimator -> windows``
-    and skips exactly one key. A second metadata key at the top level would be
-    read as an estimator whose windows are config sections.
     """
+    # The config nests inside rather than beside: every consumer iterates the
+    # top level as `estimator -> windows` and skips exactly one key, so a
+    # second metadata key there reads as an estimator whose windows are
+    # config sections.
     return {
         "system": platform.system(),
         "machine": platform.machine(),

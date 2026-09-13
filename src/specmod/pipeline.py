@@ -229,23 +229,12 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
 
 
 def _reject_unwired_smoothing(config: Any) -> None:
-    """``[smoothing] method`` selects nothing, so refuse to look as if it does.
-
-    The comparison below bins with :class:`~specmod.smoothing.LogBinner` and
-    always has. Nothing reads ``method``: the registry exists, the key
-    validates, and the two values other than ``log_bins`` were silently
-    discarded. ``none`` is the one that could cost someone a result — it reads
-    as "leave my spectra alone" and every spectrum went on being binned
-    exactly as before.
-
-    Measured before writing this, on the 28 PNR windows: ``log_bins``,
-    ``konno_ohmachi`` and ``none`` produce bit-identical output.
-
-    Raising is the honest interim. It is not the fix — see
-    :class:`~specmod.config.SmoothingConfig` for why wiring the other two up
-    is a design change — but a configuration that is refused is one nobody
-    can be misled by.
-    """
+    """Refuse a ``[smoothing] method`` the comparison does not apply."""
+    # The comparison bins with `LogBinner` and always has; nothing read this
+    # setting, so both other values were accepted and discarded. Measured on
+    # the 28 PNR windows, all three produced bit-identical output — `none`
+    # included, which reads as "do not smooth" and left every spectrum binned.
+    # Raising is the interim, not the fix: see `SmoothingConfig`.
     method = config.smoothing.method
     if method == "log_bins":
         return
