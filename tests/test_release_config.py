@@ -170,3 +170,66 @@ class TestTheBuiltVersionCheck:
     ) -> None:
         dist = self._dist(tmp_path, "specmod-0.2.0-py3-none-any.whl")
         assert checker.check("0.2.0", dist) != []
+
+
+class TestTheRoadmapKeepsUpWithTheReleases:
+    """``docs/roadmap.md`` says what shipped in which version. Nothing moved it.
+
+    release-please writes ``CHANGELOG.md`` and the manifest on merge; the
+    roadmap is hand-written and was not in its path. So v0.3.0 went out with
+    its own contents still filed on that page under *In progress — not yet
+    released*, where they sat for a week: the page most likely to be read as
+    "what is done" was the one page saying the done work was not.
+
+    The rule was already written down — ``docs/releasing.md`` distinguishes
+    merged from shipped, and the roadmap's own closing section says an entry
+    gets its version when a release goes out. Both were true and neither was
+    checked, which is §6.6's shape exactly.
+    """
+
+    #: Every version the roadmap names as carrying shipped work.
+    SHIPPED = re.compile(r"^##+ Shipped in v(\d+)\.(\d+)\.(\d+)", re.MULTILINE)
+
+    def _roadmap_versions(self) -> list[tuple[int, int, int]]:
+        text = (ROOT / "docs" / "roadmap.md").read_text()
+        return [tuple(int(p) for p in m.groups()) for m in self.SHIPPED.finditer(text)]
+
+    def _released(self) -> tuple[int, int, int]:
+        version = json.loads(MANIFEST.read_text())["."]
+        return tuple(int(p) for p in version.split("."))
+
+    def test_the_roadmap_names_some_shipped_version(self) -> None:
+        """A heading rename would leave the check below matching nothing."""
+        assert self._roadmap_versions()
+
+    def test_every_version_the_roadmap_claims_has_actually_been_released(
+        self,
+    ) -> None:
+        """A section written ahead of its release is the same defect the other
+        way round: the page claims a reader can install it and check."""
+        changelog = (ROOT / "CHANGELOG.md").read_text()
+        missing = [
+            f"{major}.{minor}.{patch}"
+            for major, minor, patch in self._roadmap_versions()
+            if f"## [{major}.{minor}.{patch}]" not in changelog
+        ]
+        assert not missing, (
+            f"docs/roadmap.md files work under {missing}, which CHANGELOG.md "
+            "has no release heading for. Unreleased work belongs under "
+            "*In progress — not yet released* until the release goes out."
+        )
+
+    def test_the_roadmap_is_not_behind_the_released_minor(self) -> None:
+        """Feature and breaking work bumps the minor while this is 0.x, and
+        that is the work the roadmap tracks. A patch release is deliberately
+        not enough to fail this: a bug fix does not owe the page a section, and
+        a check that fires on every release teaches people to add empty ones.
+        """
+        released = self._released()
+        newest = max(self._roadmap_versions())
+        assert newest[:2] >= released[:2], (
+            f"v{'.'.join(map(str, released))} is released and the newest "
+            f"version docs/roadmap.md names is v{'.'.join(map(str, newest))}. "
+            "Move what shipped out of *In progress — not yet released* and "
+            "give it a `## Shipped in` section."
+        )
