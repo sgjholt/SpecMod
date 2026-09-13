@@ -659,9 +659,8 @@ the gate — which is a gain if the tail is signal and a risk if it is not.
 the low band edge moving from 0.94 Hz to 0.93 Hz under all of them, and the
 plateau being read from there. The amplitudes the fit sees never changed.
 
-Cost, since the table deliberately does not carry a timing column — a number
-that moves run to run would leave the docs permanently stale. Measured once,
-best of three, for the whole comparison over the 28 windows: `none` 63 ms,
+Cost, measured once at best of three for the whole comparison over the 28
+windows: `none` 63 ms,
 `savitzky_golay` 140 ms, `log_bins` 143 ms, `log_window` 313 ms,
 `log_window` with `statistic="median"` 688 ms, `konno_ohmachi` 830 ms. The
 spread is one machine's, and the shape of it — Konno–Ohmachi building a full

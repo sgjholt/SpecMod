@@ -334,10 +334,9 @@ class SpectrumPair:
 
         ``smoother`` chooses what reduces the two spectra before the ratio.
         ``None`` is :func:`log_bin` with the ``f_min``/``f_max``/``n_bins``
-        above — what this has always done, and what every committed result was
-        produced with. Anything else is a :mod:`specmod.smoothing` smoother,
-        which keeps the frequency axis rather than replacing it with bin
-        centres, so ``snr`` is then as long as the spectrum.
+        above. Anything else is a :mod:`specmod.smoothing` smoother, which
+        keeps the frequency axis rather than replacing it with bin centres, so
+        ``snr`` is then as long as the spectrum.
         """
         floor = max(_resolution_floor(signal), _resolution_floor(noise))
 
@@ -521,13 +520,10 @@ def _split_record(spec: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 def _resolve_smoother(smoother: Any) -> Any:
     """Turn a name, a record or an instance into a smoother, or ``None``.
 
-    ``None`` and ``"log_bins"`` both mean :func:`log_bin` — this module's own
-    binner, which is **not** :class:`specmod.smoothing.LogBinner`. The two
-    differ deliberately: ``log_bin`` clamps the requested range to the record
-    and counts ``n_bins`` as edges, which is what every committed golden number
-    was produced with, while ``LogBinner`` honours explicit edges exactly and
-    can keep empty bins. Routing the configured ``log_bins`` here rather than
-    through the registry is what keeps the default path bit-identical.
+    ``None`` and ``"log_bins"`` both mean :func:`log_bin`, this module's own
+    binner. It is not :class:`specmod.smoothing.LogBinner`: ``log_bin`` clamps
+    the requested range to the record and counts ``n_bins`` as edges, where
+    ``LogBinner`` honours explicit edges exactly and can keep empty bins.
     """
     if smoother is None or smoother == "log_bins":
         return None
@@ -555,17 +551,14 @@ def _require_shared_axis(
 ) -> None:
     """The ratio is element-wise, so the two axes have to be the same one.
 
-    Every shipped smoother keeps the axis it is given, and both are given the
-    signal's, so this cannot fail for them. It can for a caller's own smoother
-    that re-grids — ``LogBinner`` with derived edges is the obvious example,
-    since it takes its range from each spectrum's own duration and the noise
+    Only reachable with a smoother that re-grids, since every shipped one keeps
+    the axis it is given. ``LogBinner`` with derived edges is the case to know
+    about: it takes its range from each spectrum's own duration, and the noise
     window is not the signal window.
 
-    **Equal lengths are not enough**, which is why this compares the axes
-    themselves. Two log binnings with the same ``n_bins`` and different derived
-    edges produce arrays of the same shape over different frequencies: the
-    ratio then divides the signal at one frequency by the noise at another,
-    broadcasts cleanly, and is wrong everywhere with nothing to show for it.
+    The axes are compared rather than their lengths. Two log binnings with the
+    same ``n_bins`` and different edges give arrays of equal shape over
+    different frequencies, which divides cleanly and is wrong everywhere.
     """
     name = getattr(reducer, "name", reducer)
     if signal.freq.shape != noise.freq.shape:

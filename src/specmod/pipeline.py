@@ -231,10 +231,8 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
 def _configured_smoother(config: Any) -> Any:
     """Build the smoother ``[smoothing] method`` names, or ``None`` for bins.
 
-    Only the parameters belonging to the chosen method are read. Passing every
-    section key to every smoother would make an unrelated setting a
-    ``TypeError``, and silently dropping the ones it does not take is how
-    `konno_ohmachi_bandwidth` came to sit in the configuration doing nothing.
+    Only the parameters belonging to the chosen method are read; a setting
+    belonging to another method is not an error.
     """
     smoothing = config.smoothing
     method = smoothing.method

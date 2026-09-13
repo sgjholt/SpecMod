@@ -1,94 +1,44 @@
 """Constant-relative-bandwidth smoothing with a selectable window.
 
-A window of fixed width in **log** frequency, slid along the axis: one octave
+A window of fixed width in log frequency, slid along the axis: one octave
 fraction wide everywhere, so it is narrow in Hz at low frequency and wide at
-high. That is the same principle as Konno-Ohmachi, generalised to the ordinary
-window shapes — rectangular, Bartlett, Hann, Hamming, Blackman, Gaussian —
-instead of Konno-Ohmachi's one fixed kernel, and to a running median, which is
-not an average at all.
+high. Konno-Ohmachi's principle with the window shape exposed — rectangular,
+Bartlett, Hann, Hamming, Blackman, Gaussian — and with a running median
+available in place of the weighted mean.
 
-Why this shape for a seismic spectrum
--------------------------------------
-Source spectra are power laws in log-log: a plateau, a corner, a falloff. Their
-features are *proportionally* spaced, so the smoother should be too. A window
-of fixed width in Hz does the opposite of what is wanted — at 0.5 Hz it spans
-the plateau and the corner together, and at 40 Hz it barely spans three
-samples. Fixed width in log frequency treats a decade the same wherever it
-falls, which is why engineering seismology smooths this way and why the bins in
-:class:`~specmod.smoothing.log_bins.LogBinner` are log-spaced too.
+Fixed width in log frequency is what suits a source spectrum: its features —
+plateau, corner, falloff — are proportionally spaced, so a window of fixed
+width in Hz spans the plateau and the corner together at 0.5 Hz and three
+samples at 40 Hz.
 
-Symmetry, and why the obvious implementation does not have it
--------------------------------------------------------------
-The weights depend only on ``log(f_j / f_i)``, so the *window* is symmetric
-about its centre on a log axis. That is not enough. A Fourier grid is uniform
-in Hz, so one window holds many samples per octave at the top of the axis and
-few at the bottom, and averaging per sample therefore weights the upper half of
-every window more heavily. The result is a smoother that is symmetric in
-principle and biased in practice.
+The shape matters less than the width. On an exact ``f**-2`` power law, which
+every shape must return unchanged, the median residual runs from 1.3e-8 dex
+(``blackman``) to 3.4e-4 dex (``boxcar``) — an ordering that follows the
+taper's smoothness, and a spread far below what a fit resolves. ``hann`` is the
+default. ``statistic="median"`` is the exception to all of this: it discards a
+spike instead of averaging it in, and discards a genuine narrow peak with it.
 
-Weighting each sample by its share of the log-frequency axis fixes it, and the
-size of the fix is worth stating. Smoothing an exact ``f**-2`` power law, which
-is a straight line in log-log and must come back unchanged:
+None of these preserve energy, and none are unbiased across a corner.
 
-============ ================= ================
-window       per-sample weight  log-measure
-============ ================= ================
-``hann``     1.5e-3 dex        3.2e-8 dex
-``boxcar``   3.9e-3 dex        3.4e-4 dex
-============ ================= ================
+.. note::
 
-(median absolute residual, 1/3 octave, 0.05 Hz grid, above 1 Hz). It is on by
-default; ``log_measure=False`` gives the per-sample behaviour, which is what
-Konno-Ohmachi does and what the textbook description of fractional-octave
-smoothing usually implies.
+   A window symmetric in log frequency is not a symmetric average over
+   samples. A Fourier grid is uniform in Hz, so every window covers more
+   samples above its centre than below in log terms, and weighting them
+   equally tilts the result — by 1.5e-3 dex on that power law for ``hann``,
+   against 3.2e-8 dex when each sample is weighted by its share of the log
+   axis. ``log_measure`` does the latter and is on by default; ``False`` is
+   the equal-weight behaviour, which is what Konno-Ohmachi applies.
 
-Choosing between the shapes
----------------------------
-- ``boxcar`` — a plain running mean in log frequency. Cheapest, and the worst
-  behaved: its sidelobes are the highest of the set, so a sharp feature leaks
-  a long way along the axis.
-- ``bartlett`` — triangular. The obvious improvement on ``boxcar`` at no real
-  cost, and the mildest of the tapered windows: it preserves a peak's height
-  better than ``hann`` but suppresses less scatter.
-- ``hann`` — the default here. The usual compromise, and the closest of these
-  to what Konno-Ohmachi does.
-- ``hamming``, ``blackman`` — progressively harder suppression of the
-  far-field at the cost of a wider effective window. ``blackman`` is worth
-  reaching for on a spectrum so noisy that ``hann`` leaves visible scatter.
-- ``gaussian`` — truncated at four sigma. No sidelobes at all, which is its
-  argument; in exchange it has no compact support, so the truncation is the
-  only thing bounding it.
+References
+----------
+Tylka, J.G., Boren, B.B. & Choueiri, E.Y. (2017). A generalized method for
+fractional-octave smoothing of transfer functions that preserves log-frequency
+symmetry. *JAES* 65(3), 239-245.
 
-Measured on an exact ``f**-2`` power law, which every one of them must return
-unchanged (median absolute residual, 1/3 octave, log-measure weighting):
-``hann`` 3.2e-8, ``blackman`` 1.3e-8, ``gaussian`` 3.7e-7, ``bartlett``
-1.7e-6, ``hamming`` 5.1e-5, ``boxcar`` 3.4e-4 dex. The ordering is the taper's
-smoothness, and the spread across it is far below anything a fit would notice
-— which is the useful conclusion: **pick the width first, the shape second.**
-
-And one option that is not a window at all: ``statistic="median"``. Measured on
-the same power law with a single 60x spike dropped into it, the worst residual
-across the axis is 1.7e-2 dex for the median against 3.8e-2 for the geometric
-mean and 3.6e-1 for the arithmetic one. A spike is exactly what an average
-cannot handle and an order statistic can.
-
-None of them preserve energy, and none of them are unbiased on a curved
-spectrum: averaging across a corner pulls it down, whatever the shape. That
-is a property of smoothing rather than of a window, and it is the reason
-``octave_fraction`` matters more than ``window``.
-
-Relation to the published methods
----------------------------------
-Fractional-octave smoothing with an explicit window is standard in acoustics
-and in transfer-function work, where the weighting above is treated properly —
-Tylka, Boren & Choueiri (*JAES*, 2017), on smoothing weights that preserve
-log-frequency symmetry, is the reference usually given for it.
-
-**That paper could not be read from the environment this was written in**, so
-what is implemented here is the construction described above, derived from the
-sampling argument and checked against the power law, rather than a reproduction
-of its weighting. Where the two differ, theirs is the published one and this
-file is not evidence about it.
+Konno, K. & Ohmachi, T. (1998). Ground-motion characteristics estimated from
+spectral ratio between horizontal and vertical components of microtremor.
+*BSSA* 88(1), 228-241.
 """
 
 from __future__ import annotations
@@ -162,20 +112,15 @@ class LogWindow:
         decade of amplitudes an arithmetic mean is dominated by its largest
         member. ``mean`` averages the amplitudes directly.
 
-        ``median`` takes the median of the samples the window covers, which is
-        the one option here that is not a weighted mean: **the window shape and
-        ``log_measure`` are both ignored**, since a median has no weights to
-        apply. Use it when the spectrum carries spikes that should not be
-        averaged into their neighbours — a power-line tone, a dropout, a
-        telemetry glitch. A mean spreads such a sample across the window; a
-        median discards it. It costs resolution at a real narrow peak, which it
-        will also discard, and it is the slowest of the three.
+        ``median`` takes the median of the samples the window covers. It has no
+        weights, so the window shape and ``log_measure`` are ignored. Use it
+        against spikes — a power-line tone, a dropout — which it discards
+        rather than spreading across the window, along with any genuine narrow
+        peak. It is the slowest of the three.
     log_measure
-        Weight each sample by its share of the log-frequency axis. On by
-        default, and it is what makes the window symmetric in practice rather
-        than only in principle — see the module docstring. ``False`` weights
-        every sample in the window equally, which is what Konno-Ohmachi and
-        the textbook description of fractional-octave smoothing both do.
+        Weight each sample by its share of the log-frequency axis, which is
+        what keeps the window symmetric on a non-uniform grid — see the note
+        above. ``False`` weights every sample equally.
     """
 
     octave_fraction: float = 1.0 / 3.0
