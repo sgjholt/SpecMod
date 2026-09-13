@@ -67,7 +67,7 @@ def _prepared_stream():
         warnings.simplefilter("ignore")
         inventory = obspy.read_inventory(str(PATHS.inventory))
         stream = obspy.read(PATHS.waveform_glob("*HH[EN]*"))
-        pre.set_stream_distance(
+        stream = pre.with_distance(
             stream,
             EVENT.latitude,
             EVENT.longitude,
@@ -76,7 +76,7 @@ def _prepared_stream():
             inventory=inventory,
             dtype="mseed",
         )
-        pre.set_picks(stream, str(PATHS.picks_file()))
+        stream = pre.with_picks(stream, str(PATHS.picks_file()))
         stream = obspy.Stream([tr for tr in stream if "s_time" in tr.stats])
         stream.detrend("linear")
         stream.detrend("demean")
@@ -86,9 +86,8 @@ def _prepared_stream():
 
 
 def _cut(stream, refine_window=True):
-    return pre.get_signal(
+    return pre.s_window(
         stream,
-        pre.cut_s,
         rafp=0.8,
         tafs=20,
         time_after="absolute_time",

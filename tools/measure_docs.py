@@ -506,7 +506,7 @@ def _field_signals():  # type: ignore[no-untyped-def]
     paths = PNR_2019.directory(ROOT)
     inv = obspy.read_inventory(str(paths.inventory))
     st = obspy.read(paths.waveform_glob("*HH[EN]*"))
-    pre.set_stream_distance(
+    st = pre.with_distance(
         st,
         PNR_2019.latitude,
         PNR_2019.longitude,
@@ -515,14 +515,14 @@ def _field_signals():  # type: ignore[no-untyped-def]
         inventory=inv,
         dtype="mseed",
     )
-    pre.set_picks(st, str(paths.picks_file()))
+    st = pre.with_picks(st, str(paths.picks_file()))
     st = obspy.Stream([tr for tr in st if "s_time" in tr.stats])
     st.detrend("linear")
     st.detrend("demean")
     st.taper(0.05)
     st.remove_response(inv, output="VEL")
-    sig = pre.get_signal(
-        st, pre.cut_s, rafp=0.8, tafs=20, time_after="absolute_time", refine_window=True
+    sig = pre.s_window(
+        st, rafp=0.8, tafs=20, time_after="absolute_time", refine_window=True
     )
     # Condition the *cut* windows, not just the parent traces. A sub-window of
     # a demeaned record carries its own offset and trend, and that energy lands
