@@ -21,11 +21,12 @@ than inferred.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from ..core.spectrum import Spectrum
 
-__all__ = ["Smoother", "record_smoothing"]
+__all__ = ["NoSmoothing", "Smoother", "record_smoothing"]
 
 
 @runtime_checkable
@@ -40,6 +41,22 @@ class Smoother(Protocol):
     def smooth(self, spectrum: Spectrum) -> Spectrum:
         """Return a smoothed copy of ``spectrum``."""
         ...
+
+
+@dataclass(frozen=True)
+class NoSmoothing:
+    """Return the spectrum unchanged, and say so in its metadata.
+
+    Not a placeholder. ``[smoothing] method = "none"`` has to mean something a
+    caller can select, and "the identity, recorded" is the only reading of it
+    that leaves a spectrum's history honest — a pair built this way carries no
+    smoothing record, which is exactly what downstream energy checks look for.
+    """
+
+    name: str = "none"
+
+    def smooth(self, spectrum: Spectrum) -> Spectrum:
+        return spectrum
 
 
 def record_smoothing(meta: Any, name: str, **params: Any) -> dict[str, Any]:

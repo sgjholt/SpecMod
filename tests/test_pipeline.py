@@ -12,10 +12,11 @@ against live legacy code, so that it survives the legacy code being removed.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -450,3 +451,124 @@ class TestToMotion:
                 n_bins=settings["n_bins"],
             )
             assert rebinned.amp == pytest.approx(pair.binned_noise.amp, rel=1e-12), id
+
+
+class TestTheConfiguredSmootherReachesTheComparison:
+    """Every ``[smoothing] method`` has to survive the whole path, not resolve.
+
+    ``_compare_settings`` returning the right object is half of it, and the
+    half a registry lookup already gave. What this covers is the other half:
+    the object is handed to ``SpectrumPair.compare``, the ratio it produces has
+    an axis the band search can walk, and a band comes out — on the 28 real
+    windows rather than on white noise, because a band is a statement about a
+    signal and noise floor that white noise does not have.
+    """
+
+    METHODS: ClassVar[list[str]] = [
+        "log_bins",
+        "konno_ohmachi",
+        "log_window",
+        "savitzky_golay",
+        "none",
+    ]
+
+    @pytest.mark.parametrize("method", METHODS)
+    def test_a_pair_comes_out_with_a_usable_band(
+        self, pnr_windows: Any, monkeypatch: pytest.MonkeyPatch, method: str
+    ) -> None:
+        from specmod.config import load_config  # noqa: PLC0415
+        from specmod.pipeline import _configured_smoother  # noqa: PLC0415
+
+        config = load_config(use_local=False, use_env=False).config
+        smoother = _configured_smoother(
+            dataclasses.replace(
+                config, smoothing=dataclasses.replace(config.smoothing, method=method)
+            )
+        )
+
+        signal, noise = pnr_windows()
+        spectra = spectrum_set_from_streams(
+            signal, noise, estimator="fft", compare={"smoother": smoother}
+        )
+
+        assert len(spectra.pairs) == 28
+        for name, pair in spectra.pairs.items():
+            assert pair.snr.shape == pair.binned_signal.freq.shape, name
+            assert pair.snr.shape == pair.binned_noise.freq.shape, name
+            assert np.isfinite(pair.snr).any(), name
+        assert any(pair.band is not None for pair in spectra.pairs.values())
+
+    @pytest.mark.parametrize("method", ["konno_ohmachi", "log_window", "none"])
+    def test_an_axis_preserving_smoother_keeps_the_spectrum_length(
+        self, pnr_windows: Any, method: str
+    ) -> None:
+        """The visible difference from binning, and what makes ``snr`` a
+        function of frequency rather than of bin index."""
+        from specmod.smoothing import SMOOTHERS  # noqa: PLC0415
+
+        signal, noise = pnr_windows()
+        spectra = spectrum_set_from_streams(
+            signal, noise, estimator="fft", compare={"smoother": SMOOTHERS[method]()}
+        )
+        for name, pair in spectra.pairs.items():
+            assert pair.binned_signal.freq.shape == pair.signal.freq.shape, name
+
+    def test_none_leaves_the_amplitudes_alone(self, pnr_windows: Any) -> None:
+        """``none`` has to mean it. It read as "do not smooth" for two releases
+        while every spectrum went on being binned."""
+        from specmod.smoothing import NoSmoothing  # noqa: PLC0415
+
+        signal, noise = pnr_windows()
+        spectra = spectrum_set_from_streams(
+            signal, noise, estimator="fft", compare={"smoother": NoSmoothing()}
+        )
+        for name, pair in spectra.pairs.items():
+            assert pair.binned_signal.amp == pytest.approx(pair.signal.amp), name
+
+    @pytest.mark.parametrize("drop_empty", [True, False])
+    def test_a_smoother_that_regrids_each_side_apart_is_refused(
+        self, pnr_windows: Any, drop_empty: bool
+    ) -> None:
+        """``LogBinner`` with derived edges takes its range from each
+        spectrum's own duration, and the noise window is not the signal window.
+
+        Both halves of the check are exercised here, and the second is the one
+        worth having. ``drop_empty=True`` gives two different lengths, which
+        anything would notice. ``drop_empty=False`` gives two arrays of the
+        same length over different frequencies, which divides cleanly and is
+        wrong everywhere.
+        """
+        from specmod.smoothing import LogBinner  # noqa: PLC0415
+
+        signal, noise = pnr_windows()
+        with pytest.raises(ValueError, match="no element-wise meaning"):
+            spectrum_set_from_streams(
+                signal,
+                noise,
+                estimator="fft",
+                compare={"smoother": LogBinner(drop_empty=drop_empty)},
+            )
+
+    def test_the_smoother_is_recorded_so_the_pair_can_be_remade(
+        self, pnr_windows: Any
+    ) -> None:
+        """``to_motion`` replays the comparison from these settings, and a
+        pair that could not say what smoothed it would replay with the
+        default — silently changing the numbers on a domain change."""
+        from specmod.core.collection import SpectrumPair  # noqa: PLC0415
+        from specmod.smoothing import LogWindow  # noqa: PLC0415
+
+        signal, noise = pnr_windows()
+        spectra = spectrum_set_from_streams(
+            signal,
+            noise,
+            estimator="fft",
+            compare={"smoother": LogWindow(window="bartlett")},
+        )
+        pair = next(iter(spectra.pairs.values()))
+        record = pair.meta[SpectrumPair.SETTINGS_KEY]["smoother"]
+        assert record["name"] == "log_window"
+        assert record["window"] == "bartlett"
+
+        displacement = pair.to_motion("displacement")
+        assert displacement.binned_signal.freq.shape == pair.signal.freq.shape

@@ -492,8 +492,13 @@ def prieto_agreement() -> str:
     return table(["Record", "adaptive", "flat"], rows)
 
 
-def _field_signals():  # type: ignore[no-untyped-def]
-    """The 28 PNR S-windows, cut with the published Magna workflow."""
+def _field_signals(with_noise: bool = False):  # type: ignore[no-untyped-def]
+    """The 28 PNR S-windows, cut with the published Magna workflow.
+
+    ``with_noise`` also returns the pre-P noise the comparison needs. It is
+    derived from the same parent stream rather than re-read, so the noise a
+    measurement uses is the noise the pipeline would have paired with.
+    """
     # obspy costs seconds to import and only the field measurements need it,
     # so it is deferred to keep `measure_docs --help` and the synthetic-only
     # runs fast.
@@ -530,6 +535,8 @@ def _field_signals():  # type: ignore[no-untyped-def]
     # every estimator equally and bury the effect being measured.
     sig.detrend("linear")
     sig.detrend("demean")
+    if with_noise:
+        return sig, pre.get_noise_p(st, sig)
     return sig
 
 
@@ -651,6 +658,99 @@ def apply_to(path: Path, rendered: dict[str, str]) -> tuple[str, list[str]]:
         return m.group(1) + fresh + "\n" + m.group(4)
 
     return MARKER.sub(substitute, text), stale
+
+
+@field("smoothing_table")
+def smoothing_table() -> str:
+    """What each ``[smoothing] method`` does downstream, on the 28 PNR windows.
+
+    Scatter is what a smoother obviously changes and not what anyone chooses
+    one for. What matters is what survives it, and the path is narrower than it
+    looks: ``[fitting] fit_bins`` is ``false`` by default, so the fit reads the
+    **unsmoothed** spectrum and the smoother reaches ``Omega`` only by moving
+    the band that passes the signal-to-noise gate. The scatter column is what
+    the choice costs or buys when ``fit_bins`` is on, or when the reduced
+    arrays are what gets plotted.
+
+    Everything is relative to ``log_bins``, the shipped default.
+
+    **No timing column.** ``check`` re-runs this and compares it against the
+    committed table, so a number that moves run to run would leave the docs
+    permanently stale. Timings are stated in the prose, as one measurement on
+    one machine, which is what they are.
+    """
+    from specmod.pipeline import spectrum_set_from_streams  # noqa: PLC0415
+    from specmod.smoothing import (  # noqa: PLC0415
+        KonnoOhmachi,
+        LogWindow,
+        NoSmoothing,
+        SavitzkyGolay,
+    )
+
+    sig, noise = _field_signals(with_noise=True)
+    methods: dict[str, object | None] = {
+        "`log_bins` (default)": None,
+        "`konno_ohmachi`, b=40": KonnoOhmachi(),
+        "`log_window`, hann": LogWindow(),
+        "`log_window`, bartlett": LogWindow(window="bartlett"),
+        "`log_window`, boxcar": LogWindow(window="boxcar"),
+        "`log_window`, gaussian": LogWindow(window="gaussian"),
+        "`log_window`, median": LogWindow(statistic="median"),
+        "`savitzky_golay`": SavitzkyGolay(),
+        "`none`": NoSmoothing(),
+    }
+
+    rows = []
+    baseline = None
+    for label, smoother in methods.items():
+        spectra = spectrum_set_from_streams(
+            sig.copy(), noise.copy(), estimator="fft", compare={"smoother": smoother}
+        )
+        displacement = spectra.to_motion("displacement")
+
+        banded = [p for p in displacement.pairs.values() if p.band is not None]
+        widths = [float(np.log10(p.band[1] / p.band[0])) for p in banded]
+        lows = [float(p.band[0]) for p in banded]
+        plateau, scatter = [], []
+        for p in banded:
+            # Omega is read at the low-frequency end of the band, off the
+            # unsmoothed spectrum, which is what the fit actually sees.
+            low = p.signal.band(p.band[0], p.band[0] * 2.0).amp
+            if low.size:
+                plateau.append(float(np.median(np.log10(low))))
+            # And the roughness of the reduced arrays, in the band, which is
+            # what `fit_bins` would fit and what a plot of the pair shows.
+            inside = (p.binned_signal.freq >= p.band[0]) & (
+                p.binned_signal.freq <= p.band[1]
+            )
+            amp = p.binned_signal.amp[inside]
+            if amp.size > 2:
+                scatter.append(float(np.std(np.diff(np.log10(amp)))))
+        level = float(np.median(plateau)) if plateau else float("nan")
+        baseline = level if baseline is None else baseline
+
+        rows.append(
+            [
+                label,
+                f"{len(banded)}/{len(displacement.pairs)}",
+                f"{np.median(lows):.2f}" if lows else "-",
+                f"{np.median(widths):.2f}" if widths else "-",
+                f"{level - baseline:+.3f}",
+                f"{np.median(scatter):.3f}" if scatter else "-",
+            ]
+        )
+
+    return table(
+        [
+            "Method",
+            "Banded",
+            "Band low (Hz)",
+            "Band (decades)",
+            "Δ plateau (dex)",
+            "Scatter (dex)",
+        ],
+        rows,
+    )
 
 
 def _field_option(fn):  # type: ignore[no-untyped-def]

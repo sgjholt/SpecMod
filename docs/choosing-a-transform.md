@@ -582,6 +582,91 @@ narrow at low frequency, wide at high. It preserves the frequency axis, which is
 what you want before fitting on the original grid. Bandwidth `b` is inverse:
 smaller smooths harder; 40 is conventional.
 
+**`LogWindow`** is the same idea with the window shape exposed: a fixed width in
+octaves, and `boxcar`, `bartlett` (triangular), `hann`, `hamming`, `blackman` or
+`gaussian` across it. Use it when you want the constant-relative-bandwidth
+behaviour of Konno–Ohmachi and a say in how hard the taper is — or simply
+because it is faster, being a sliding window rather than a full weight matrix.
+
+Which shape matters less than it looks. On an exact `f**-2` power law, which
+every one of them has to return unchanged, the median residual runs from
+`1.3e-8` dex (`blackman`) to `3.4e-4` dex (`boxcar`) — an ordering that tracks
+the taper's smoothness and a spread far below anything a fit would notice.
+**Pick the width first and the shape second.**
+
+`statistic="median"` is the one option that is not an average: the window
+selects the samples and the median decides, so the shape is ignored. It is
+there for spectra carrying spikes — a power-line tone, a dropout, a telemetry
+glitch — which an average spreads across the whole window. With a single 60×
+spike dropped into that power law, the worst residual across the axis is
+`1.7e-2` dex for the median against `3.8e-2` for the geometric mean and
+`3.6e-1` for the arithmetic one. It will discard a genuine narrow peak just as
+happily, which is the trade.
+
+One detail in it is worth knowing about, because it is not what the textbook
+description of fractional-octave smoothing gives you. A window symmetric in log
+frequency is **not** a symmetric average over samples: a Fourier grid is uniform
+in Hz, so every window holds more samples above its centre than below in log
+terms, and a plain per-sample mean tilts. Weighting each sample by its share of
+the log axis removes it. Smoothing an exact `f**-2` power law, which has to come
+back unchanged, the median residual is `1.5e-3` dex per-sample against `3.2e-8`
+dex weighted for `hann`. It is on by default; `log_measure=False` gives the
+per-sample behaviour, which is what Konno–Ohmachi does.
+
+**`SavitzkyGolay`** fits a sliding polynomial rather than averaging, so it
+flattens a peak far less. It is fitted to `log10(amp)` against `log10(f)` on a
+uniform log-frequency grid — a polynomial in raw amplitude against raw frequency
+spends its degrees of freedom on the falloff and can return a negative
+amplitude. Ringing near the corner and the Nyquist roll-off is what it costs.
+
+### What the choice actually changes
+
+Less than it looks, and not where you would expect. **`[fitting] fit_bins` is
+`false` by default, so the fit reads the unsmoothed spectrum.** The smoother's
+whole influence on `Omega` is therefore indirect: it changes the signal-to-noise
+ratio, which changes the band that passes the gate, which changes where the
+plateau is read. The scatter column below is what the choice buys when
+`fit_bins` is on, or when the reduced arrays are what you plot.
+
+Measured on the 28 PNR windows, everything relative to the shipped default:
+
+<!-- measured: smoothing_table -->
+| Method | Banded | Band low (Hz) | Band (decades) | Δ plateau (dex) | Scatter (dex) |
+|---|---|---|---|---|---|
+| `log_bins` (default) | 28/28 | 0.94 | 1.55 | +0.000 | 0.317 |
+| `konno_ohmachi`, b=40 | 28/28 | 0.93 | 1.68 | +0.067 | 0.093 |
+| `log_window`, hann | 28/28 | 0.93 | 1.66 | +0.067 | 0.111 |
+| `log_window`, bartlett | 28/28 | 0.93 | 1.66 | +0.067 | 0.102 |
+| `log_window`, boxcar | 28/28 | 0.93 | 1.68 | +0.067 | 0.086 |
+| `log_window`, gaussian | 28/28 | 0.93 | 1.65 | +0.067 | 0.147 |
+| `log_window`, median | 28/28 | 0.93 | 1.69 | +0.067 | 0.091 |
+| `savitzky_golay` | 28/28 | 0.93 | 1.67 | +0.067 | 0.063 |
+| `none` | 28/28 | 0.94 | 1.51 | +0.000 | 0.318 |
+<!-- /measured -->
+
+Three things in that table are worth reading twice.
+
+**The default barely smooths.** `log_bins` leaves the same scatter as `none`,
+because 151 log bins over a window holding a few hundred Fourier samples puts
+roughly one sample in most bins. It reduces the *axis*, not the noise.
+
+**Every real smoother widens the band** by about a tenth of a decade. A smoothed
+ratio crosses the threshold later, so more of the high-frequency tail survives
+the gate — which is a gain if the tail is signal and a risk if it is not.
+
+**The plateau moves by the same 0.067 dex under every one of them**, which is
+0.045 in magnitude. That is not seven methods agreeing about amplitudes; it is
+the low band edge moving from 0.94 Hz to 0.93 Hz under all of them, and the
+plateau being read from there. The amplitudes the fit sees never changed.
+
+Cost, since the table deliberately does not carry a timing column — a number
+that moves run to run would leave the docs permanently stale. Measured once,
+best of three, for the whole comparison over the 28 windows: `none` 63 ms,
+`savitzky_golay` 140 ms, `log_bins` 143 ms, `log_window` 313 ms,
+`log_window` with `statistic="median"` 688 ms, `konno_ohmachi` 830 ms. The
+spread is one machine's, and the shape of it — Konno–Ohmachi building a full
+weight matrix where `LogWindow` slides a window — is what generalises.
+
 ---
 
 ## Reproducing the published Magna configuration

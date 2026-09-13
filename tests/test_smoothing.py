@@ -8,8 +8,12 @@ import pytest
 from specmod.core import AmplitudeKind, Motion
 from specmod.smoothing import (
     SMOOTHERS,
+    WINDOWS,
     KonnoOhmachi,
     LogBinner,
+    LogWindow,
+    NoSmoothing,
+    SavitzkyGolay,
     get_smoother,
     is_smoothed,
 )
@@ -175,10 +179,207 @@ def test_konno_ohmachi_rejects_bad_setup(kwargs: dict, match: str) -> None:
         KonnoOhmachi(**kwargs)
 
 
+# ------------------------------------------------------------- log window
+
+
+def brune(fc: float = 5.0, sigma: float = 0.30, seed: int = 0):
+    """A plateau, a corner and a falloff, with multiplicative scatter on it.
+
+    White noise, which the other tests smooth, has no shape to preserve — it
+    cannot show a smoother flattening a corner or biasing a plateau, which is
+    what these have to be judged on. This is the smallest thing that can.
+    """
+    s = spectrum()
+    truth = 1e-6 / (1.0 + (s.freq / fc) ** 2)
+    rng = np.random.default_rng(seed)
+    noisy = truth * 10 ** rng.normal(0.0, sigma, s.freq.size)
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    return _replace(s, amp=noisy), truth
+
+
+@pytest.mark.parametrize("window", sorted(WINDOWS))
+def test_every_window_keeps_the_axis_and_reduces_scatter(window: str) -> None:
+    s, truth = brune()
+    out = LogWindow(window=window).smooth(s)
+    assert out.freq == pytest.approx(s.freq)
+    before = float(np.std(np.log10(s.amp) - np.log10(truth)))
+    after = float(np.std(np.log10(out.amp) - np.log10(truth)))
+    assert after < before / 3.0
+
+
+def test_a_wider_window_smooths_harder() -> None:
+    s, _ = brune()
+    narrow = np.std(np.diff(np.log10(LogWindow(octave_fraction=1 / 6).smooth(s).amp)))
+    wide = np.std(np.diff(np.log10(LogWindow(octave_fraction=1.0).smooth(s).amp)))
+    assert wide < narrow
+
+
+def test_the_window_is_symmetric_in_log_frequency() -> None:
+    """The property the construction exists for, and it is not automatic.
+
+    A pure power law is a straight line in log-log, so a genuinely symmetric
+    log-frequency average returns it unchanged. Weighting each sample equally
+    does not: a Fourier grid is uniform in Hz, so every window holds more
+    samples above its centre than below in log terms, and the average tilts.
+    Weighting by each sample's share of the log axis is what removes it, and
+    the difference is four orders of magnitude here.
+    """
+    s = spectrum()
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    law = _replace(s, amp=1e-6 * s.freq**-2.0)
+    # Above the sparse low end, where one window spans barely two samples and
+    # no weighting can recover what the axis does not carry.
+    inside = (s.freq > 1.0) & (s.freq < 0.8 * s.freq[-1])
+    truth = np.log10(law.amp[inside])
+
+    weighted = np.log10(LogWindow().smooth(law).amp[inside])
+    per_sample = np.log10(LogWindow(log_measure=False).smooth(law).amp[inside])
+
+    assert np.median(np.abs(weighted - truth)) < 1e-6
+    assert np.median(np.abs(per_sample - truth)) > 100 * np.median(
+        np.abs(weighted - truth)
+    )
+
+
+def test_a_geometric_mean_stays_inside_the_data() -> None:
+    s, _ = brune()
+    out = LogWindow().smooth(s)
+    assert out.amp.min() >= s.amp.min()
+    assert out.amp.max() <= s.amp.max()
+
+
+def test_dc_passes_through_untouched() -> None:
+    """log(0) is not a frequency. The sample stays rather than being dropped,
+    so the axis a caller handed in is the axis they get back."""
+    s = spectrum()
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    with_dc = _replace(
+        s,
+        freq=np.concatenate([[0.0], s.freq]),
+        amp=np.concatenate([[s.amp[0] * 10], s.amp]),
+    )
+    out = LogWindow().smooth(with_dc)
+    assert out.freq[0] == 0.0
+    assert out.amp[0] == with_dc.amp[0]
+    assert len(out) == len(with_dc)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"octave_fraction": 0.0}, "octave_fraction must be positive"),
+        ({"window": "tukey"}, "Unknown window"),
+        ({"statistic": "mode"}, "statistic must be"),
+    ],
+)
+def test_log_window_rejects_bad_setup(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        LogWindow(**kwargs)
+
+
+def test_the_median_statistic_rejects_a_spike_the_means_smear() -> None:
+    """Why an order statistic is offered beside the weighted means.
+
+    A power-line tone or a telemetry glitch is one sample that does not belong
+    to the spectrum. An average spreads it across the whole window; a median
+    discards it. Measured against the clean law the spike was added to.
+    """
+    s = spectrum()
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    law = _replace(s, amp=1e-6 * s.freq**-2.0)
+    spiked = law.amp.copy()
+    spiked[400] *= 60.0
+    spiky = _replace(law, amp=spiked)
+
+    inside = (s.freq > 1.0) & (s.freq < 0.8 * s.freq[-1])
+    truth = np.log10(law.amp[inside])
+
+    def worst(statistic: str) -> float:
+        out = LogWindow(statistic=statistic).smooth(spiky)
+        return float(np.max(np.abs(np.log10(out.amp[inside]) - truth)))
+
+    assert worst("median") < worst("geometric") < worst("mean")
+
+
+def test_the_median_ignores_the_window_shape() -> None:
+    """It has no weights to apply, and the docstring says so. If a shape ever
+    starts changing the answer here, one of the two is wrong."""
+    s, _ = brune()
+    hann = LogWindow(statistic="median", window="hann").smooth(s)
+    boxcar = LogWindow(statistic="median", window="boxcar").smooth(s)
+    assert hann.amp == pytest.approx(boxcar.amp)
+
+
+# --------------------------------------------------------- savitzky-golay
+
+
+def test_savgol_keeps_the_axis_and_reduces_scatter() -> None:
+    s, truth = brune()
+    out = SavitzkyGolay().smooth(s)
+    assert out.freq == pytest.approx(s.freq)
+    before = float(np.std(np.log10(s.amp) - np.log10(truth)))
+    after = float(np.std(np.log10(out.amp) - np.log10(truth)))
+    assert after < before / 3.0
+
+
+def test_savgol_follows_a_power_law_it_can_fit_exactly() -> None:
+    """A polynomial fit in log-log reproduces a power law exactly, which a
+    moving average of any shape cannot do at the ends of the axis."""
+    s = spectrum()
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    law = _replace(s, amp=1e-6 * s.freq**-2.0)
+    out = SavitzkyGolay().smooth(law)
+    assert np.log10(out.amp) == pytest.approx(np.log10(law.amp), abs=1e-6)
+
+
+def test_savgol_amplitudes_stay_positive() -> None:
+    """The reason the fit is done on log10(amp): a polynomial through raw
+    amplitude goes negative in a noise floor, and an amplitude cannot."""
+    s, _ = brune(sigma=0.8, seed=3)
+    assert (SavitzkyGolay().smooth(s).amp > 0).all()
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"window_length": 40}, "window_length must be odd"),
+        ({"window_length": 5, "polyorder": 5}, "must be below window_length"),
+        ({"polyorder": 0}, "polyorder must be at least"),
+        ({"points_per_decade": 1}, "points_per_decade must be"),
+    ],
+)
+def test_savgol_rejects_bad_setup(kwargs: dict, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        SavitzkyGolay(**kwargs)
+
+
+def test_savgol_says_so_when_the_record_is_too_short_for_the_window() -> None:
+    s = spectrum()
+    with pytest.raises(ValueError, match="fewer than window_length"):
+        SavitzkyGolay(window_length=999, points_per_decade=10).smooth(s)
+
+
+# ------------------------------------------------------------------- none
+
+
+def test_no_smoothing_returns_the_spectrum_unchanged() -> None:
+    s = spectrum()
+    out = NoSmoothing().smooth(s)
+    assert out.amp is s.amp
+    assert not is_smoothed(out)
+
+
 # ------------------------------------------------------ metadata and contract
 
 
-@pytest.mark.parametrize("smoother", [LogBinner(), KonnoOhmachi()])
+@pytest.mark.parametrize(
+    "smoother", [LogBinner(), KonnoOhmachi(), LogWindow(), SavitzkyGolay()]
+)
 def test_units_survive_smoothing(smoother) -> None:
     s = spectrum()
     out = smoother.smooth(s)
@@ -188,7 +389,9 @@ def test_units_survive_smoothing(smoother) -> None:
     assert out.sampling_rate == s.sampling_rate
 
 
-@pytest.mark.parametrize("smoother", [LogBinner(), KonnoOhmachi()])
+@pytest.mark.parametrize(
+    "smoother", [LogBinner(), KonnoOhmachi(), LogWindow(), SavitzkyGolay()]
+)
 def test_smoothing_is_recorded(smoother) -> None:
     """Smoothing breaks Parseval, so downstream needs to be able to tell."""
     s = spectrum()
@@ -207,7 +410,9 @@ def test_chained_smoothing_leaves_a_trail() -> None:
     ]
 
 
-@pytest.mark.parametrize("smoother", [LogBinner(), KonnoOhmachi()])
+@pytest.mark.parametrize(
+    "smoother", [LogBinner(), KonnoOhmachi(), LogWindow(), SavitzkyGolay()]
+)
 def test_smoothing_does_not_mutate_its_input(smoother) -> None:
     s = spectrum()
     before = s.amp.copy()

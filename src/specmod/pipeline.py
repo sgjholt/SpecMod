@@ -210,8 +210,8 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
     about what the configuration said.
     """
     config = load_config().config
-    _reject_unwired_smoothing(config)
     settings: dict[str, Any] = {
+        "smoother": _configured_smoother(config),
         "threshold": config.snr.tolerance,
         "f_min": config.smoothing.f_min,
         "f_max": config.smoothing.f_max,
@@ -228,23 +228,46 @@ def _compare_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, A
     return settings
 
 
-def _reject_unwired_smoothing(config: Any) -> None:
-    """Refuse a ``[smoothing] method`` the comparison does not apply."""
-    # The comparison bins with `LogBinner` and always has; nothing read this
-    # setting, so both other values were accepted and discarded. Measured on
-    # the 28 PNR windows, all three produced bit-identical output — `none`
-    # included, which reads as "do not smooth" and left every spectrum binned.
-    # Raising is the interim, not the fix: see `SmoothingConfig`.
-    method = config.smoothing.method
+def _configured_smoother(config: Any) -> Any:
+    """Build the smoother ``[smoothing] method`` names, or ``None`` for bins.
+
+    Only the parameters belonging to the chosen method are read. Passing every
+    section key to every smoother would make an unrelated setting a
+    ``TypeError``, and silently dropping the ones it does not take is how
+    `konno_ohmachi_bandwidth` came to sit in the configuration doing nothing.
+    """
+    smoothing = config.smoothing
+    method = smoothing.method
+
+    # `log_bins` is `core.collection.log_bin`, not `smoothing.LogBinner`; the
+    # two differ and the difference is every committed golden number. See
+    # `_resolve_smoother`.
     if method == "log_bins":
-        return
-    raise ValueError(
-        f"[smoothing] method = {method!r} is not wired into the pipeline, "
-        "which bins with LogBinner unconditionally. It was accepted and "
-        "ignored until now, so this is a configuration that never did what it "
-        "said. Use 'log_bins', or apply a smoother yourself with "
-        "specmod.smoothing.get_smoother(...) on the spectra you want smoothed."
-    )
+        return None
+
+    from .smoothing import SMOOTHERS  # noqa: PLC0415
+
+    params: dict[str, dict[str, Any]] = {
+        "none": {},
+        "konno_ohmachi": {"bandwidth": smoothing.konno_ohmachi_bandwidth},
+        "log_window": {
+            "octave_fraction": smoothing.octave_fraction,
+            "window": smoothing.window,
+            "statistic": smoothing.statistic,
+        },
+        "savitzky_golay": {
+            "window_length": smoothing.savgol_window_length,
+            "polyorder": smoothing.savgol_polyorder,
+            "points_per_decade": smoothing.savgol_points_per_decade,
+        },
+    }
+    if method not in params:
+        raise ValueError(
+            f"[smoothing] method = {method!r} has no parameters mapped here, "
+            f"so the pipeline cannot build it. Known: "
+            f"{sorted([*params, 'log_bins'])}; registered: {sorted(SMOOTHERS)}."
+        )
+    return SMOOTHERS[method](**params[method])
 
 
 def _configured_bandwidth(config: Any) -> Any:
