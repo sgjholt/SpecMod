@@ -1087,7 +1087,7 @@ and there are presumably more in your working directories.
 Two ways out, and the first is much better:
 
 1. **Convert in the old environment.** Phase 0 is already building a Docker image
-   where the 0.1.0 code runs (§6.7). Add a small
+   where the 0.1.1 code runs (§6.7). Add a small
    `scripts/convert_legacy_spec.py` to it that loads `.spec` files with the old
    classes present and writes the new HDF5 format. This is a one-shot migration
    with no lasting cost to the codebase.
@@ -2742,13 +2742,30 @@ Two further problems with reproducing the published run from this repository:
    manuscript filename (`...SRL3`) suggests a third revision, which would also
    explain a 2021 code state behind a 2020 access date.
 
-   Practical consequence: **the candidate is `ba3f7ec` or later, not the
+   The evidence narrows it: **the candidate is `ba3f7ec` or later, not the
    pre-November-2020 commits**, because the earlier code cannot perform the
    workflow the paper describes. Only `09f57b9` (removed cython) changes
    `specmod/` after that, so the realistic candidates are `ba3f7ec` and
-   `453c77c`. Pick one, record the reasoning, and move on — this is the
-   strongest possible argument for the `v0.1.0` tag (§6.7) and for `hatch-vcs`
-   (§6.4): it must never be this hard again.
+   `453c77c`.
+
+   **Answered: `453c77c`** — the tip of `master`, 2021-08-12. On the author's
+   word, and it is why `master` was frozen at that commit rather than at any
+   other: the branch *is* the v0.1.1 record (§6.7). Which of the two the
+   evidence above prefers was never the question it looked like.
+
+   What that settles and what it does not: the code is identified, so §5.2.6
+   step 2 can be run against a known commit. The dating oddity is unchanged —
+   the manuscript's access date still precedes the commit it cites, which the
+   third revision (`...SRL3`) explains without needing the code to have moved.
+   It is recorded rather than resolved, because nothing in the repository can
+   resolve it.
+
+   This is still the strongest possible argument for tagging that commit (§6.7)
+   and for `hatch-vcs` (§6.4): a version that takes a page of archaeology to
+   identify must never happen again. **No `v0.1.1` tag exists yet.** Creating
+   one is safe — `453c77c` is an ancestor of `main`, and every later release
+   tag outranks it for `hatch-vcs`, so nothing derives a version from it — but
+   it is repository state, not something a commit here can carry.
 2. **The full published pipeline is not in this repository.** The two-stage
    inversion (fit Ω/`f_c`/`t*` free, then fix event `f_c` to the
    inverse-hypocentral-distance-weighted mean of station `f_c` and refit) and the
@@ -3460,7 +3477,8 @@ of §5.2, and the two-stage fit API of §5.2.5.
 **`master` is frozen; `main` is the trunk.** `main` was branched from `master` at
 `453c77c` and is where all refactor work lands. `master` is never committed to
 again — it becomes the permanent, named record of the pre-refactor code, doing
-the job a `v0.1.0` tag would have done.
+the job a `v0.1.1` tag would have done. Its tip, `453c77c`, **is** the v0.1.1
+the Magna paper cites (§5.2.5, §8).
 
 **Every pull request must target `sgjholt/SpecMod`, never `uofuseismo/SpecMod`.**
 This is not a matter of care — it is a GitHub default working against you.
@@ -3498,7 +3516,7 @@ Two consequences worth acting on:
 - [ ] Settings → Actions → confirm workflows are enabled
 - [ ] Settings → Branches → protect `master` (no pushes, no deletion) so the
       frozen record stays frozen
-- [ ] `git tag -a v0.1.0 453c77c -m "pre-refactor snapshot" && git push origin v0.1.0`
+- [ ] `git tag -a v0.1.1 453c77c -m "the version the Magna paper cites" && git push origin v0.1.1`
 
 **No Claude session URLs in commit messages, PR bodies, or any other published
 artifact.** The repository is public and those links are private session state. A
@@ -3516,12 +3534,14 @@ needed and neither can be made from a git client:
    convention rather than a guarantee — one absent-minded `git push origin
    master` and the record is gone.
 
-Optionally also tag `453c77c` as `v0.1.0` for good measure; belt and braces, and
-it gives release-please an explicit floor to generate the first changelog from.
-The two are complementary — the tag is immutable, the branch is discoverable.
+Also tag `453c77c` as `v0.1.1` — no longer optional now that §8 records it as
+the commit the paper cites. A branch is discoverable and a tag is immutable,
+and a citation should resolve to the immutable one. It is safe to add late:
+`453c77c` is an ancestor of `main` and every release tag since outranks it, so
+no version derives from it.
 
 > Note on tooling limits: tag pushes are blocked in the automation environment
-> this plan was written in (HTTP 403 on `push origin v0.1.0`, while branch
+> this plan was written in (HTTP 403 on `push origin v0.1.1`, while branch
 > pushes to the same remote succeed), which is why `main` exists as a branch
 > rather than the state being pinned by a tag. **This does not affect the release
 > automation in §6.4** — release-please creates tags from inside GitHub Actions
@@ -3531,10 +3551,10 @@ The two are complementary — the tag is immutable, the branch is discoverable.
 
 Worth being precise about what any of this does and does not preserve: it
 preserves the **code**, but the code is not **runnable** — `mtspec` no longer
-builds on any current toolchain (§2.1). Reproducing a 0.1.0 result needs three
+builds on any current toolchain (§2.1). Reproducing a 0.1.1 result needs three
 things, which is what Phase 0 delivers:
 
-1. `master` (and optionally `v0.1.0`) — the source.
+1. `master` (and the `v0.1.1` tag on its tip) — the source.
 2. A `Dockerfile` pinning `gfortran`, `python 3.9`, `numpy<2` — the environment
    that can still build `mtspec`. Also the only place existing `.spec` pickles
    can be read (§4.6).
@@ -3565,7 +3585,7 @@ Each phase ends green on CI and is independently mergeable.
 
 | Phase | Work | Depends on | Rough size |
 |---|---|---|---|
-| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.0` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
+| **0. Safety net** | Freeze `master`, default branch → `main`, optional `v0.1.1` tag (§6.7); reproducible legacy env (`Dockerfile`: gfortran + ObsPy 1.2.0 / SciPy 1.4.1 / NumPy 1.18 / pandas 1.0.0 (§5.2.6)); write `datasets/magna_2020.toml` and a first cut of `specmod.acquire`, publish the artifact as a `data-v1` release asset (§5.2); capture golden outputs for PNR **and** Magna; reproduce Table S2 / Figure 2 with 0.1.1 (§5.2.6 step 2); convert any `.spec` files (§4.6) | — | 1.5–2 days |
 | **1. Make it installable** | `pyproject.toml` + hatch-vcs, `src/` layout, `__init__.py`; ruff config, one-shot `ruff format` + `.git-blame-ignore-revs`, module renames to snake_case; mypy skeleton; pre-commit; `test`/`build` CI; `.gitignore`, `CITATION.cff`; fix the three hard breakages (§1) and the four `F821` bugs ruff finds (§2.5); delete `Tests/Tutorial/`, strip notebook outputs, subset the inventory (§5.1) | 0 | 3–4 days |
 | **2. De-globalise** | `config/` package per §4.8 — semantic groups, layer resolution, `config show`/`freeze`, provenance stamping; remove all module-level config reads (tracked by `PLW0603`); `Motion`/`AmplitudeKind` enums; `Spectrum` as a frozen dataclass with `duration`; mutable class attrs (`RUF012`); `isinstance` checks; `logging`. **Tag `v0.2.0`** | 1 | 3–4 days |
 | **2b. Release plumbing** ✅ | ~~Sphinx skeleton + `pydata-sphinx-theme` + autodoc/napoleon/intersphinx~~ ✅; ~~`docs.yml` → a published site~~ ✅ — Read the Docs rather than GH Pages, for versions (§6.3); ~~release-please + PyPI Trusted Publishing~~ ✅ — one `release.yml`, not two workflows (§6.5); ~~Zenodo webhook~~ ✅ documented. Five repository settings have to be turned on by hand: `docs/releasing.md` lists them. The `ci/` mirror that staged workflow files for hand-copying is gone — it existed because an agent token could not push `.github/workflows/`, and that permission is now granted. Parallel with 2 | 1 | 1–2 days |
@@ -3664,14 +3684,17 @@ changes anything shipped.
    (§5.1) shrinks the *working tree* but leaves both in history, so a fresh clone
    still pulls ~15 MiB. Rewriting history with `git-filter-repo` would recover it
    — but it rewrites every SHA, which moves what `master` and `main` currently
-   point at and invalidates any `v0.1.0` tag. Given the end state is a ~1 MB repo
+   point at and invalidates any `v0.1.1` tag. Given the end state is a ~1 MB repo
    either way, **the recommendation is to leave history alone**: a one-time 15 MiB
    clone is a much smaller cost than an unrecoverable pre-refactor record. Only
    worth revisiting if the history genuinely becomes a burden.
-4. **Which commit is "v0.1.1"?** The paper cites SpecMod v0.1.1; no such tag
-   exists and the source carries no version string (§5.2.5). Reproducing the
-   published run needs that commit identified — by submission date against the
-   history, if nothing better is available. Only you can make that call.
+4. ~~**Which commit is "v0.1.1"?**~~ **Resolved: `453c77c`**, the tip of
+   `master`, 2021-08-12 — which is what freezing `master` at that commit was
+   for (§6.7). The archaeology in §5.2.5 narrowed it to two candidates and
+   could not choose between them; the answer did not come from the repository
+   and was never going to. §5.2.6 step 2 now has a known commit to run. No
+   `v0.1.1` tag exists yet, and creating one is repository state rather than
+   something a commit can carry.
 5. ~~**Was noise rotation on for the published run?**~~ **Assumed on.** Not
    recalled, so `studies/magna_2020_paper.toml` starts from the shipped values —
    `ROTATE_NOISE = true`, `ROT_METHOD = 2`, `ROT_PARS = {inc = 0.05, space =

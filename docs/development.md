@@ -114,7 +114,8 @@ with `specmod[multitaper]` installed passes tests that CI, which installs only
 
 - **`main`** is the trunk. Everything lands here, and it is the default branch.
 - **`master`** is frozen: the permanent record of the pre-refactor code, doing
-  the job a `v0.1.0` tag would have done. Never commit to it.
+  the job a `v0.1.1` tag would have done: its tip, `453c77c`, is the commit the
+  Magna paper cites. Never commit to it.
 - Feature branches are short-lived and merge into `main` via pull request.
 
 Every pull request must target **`sgjholt/SpecMod`**. See §6.7 of the plan for
