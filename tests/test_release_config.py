@@ -194,9 +194,25 @@ class TestTheRoadmapKeepsUpWithTheReleases:
         text = (ROOT / "docs" / "roadmap.md").read_text()
         return [tuple(int(p) for p in m.groups()) for m in self.SHIPPED.finditer(text)]
 
-    def _released(self) -> tuple[int, int, int]:
-        version = json.loads(MANIFEST.read_text())["."]
-        return tuple(int(p) for p in version.split("."))
+    #: Every version CHANGELOG.md carries a release section for.
+    RELEASED = re.compile(r"^## \[(\d+)\.(\d+)\.(\d+)\]", re.MULTILINE)
+
+    def _released_versions(self) -> list[tuple[int, int, int]]:
+        text = (ROOT / "CHANGELOG.md").read_text()
+        return sorted(
+            tuple(int(p) for p in m.groups()) for m in self.RELEASED.finditer(text)
+        )
+
+    def _published_minor(self) -> tuple[int, int]:
+        """The newest minor a reader could already have installed.
+
+        Not the newest in the file. release-please prepares a release by
+        writing its changelog section and bumping the manifest in a pull
+        request, so the newest entry is a proposal until that merges — and the
+        roadmap documents shipped work, which a proposal is not.
+        """
+        minors = sorted({v[:2] for v in self._released_versions()})
+        return minors[-2] if len(minors) > 1 else minors[-1]
 
     def test_the_roadmap_names_some_shipped_version(self) -> None:
         """A heading rename would leave the check below matching nothing."""
@@ -219,16 +235,25 @@ class TestTheRoadmapKeepsUpWithTheReleases:
             "*In progress — not yet released* until the release goes out."
         )
 
-    def test_the_roadmap_is_not_behind_the_released_minor(self) -> None:
-        """Feature and breaking work bumps the minor while this is 0.x, and
-        that is the work the roadmap tracks. A patch release is deliberately
-        not enough to fail this: a bug fix does not owe the page a section, and
-        a check that fires on every release teaches people to add empty ones.
+    def test_the_roadmap_is_not_behind_the_published_minor(self) -> None:
+        """The roadmap may lag the newest release, but not the one before it.
+
+        Feature and breaking work bumps the minor while this is 0.x, and that
+        is the work the roadmap tracks. A patch release is deliberately not
+        enough to fail this: a bug fix does not owe the page a section, and a
+        check that fires on every release teaches people to add empty ones.
+
+        The comparison is against the *published* minor rather than the newest,
+        because the newest is whatever the open release pull request proposes.
+        Requiring the page to name that one first is circular — nothing has
+        shipped until the pull request merges — and it makes every minor
+        release unmergeable. The cost is that a page left stale is caught one
+        release later than it went stale, which is what the message says.
         """
-        released = self._released()
+        published = self._published_minor()
         newest = max(self._roadmap_versions())
-        assert newest[:2] >= released[:2], (
-            f"v{'.'.join(map(str, released))} is released and the newest "
+        assert newest[:2] >= published, (
+            f"v{published[0]}.{published[1]} has shipped and the newest "
             f"version docs/roadmap.md names is v{'.'.join(map(str, newest))}. "
             "Move what shipped out of *In progress — not yet released* and "
             "give it a `## Shipped in` section."
