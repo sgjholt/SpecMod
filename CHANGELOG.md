@@ -9,6 +9,29 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.4.0](https://github.com/sgjholt/SpecMod/compare/v0.3.0...v0.4.0) (2026-09-16)
+
+
+### Features
+
+* **smoothing:** wire [smoothing] method up, and add three more methods ([fff3ab1](https://github.com/sgjholt/SpecMod/commit/fff3ab1ef01a7f4d942fd776821d0418a0642a55))
+
+
+### Bug Fixes
+
+* **config:** refuse a [smoothing] method the pipeline does not apply ([1f18c68](https://github.com/sgjholt/SpecMod/commit/1f18c68a71794c2b1612a7cf0feedcfef39b625b))
+* **test:** compare the roadmap against the published minor, not the proposed one ([1e34b4e](https://github.com/sgjholt/SpecMod/commit/1e34b4e5ab2bdef5d65f6fc0d620a42b9c3891eb))
+* **tools:** call the preprocess API that 0.3.0 left behind ([8501c8e](https://github.com/sgjholt/SpecMod/commit/8501c8ed618e5d652b9eeffc36893115a58fd7d5))
+
+
+### Documentation
+
+* keep the reasoning out of the docstrings, in comments where it belongs ([2684ec9](https://github.com/sgjholt/SpecMod/commit/2684ec923c8dcf59e882b2d11e9dc11ccbcf3766))
+* say what tagging the frozen commit does and does not trigger ([2273219](https://github.com/sgjholt/SpecMod/commit/2273219e2a78ac1c1562118c2a1b3bce4df597dd))
+* state what the smoothers are, not how they were arrived at ([4c97491](https://github.com/sgjholt/SpecMod/commit/4c97491d50aba5a1468304072ab3c6ed2904f2e0))
+* the 0.3.0 work shipped a week ago, so stop calling it unreleased ([e2aaced](https://github.com/sgjholt/SpecMod/commit/e2aaced546a247b2c5967f01586c19928bcfe297))
+* v0.1.1 is master's tip, which is what freezing it was for ([db50972](https://github.com/sgjholt/SpecMod/commit/db509729f3b7877a20b5691dddec8a6e139fb466))
+
 ## [0.3.0](https://github.com/sgjholt/SpecMod/compare/v0.2.3...v0.3.0) (2026-09-06)
 
 
