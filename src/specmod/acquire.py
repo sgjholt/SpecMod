@@ -232,6 +232,48 @@ def _resolve_event(
     return resolved, catalogue
 
 
+def _bulk_request(
+    inventory: Any, config: AcquisitionConfig, start: Any, end: Any
+) -> list[tuple[Any, ...]]:
+    """One request line per channel the inventory holds.
+
+    The waveforms are asked for by name, from the inventory the station query
+    returned, rather than by repeating the config's wildcards. FDSN dataselect
+    takes no geographic parameters, so a wildcard request is unbounded however
+    the stations were selected: ``max_radius_km`` reaches ``get_stations`` and
+    can never reach the waveform call. Asking channel by channel is what makes
+    the radius apply to both, and it is also what guarantees every trace in the
+    archive has metadata beside it.
+
+    Channel epochs are collapsed. An instrument replaced mid-window appears
+    twice in the inventory and is one request.
+    """
+    lines = {
+        (
+            network.code,
+            station.code,
+            channel.location_code or "--",
+            channel.code,
+        )
+        for network in inventory
+        for station in network
+        for channel in station
+    }
+    if not lines:
+        raise ValueError(
+            f"no channels matched {config.stations.network}."
+            f"{config.stations.station}.{config.stations.location}."
+            f"{config.stations.channel}"
+            + (
+                ""
+                if config.stations.max_radius_km is None
+                else f" within {config.stations.max_radius_km} km"
+            )
+            + f" at {config.data_centre}, so there are no waveforms to ask for."
+        )
+    return [(*line, start, end) for line in sorted(lines)]
+
+
 def fetch(
     config: str | Path | AcquisitionConfig,
     out: str | Path,
@@ -243,8 +285,11 @@ def fetch(
 
     Returns the manifest, which is also written to ``manifest.json`` beside the
     data. ``client`` accepts anything with the ObsPy FDSN client's
-    ``get_events``, ``get_stations`` and ``get_waveforms`` methods; tests pass a
-    fake so that no test touches the network.
+    ``get_events``, ``get_stations`` and ``get_waveforms_bulk`` methods; tests
+    pass a fake so that no test touches the network.
+
+    The waveform request is built from the station query's answer, not from the
+    config's wildcards — see :func:`_bulk_request`.
     """
     import obspy  # noqa: PLC0415
 
@@ -276,14 +321,7 @@ def fetch(
             station_kwargs["minradius"] = config.stations.min_radius_km / 111.195
 
     inventory = client.get_stations(**station_kwargs)
-    stream = client.get_waveforms(
-        network=config.stations.network,
-        station=config.stations.station,
-        location=config.stations.location,
-        channel=config.stations.channel,
-        starttime=start,
-        endtime=end,
-    )
+    stream = client.get_waveforms_bulk(_bulk_request(inventory, config, start, end))
 
     paths = EventDirectory(Path(out) / event.origin)
     paths.waveforms.mkdir(parents=True, exist_ok=True)

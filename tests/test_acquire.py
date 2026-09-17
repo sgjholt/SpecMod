@@ -44,10 +44,13 @@ class FakeClient:
     hand-written double makes those readable.
     """
 
-    def __init__(self, *, n_traces: int = 2, events: Any = None) -> None:
+    def __init__(
+        self, *, n_traces: int = 2, events: Any = None, inventory: Any = None
+    ) -> None:
         self.calls: dict[str, dict[str, Any]] = {}
         self._n_traces = n_traces
         self._events = events
+        self._inventory = inventory
 
     def get_events(self, **kwargs: Any) -> Any:
         self.calls["get_events"] = kwargs
@@ -55,10 +58,12 @@ class FakeClient:
 
     def get_stations(self, **kwargs: Any) -> Any:
         self.calls["get_stations"] = kwargs
+        if self._inventory is not None:
+            return self._inventory
         return obspy.read_inventory()  # ObsPy's bundled example inventory
 
-    def get_waveforms(self, **kwargs: Any) -> Any:
-        self.calls["get_waveforms"] = kwargs
+    def get_waveforms_bulk(self, bulk: Any) -> Any:
+        self.calls["get_waveforms_bulk"] = {"bulk": list(bulk)}
         stream = obspy.read()  # three traces of example data
         return obspy.Stream(stream[: self._n_traces])
 
@@ -133,9 +138,75 @@ class TestFetch:
         fetch(_config(), out=tmp_path, client=client)
 
         origin = obspy.UTCDateTime(EXPLICIT["origin"])
-        asked = client.calls["get_waveforms"]
-        assert asked["starttime"] == origin - 5.0
-        assert asked["endtime"] == origin + 60.0
+        bulk = client.calls["get_waveforms_bulk"]["bulk"]
+        assert bulk
+        # `UTCDateTime` is not usable in a set, so compare elementwise.
+        assert all(line[4] == origin - 5.0 for line in bulk)
+        assert all(line[5] == origin + 60.0 for line in bulk)
+
+    def test_the_waveforms_are_asked_for_by_name_not_by_wildcard(
+        self, tmp_path: Path
+    ) -> None:
+        """The request that carries the radius.
+
+        FDSN dataselect has no geographic parameters, so a wildcard waveform
+        request is unbounded whatever the station query asked for. A live fetch
+        for Magna with `max_radius_km = 50` returned three BH channels from a
+        station 225 km out, with no metadata in the archived inventory, because
+        the station pattern went to the wire verbatim.
+        """
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(max_radius_km=50.0)),
+            out=tmp_path,
+            client=client,
+        )
+
+        bulk = client.calls["get_waveforms_bulk"]["bulk"]
+        assert bulk
+        assert not [line for line in bulk if "*" in line[:4] or "?" in line[:4]]
+
+    def test_no_waveform_is_asked_for_without_metadata_beside_it(
+        self, tmp_path: Path
+    ) -> None:
+        """The property the bulk request gives for free.
+
+        Whatever the station query returned is exactly what is requested, so
+        the archive cannot hold a trace whose station is missing from
+        `inventory.xml`.
+        """
+        client = FakeClient()
+        fetch(_config(stations=StationSpec(station="*")), out=tmp_path, client=client)
+
+        inventory = obspy.read_inventory()
+        available = {
+            (network.code, station.code, channel.location_code or "--", channel.code)
+            for network in inventory
+            for station in network
+            for channel in station
+        }
+        asked = {line[:4] for line in client.calls["get_waveforms_bulk"]["bulk"]}
+        assert asked == available
+
+    def test_a_channel_with_two_epochs_is_one_request(self, tmp_path: Path) -> None:
+        """An instrument replaced mid-window appears twice in the inventory."""
+        doubled = obspy.read_inventory() + obspy.read_inventory()
+        client = FakeClient(inventory=doubled)
+        fetch(_config(), out=tmp_path, client=client)
+
+        bulk = client.calls["get_waveforms_bulk"]["bulk"]
+        assert len(bulk) == len({line[:4] for line in bulk})
+
+    def test_an_empty_station_query_says_so(self, tmp_path: Path) -> None:
+        """Better than a bulk request with no lines, which FDSN rejects with a
+        message about syntax rather than about the radius."""
+        client = FakeClient(inventory=obspy.Inventory())
+        with pytest.raises(ValueError, match="no channels matched"):
+            fetch(
+                _config(stations=StationSpec(network="LV", max_radius_km=1.0)),
+                out=tmp_path,
+                client=client,
+            )
 
     def test_it_asks_for_the_response(self, tmp_path: Path) -> None:
         """Raw counts are only useful with the response stored beside them."""
@@ -341,7 +412,7 @@ class TestSeparateCatalogueAndArchive:
         assert "get_events" in catalogue.calls
         assert "get_events" not in archive.calls
         # And the waveforms still come from the archive.
-        assert "get_waveforms" in archive.calls
+        assert "get_waveforms_bulk" in archive.calls
 
     def test_the_manifest_records_both(self, tmp_path: Path) -> None:
         manifest = fetch(
@@ -360,7 +431,7 @@ class TestSeparateCatalogueAndArchive:
         client = FakeClient(events=_magna_catalogue())
         fetch(_config(event=EventSpec(eventid="x")), out=tmp_path, client=client)
         assert "get_events" in client.calls
-        assert "get_waveforms" in client.calls
+        assert "get_waveforms_bulk" in client.calls
 
 
 def _magna_catalogue() -> _Catalogue:
