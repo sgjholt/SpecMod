@@ -15,7 +15,11 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from obspy.geodetics import gps2dist_azimuth, locations2degrees  # noqa: E402
+
 from specmod.acquire import (  # noqa: E402
+    _KM_PER_DEGREE_MAX,
+    _KM_PER_DEGREE_MIN,
     AcquisitionConfig,
     EventSpec,
     StationSpec,
@@ -27,6 +31,14 @@ from specmod.acquire import (  # noqa: E402
 from specmod.datasets import EventDirectory  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Most tests here fetch without priority lists, and ObsPy's example inventory
+# has four instruments at GR.FUR, so the co-sited warning fires all over the
+# suite and says nothing about the test that tripped it. `TestChannelPriorities`
+# asserts it with `pytest.warns`, which ignores this filter.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.*carry more than one instrument:UserWarning"
+)
 
 EXPLICIT = {
     "origin": "2019-08-26T07:30:47.000000Z",
@@ -155,7 +167,7 @@ class TestFetch:
         station 225 km out, with no metadata in the archived inventory, because
         the station pattern went to the wire verbatim.
         """
-        client = FakeClient()
+        client = FakeClient(inventory=_inventory_around_the_event())
         fetch(
             _config(stations=StationSpec(max_radius_km=50.0)),
             out=tmp_path,
@@ -214,11 +226,9 @@ class TestFetch:
         fetch(_config(), out=tmp_path, client=client)
         assert client.calls["get_stations"]["level"] == "response"
 
-    def test_a_radius_is_converted_to_degrees_about_the_epicentre(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_radius_is_asked_about_the_epicentre(self, tmp_path: Path) -> None:
         """FDSN takes degrees; a config in kilometres is the friendlier unit."""
-        client = FakeClient()
+        client = FakeClient(inventory=_inventory_around_the_event())
         fetch(
             _config(stations=StationSpec(max_radius_km=111.195)),
             out=tmp_path,
@@ -226,8 +236,9 @@ class TestFetch:
         )
 
         asked = client.calls["get_stations"]
-        assert asked["maxradius"] == pytest.approx(1.0, rel=1e-6)
+        assert asked["maxradius"] == pytest.approx(1.0, rel=0.01)
         assert asked["latitude"] == EXPLICIT["latitude"]
+        assert asked["longitude"] == EXPLICIT["longitude"]
 
     def test_no_radius_means_no_geographic_filter(self, tmp_path: Path) -> None:
         """Sending a centre with no radius would silently narrow the request."""
@@ -242,6 +253,409 @@ class TestFetch:
         client = FakeClient()
         fetch(_config(), out=tmp_path, client=client)
         assert "get_events" not in client.calls
+
+
+def _inventory_around_the_event(*, north_km: float = 10.0) -> Any:
+    """The example inventory, moved to sit near the test event.
+
+    ObsPy's example stations are in Bavaria and the test event is in
+    Lancashire, so any radius at all excludes every one of them. Each station is
+    shifted onto the event's meridian, spread northwards, and the tests then
+    measure what they built rather than assuming a kilometres-per-degree.
+    """
+    inventory = obspy.read_inventory()
+    # By code, so that BW.RJOB's three epochs stay one place.
+    codes = sorted({s.code for network in inventory for s in network})
+    for network in inventory:
+        for station in network:
+            step = codes.index(station.code) + 1
+            station.latitude = EXPLICIT["latitude"] + step * north_km / 111.0
+            station.longitude = EXPLICIT["longitude"]
+    return inventory
+
+
+def _epicentral_km(station: Any) -> float:
+    metres, _, _ = gps2dist_azimuth(
+        EXPLICIT["latitude"], EXPLICIT["longitude"], station.latitude, station.longitude
+    )
+    return float(metres) / 1000.0
+
+
+def _two_sensors_at_one_station() -> Any:
+    """The example inventory, with GR.FUR's broadband and short period split.
+
+    ``HH`` moves to location ``00`` and ``BH`` to ``10``, which is the layout
+    that makes the two priority lists distinguishable: channel priorities rank
+    within a location, location priorities rank across them.
+    """
+    inventory = obspy.read_inventory()
+    for network in inventory:
+        for station in network:
+            for channel in station:
+                if channel.code.startswith("HH"):
+                    channel.location_code = "00"
+                elif channel.code.startswith("BH"):
+                    channel.location_code = "10"
+    return inventory
+
+
+def _asked_for(client: FakeClient) -> set[tuple[str, ...]]:
+    return {line[:4] for line in client.calls["get_waveforms_bulk"]["bulk"]}
+
+
+class TestRadius:
+    """`max_radius_km` means kilometres, at every latitude.
+
+    FDSN takes a radius in degrees of arc, and a degree is not a fixed number of
+    kilometres: measured on WGS84 across latitude and azimuth it runs from
+    110.574 km at the equator to 111.691 km at the poles. Converting with one
+    constant moves the boundary by up to half a percent — ±0.3 km on a 50 km
+    radius, ±2 km on 400 km — so the query is widened and the cut made here.
+    """
+
+    def test_the_cut_is_the_true_epicentral_distance(self, tmp_path: Path) -> None:
+        inventory = _inventory_around_the_event(north_km=10.0)
+        client = FakeClient(inventory=inventory)
+        limit = 25.0
+        fetch(
+            _config(stations=StationSpec(max_radius_km=limit)),
+            out=tmp_path,
+            client=client,
+        )
+
+        expected = {
+            station.code
+            for network in inventory
+            for station in network
+            if _epicentral_km(station) <= limit
+        }
+        assert {line[1] for line in _asked_for(client)} == expected
+
+    @pytest.mark.parametrize("limit", [9.9, 10.1])
+    def test_a_station_either_side_of_the_boundary(
+        self, limit: float, tmp_path: Path
+    ) -> None:
+        """The nearest station sits at ~10 km, so the two limits straddle it."""
+        inventory = _inventory_around_the_event(north_km=10.0)
+        client = FakeClient(inventory=inventory)
+        nearest = min((s for network in inventory for s in network), key=_epicentral_km)
+        inside = _epicentral_km(nearest) <= limit
+
+        if not inside:
+            with pytest.raises(ValueError, match="no channels matched"):
+                fetch(
+                    _config(stations=StationSpec(max_radius_km=limit)),
+                    out=tmp_path,
+                    client=client,
+                )
+            return
+
+        fetch(
+            _config(stations=StationSpec(max_radius_km=limit)),
+            out=tmp_path,
+            client=client,
+        )
+        assert {line[1] for line in _asked_for(client)} == {nearest.code}
+
+    def test_the_station_query_is_widened_so_it_cannot_clip(
+        self, tmp_path: Path
+    ) -> None:
+        """The server's degrees must not exclude what the exact cut would keep.
+
+        Sent at the loosest kilometres-per-degree, so the margin is on the side
+        of asking for a few stations too many and dropping them here.
+        """
+        client = FakeClient(inventory=_inventory_around_the_event())
+        fetch(
+            _config(stations=StationSpec(max_radius_km=50.0)),
+            out=tmp_path,
+            client=client,
+        )
+
+        sent = client.calls["get_stations"]["maxradius"]
+        assert sent >= 50.0 / 110.574  # the tightest degree on the ellipsoid
+        assert sent <= 50.0 / 110.0  # but not so loose as to be a free-for-all
+
+    def test_a_minimum_radius_alone_is_honoured(self, tmp_path: Path) -> None:
+        """It used to be sent only alongside a maximum, so on its own it did nothing."""
+        inventory = _inventory_around_the_event(north_km=10.0)
+        client = FakeClient(inventory=inventory)
+        fetch(
+            _config(stations=StationSpec(min_radius_km=25.0)),
+            out=tmp_path,
+            client=client,
+        )
+
+        assert "minradius" in client.calls["get_stations"]
+        assert client.calls["get_stations"]["latitude"] == EXPLICIT["latitude"]
+        expected = {
+            station.code
+            for network in inventory
+            for station in network
+            if _epicentral_km(station) >= 25.0
+        }
+        assert {line[1] for line in _asked_for(client)} == expected
+
+    def test_a_local_array_is_cut_to_the_metre(self, tmp_path: Path) -> None:
+        """A sub-kilometre deployment is a radius like any other.
+
+        Induced-seismicity and mine arrays span hundreds of metres, which is
+        where converting kilometres to degrees with one constant is worst in
+        relative terms: at 500 m the equator-to-pole spread is 5 m, and station
+        spacings are smaller than that.
+        """
+        inventory = _inventory_around_the_event(north_km=0.2)
+        client = FakeClient(inventory=inventory)
+        fetch(
+            _config(stations=StationSpec(max_radius_km=0.5)),
+            out=tmp_path,
+            client=client,
+        )
+
+        expected = {
+            station.code
+            for network in inventory
+            for station in network
+            if _epicentral_km(station) <= 0.5
+        }
+        assert expected  # the fixture must straddle the limit, not sit inside it
+        assert len(expected) < 3
+        assert {line[1] for line in _asked_for(client)} == expected
+
+    @pytest.mark.parametrize("radius", [0.0, -1.0])
+    def test_a_radius_that_selects_nothing_is_refused(self, radius: float) -> None:
+        """`max_radius_km = 0` is a typo, not a request for an empty dataset."""
+        with pytest.raises(ValueError, match="selects nothing"):
+            StationSpec(max_radius_km=radius)
+
+    def test_an_empty_annulus_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="annulus is empty"):
+            StationSpec(min_radius_km=50.0, max_radius_km=10.0)
+
+    def test_the_conversion_bounds_bracket_every_latitude(self) -> None:
+        """The two constants are claims about WGS84, so measure them.
+
+        If a later edit tightens them towards the 111.195 they replaced, the
+        widened query starts clipping stations the exact cut would have kept.
+        """
+        measured = []
+        for lat in range(0, 89):
+            for dlat, dlon in ((1.0, 0.0), (0.0, 1.0), (0.7, 0.7)):
+                if lat + dlat > 89.5:
+                    continue
+                degrees = locations2degrees(lat, 0.0, lat + dlat, dlon)
+                metres, _, _ = gps2dist_azimuth(lat, 0.0, lat + dlat, dlon)
+                measured.append(metres / 1000.0 / degrees)
+
+        assert min(measured) >= _KM_PER_DEGREE_MIN
+        assert max(measured) <= _KM_PER_DEGREE_MAX
+
+
+class TestChannelPriorities:
+    """One instrument per station, rather than every instrument at every station.
+
+    A station query for `HH*,BH*,HN*,EN*` returns a broadband *and* an
+    accelerometer wherever both are installed, and the waveform request is built
+    from that answer, so both are downloaded and both reach the pipeline — where
+    they are two records of one ground motion, weighted as two stations by
+    anything that averages over them.
+    """
+
+    def test_the_first_matching_pattern_wins(self, tmp_path: Path) -> None:
+        client = FakeClient()
+        fetch(
+            _config(
+                stations=StationSpec(channel_priorities=["HH[ZNE]", "BH[ZNE]"]),
+            ),
+            out=tmp_path,
+            client=client,
+        )
+
+        codes = {line[3] for line in _asked_for(client)}
+        assert codes == {"HHZ", "HHN", "HHE"}
+
+    def test_a_station_without_the_first_choice_falls_through(
+        self, tmp_path: Path
+    ) -> None:
+        """The point of a ranking: BW.RJOB has only EH, and is still fetched."""
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(channel_priorities=["HH[ZNE]", "EH[ZNE]"])),
+            out=tmp_path,
+            client=client,
+        )
+
+        by_station = {}
+        for network, station, _, channel in _asked_for(client):
+            by_station.setdefault(f"{network}.{station}", set()).add(channel[:2])
+        assert by_station == {
+            "GR.FUR": {"HH"},
+            "GR.WET": {"HH"},
+            "BW.RJOB": {"EH"},
+        }
+
+    def test_a_station_matching_no_pattern_is_dropped(self, tmp_path: Path) -> None:
+        """A priority list is a restriction as well as a ranking."""
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(channel_priorities=["HH[ZNE]"])),
+            out=tmp_path,
+            client=client,
+        )
+        assert "BW" not in {line[0] for line in _asked_for(client)}
+
+    def test_the_written_inventory_holds_only_what_was_fetched(
+        self, tmp_path: Path
+    ) -> None:
+        """The invariant the bulk request gives, kept in the other direction.
+
+        Pruning the inventory as well as the request is what keeps the archive
+        describing exactly what it holds — no metadata for an instrument that
+        was ranked out and never downloaded.
+        """
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(channel_priorities=["HH[ZNE]"])),
+            out=tmp_path,
+            client=client,
+        )
+
+        written = obspy.read_inventory(
+            str(EventDirectory(tmp_path / EXPLICIT["origin"]).inventory)
+        )
+        on_disk = {
+            (network.code, station.code, channel.location_code or "--", channel.code)
+            for network in written
+            for station in network
+            for channel in station
+        }
+        assert on_disk == _asked_for(client)
+
+    def test_channels_are_ranked_within_each_location(self, tmp_path: Path) -> None:
+        """Two sensors at one station are two selections, not one.
+
+        ObsPy's `MassDownloader` groups by location before ranking channels, so
+        a config carried over from it selects the same instruments.
+        """
+        client = FakeClient(inventory=_two_sensors_at_one_station())
+        fetch(
+            _config(stations=StationSpec(channel_priorities=["HH[ZNE]", "BH[ZNE]"])),
+            out=tmp_path,
+            client=client,
+        )
+
+        fur = {line[2:4] for line in _asked_for(client) if line[1] == "FUR"}
+        assert {loc for loc, _ in fur} == {"00", "10"}
+
+    def test_location_priorities_pick_one_of_them(self, tmp_path: Path) -> None:
+        client = FakeClient(inventory=_two_sensors_at_one_station())
+        fetch(
+            _config(
+                stations=StationSpec(
+                    channel_priorities=["HH[ZNE]", "BH[ZNE]"],
+                    location_priorities=["10", "00"],
+                )
+            ),
+            out=tmp_path,
+            client=client,
+        )
+
+        fur = {line[2:4] for line in _asked_for(client) if line[1] == "FUR"}
+        assert {loc for loc, _ in fur} == {"10"}
+        assert {code[:2] for _, code in fur} == {"BH"}
+
+    def test_a_blank_location_is_the_empty_pattern(self, tmp_path: Path) -> None:
+        """`""` in the config, `--` on the wire: the two conventions must meet."""
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(location_priorities=[""])),
+            out=tmp_path,
+            client=client,
+        )
+        assert {line[2] for line in _asked_for(client)} == {"--"}
+
+    def test_priorities_that_match_nothing_say_so(self, tmp_path: Path) -> None:
+        """Otherwise this is an empty bulk request, which FDSN rejects on syntax."""
+        client = FakeClient()
+        with pytest.raises(ValueError, match="matched none of them"):
+            fetch(
+                _config(stations=StationSpec(channel_priorities=["ZZ[ZNE]"])),
+                out=tmp_path,
+                client=client,
+            )
+
+    def test_the_patterns_are_matched_against_upper_case_codes(
+        self, tmp_path: Path
+    ) -> None:
+        """A lower-case pattern matches nothing, and the error says why."""
+        client = FakeClient()
+        with pytest.raises(ValueError, match="upper case"):
+            fetch(
+                _config(stations=StationSpec(channel_priorities=["hh[zne]"])),
+                out=tmp_path,
+                client=client,
+            )
+
+    def test_an_unranked_fetch_warns_about_co_sited_instruments(
+        self, tmp_path: Path
+    ) -> None:
+        """The trap this exists to close, named at the moment it is sprung."""
+        with pytest.warns(UserWarning, match="more than one instrument"):
+            fetch(_config(), out=tmp_path, client=FakeClient())
+
+    def test_one_instrument_per_station_is_not_warned_about(
+        self, tmp_path: Path, recwarn: Any
+    ) -> None:
+        only_rjob = obspy.read_inventory().select(network="BW")
+        fetch(_config(), out=tmp_path, client=FakeClient(inventory=only_rjob))
+        assert not [w for w in recwarn if "more than one instrument" in str(w.message)]
+
+    def test_keeping_everything_deliberately_is_not_warned_about(
+        self, tmp_path: Path, recwarn: Any
+    ) -> None:
+        """`["*"]` is how a config says it wants both instruments and means it."""
+        client = FakeClient()
+        fetch(
+            _config(stations=StationSpec(channel_priorities=["*"])),
+            out=tmp_path,
+            client=client,
+        )
+
+        assert not [w for w in recwarn if "more than one instrument" in str(w.message)]
+        assert len(_asked_for(client)) == 24
+
+    def test_the_manifest_counts_what_was_narrowed_away(self, tmp_path: Path) -> None:
+        manifest = fetch(
+            _config(stations=StationSpec(channel_priorities=["HH[ZNE]"])),
+            out=tmp_path,
+            client=FakeClient(),
+        )
+
+        resolved = manifest["resolved"]
+        assert resolved["channels_available"] == 24
+        assert resolved["channels_requested"] == 6  # HH at FUR and WET
+        assert len(resolved["channels"]) == 2  # what the fake archive serves
+
+    @pytest.mark.parametrize("field", ["channel_priorities", "location_priorities"])
+    def test_one_pattern_is_still_a_list(self, field: str) -> None:
+        """`channel_priorities = "HH[ZNE]"` would otherwise rank by character."""
+        with pytest.raises(ValueError, match="not one pattern"):
+            StationSpec(**{field: "HH[ZNE]"})
+
+    @pytest.mark.parametrize("field", ["channel_priorities", "location_priorities"])
+    def test_an_empty_list_is_refused(self, field: str) -> None:
+        with pytest.raises(ValueError, match="select nothing"):
+            StationSpec(**{field: []})
+
+    def test_a_config_carries_them(self) -> None:
+        config = AcquisitionConfig.from_dict(
+            {
+                "name": "x",
+                "event": EXPLICIT,
+                "stations": {"channel_priorities": ["HH[ZNE]", "HN[ZNE]"]},
+            }
+        )
+        assert config.stations.channel_priorities == ("HH[ZNE]", "HN[ZNE]")
 
 
 class TestManifest:
@@ -259,7 +673,12 @@ class TestManifest:
     def test_the_config_travels_with_the_data(self, tmp_path: Path) -> None:
         """A downloaded dataset has to be self-describing."""
         source = ROOT / "datasets" / "pnr_2019.toml"
-        manifest = fetch(source, out=tmp_path, client=FakeClient())
+        # The shipped config has a 30 km radius, and it is now cut exactly.
+        manifest = fetch(
+            source,
+            out=tmp_path,
+            client=FakeClient(inventory=_inventory_around_the_event()),
+        )
         assert manifest["config"] == source.read_text()
 
     def test_it_is_written_beside_the_data(self, tmp_path: Path) -> None:

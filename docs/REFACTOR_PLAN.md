@@ -2434,6 +2434,15 @@ Two design constraints worth fixing now:
   reimplementation of `MassDownloader`, which is built for large restricted-data
   campaigns and is more machinery than this needs.
 
+  What that choice costs, recorded as it is paid: `MassDownloader` supplies
+  `CircularDomain`, `sanitize=True` and `channel_priorities` for free, and each
+  has had to be built by hand here after its absence showed up in a live fetch.
+  The radius reaching only the station query, an archive holding waveforms with
+  no metadata beside them, and 507 channels for 88 stations were all one
+  property of `Restrictions` each. The wrapper stays thin, but "ObsPy already
+  does it" is an argument for reading what ObsPy does before writing the thin
+  version.
+
 TOML is suggested for the config, read by stdlib `tomllib` on 3.11+ and
 consistent with `pyproject.toml`. YAML is equally fine if it reads better for
 nested station rules; it costs one small dependency.
