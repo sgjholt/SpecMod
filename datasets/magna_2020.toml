@@ -35,6 +35,12 @@ location = "*"
 # fetched too: the workflow rotates horizontals to R/T, and rotation is not a
 # reason to discard Z from the archive.
 channel = "HH*,BH*,HN*,EN*"
+# Deliberately unranked. `channel_priorities` would keep one instrument per
+# station — the right default for a regional dataset, and what silences the
+# co-sited warning this fetch prints — but here the near-source broadbands are
+# the records most likely to clip, and the accelerometer beside them is the
+# reason the paper covers that distance range at all. Both are kept and the
+# choice is made at processing time.
 max_radius_km = 400.0
 
 [window]

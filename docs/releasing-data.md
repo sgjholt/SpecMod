@@ -46,6 +46,10 @@ python -m json.tool build/magna_2020/manifest.json | head -40
 - `channels` — the list *after* wildcard expansion. `HH*` does not tell you
   what you got; this does. A much shorter list than expected usually means a
   network was not open at that time, not that the request was malformed.
+- `channels_available`, `channels_requested` — what the station query offered,
+  and what was asked for after the priority lists narrowed it. A large gap
+  between `channels_requested` and `channels` means the archive did not serve
+  what its own metadata advertises.
 - `data_centre`, `obspy_version`, `specmod_version`, `fetched_at` — the
   provenance that makes the response reproducible-ish. It cannot be fully
   reproducible: FDSN is not content-addressed, archives get backfilled and
@@ -53,6 +57,49 @@ python -m json.tool build/magna_2020/manifest.json | head -40
 
 If any of that is wrong, fix the config and re-fetch. The artefact is about to
 become immutable.
+
+### Picking one instrument per station
+
+A `channel` pattern that names several instruments — `HH*,BH*,HN*,EN*` — returns
+every one of them at every station that has them. Magna's 88 stations return 507
+channels that way, and a station with both a broadband and an accelerometer
+contributes the same ground motion twice: two entries in a `SpectrumSet`,
+weighted as two stations by anything that averages over them.
+
+`channel_priorities` ranks them instead. The first pattern that matches anything
+at a station wins, so the list is read as "a broadband if there is one,
+otherwise an accelerometer":
+
+```toml
+[stations]
+channel = "HH*,BH*,HN*,EN*"
+channel_priorities = ["HH[ZNE]", "BH[ZNE]", "HN[ZNE]", "EN[ZNE]"]
+location_priorities = ["", "00", "10"]
+```
+
+`channel` still says what the data centre may offer; the priorities say which of
+what it offers to keep. A station matching no pattern at all is dropped — the
+list is a restriction as well as a ranking — and the written `inventory.xml` is
+pruned to match, so the archive keeps describing exactly what it holds.
+
+Patterns are matched case-sensitively against SEED codes, which are upper case.
+`["*"]` keeps everything, which is how a config says it wants both instruments
+and means it; with no list at all, `fetch` warns that it is fetching co-sited
+instruments and names the stations.
+
+### What the radius means
+
+`max_radius_km` is cut against the true WGS84 distance from the epicentre, not
+against the degrees FDSN takes. A degree of arc is 110.574 km at the equator and
+111.691 km at the poles, so converting with a single constant moves the boundary
+by up to half a percent — ±0.3 km on a 50 km radius, ±2 km on 400 km. The
+station query is sent deliberately wide and the exact cut is made locally, which
+costs a few extra stations in the query and makes the radius mean kilometres
+wherever the event is.
+
+The radii are epicentral. For a local array the depth is usually the larger
+term: every station of a 500 m array over a 2 km-deep event is at 2 km
+hypocentral distance.
 
 ## 2. Archive and hash
 
