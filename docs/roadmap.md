@@ -171,9 +171,7 @@ Fourier grid is uniform in Hz. Weighting samples equally tilts the result by
 axis brings that to 3.2e-8 dex. The latter is the default. Konno–Ohmachi
 applies the former, by definition, and keeps it.
 
-## In progress — not yet released
-
-Merged on `main`, and it will name its version when a release goes out.
+## Shipped in v0.5.0
 
 ### The station selection means what the config says
 
@@ -223,6 +221,19 @@ the same code path. Nothing breaks at import or at the call; results move. That
 is a weaker promise than the one 1.0 makes and a real one to have broken, so
 the count starts again rather than standing at one.
 
+**v0.5.0 is not clean either, in the same way.** Nothing was renamed and no
+signature moved. But `max_radius_km` now cuts against true WGS84 distance
+rather than a fixed kilometres-per-degree, so the same config can select a
+different set of stations than it did before, and three radius values that used
+to be accepted — zero, negative, and a minimum outside the maximum — are now
+refused when the config is read. A config is as much a caller as a call site.
+
+Twice in a row makes it worth naming: what keeps moving is not the API, it is
+what the API *does* with a setting that was already there. A deprecation cycle
+does not protect against that, since there is nothing to deprecate; the
+[upgrading guide](upgrading.md) is the only thing that does, and 1.0 will not
+change that. The count stands at zero.
+
 ## After 1.0
 
 Designed but deliberately not on the path to 1.0, because each is blocked on
@@ -247,9 +258,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. Between releases there is no such
-section at all, which is a state the page should be in rather than a section
-that went missing.
+shipped, and this page does not blur the two. **There is no such section right
+now**, because nothing is merged and unreleased; that is the state the page
+should be in between releases, not a section that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was
