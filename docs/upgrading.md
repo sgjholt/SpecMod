@@ -1,12 +1,51 @@
 # Upgrading
 
-Two moves are documented here. Most readers want the first: `0.3.0` renamed
-ten functions in `specmod.preprocess` and changed what they do with the stream
-they are given.
+Four moves are documented here. Most readers porting code want `0.2` to `0.3`,
+which renamed ten functions in `specmod.preprocess` and changed what they do
+with the stream they are given. The two moves above it rename nothing: they are
+settings that began doing what they always said, so the break is in the numbers
+rather than in the call.
 
 `0.x` ships breaking changes in minor bumps without a deprecation cycle,
 because shimming an API still being worked out costs more than it protects.
 See [Releasing the software](releasing.md#what-a-version-number-means-while-this-is-0x).
+
+## From 0.4 to 0.5
+
+**`max_radius_km` and `min_radius_km` now mean kilometres.** They were converted
+to degrees at a fixed 111.195 km per degree and handed to the station query. A
+degree of arc is 110.574 km at the equator and 111.691 km at the poles, so the
+boundary moved with latitude — up to 0.3 km on a 50 km radius and 2 km on 400
+km. The query is now sent deliberately wide and the cut made locally against the
+true WGS84 epicentral distance. **A config whose radius falls near a station's
+distance can select a different set of stations than it did before**, and
+`verify` on an existing artefact is unaffected: nothing on disk changes.
+
+Three more changes to the same block:
+
+| Before | From 0.5 |
+|---|---|
+| `min_radius_km` was only sent alongside `max_radius_km`, so on its own it did nothing | It applies on its own |
+| `max_radius_km = 0`, a negative radius, or `min_radius_km >= max_radius_km` selected nothing, silently | Each raises `ValueError` when the config is read |
+| Waveforms were requested with the config's wildcards, so the radius reached the station query and never the download | Waveforms are requested by name, from the inventory the station query returned |
+
+**New:** `channel_priorities` and `location_priorities` rank co-sited
+instruments, first match wins per station. Leaving them unset fetches every
+channel as before and warns, naming the stations that carry more than one
+instrument. See
+[Publishing a dataset](releasing-data.md#picking-one-instrument-per-station).
+
+## From 0.3 to 0.4
+
+**`[smoothing] method` is applied.** It selected nothing: every spectrum was
+log-binned whatever the setting said, and `log_bins`, `konno_ohmachi` and
+`none` produced bit-identical output. A config that set `konno_ohmachi` or
+`none` was getting log-binned spectra and now gets what it asked for, so
+**results move for those two values** — `none` most of all, since it now means
+no smoothing rather than the default binning.
+
+`log_window` and `savitzky_golay` are new, and nothing needs changing to keep
+the previous behaviour: `log_bins` is still the default.
 
 ## From 0.2 to 0.3
 
