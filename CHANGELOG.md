@@ -9,6 +9,18 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.5.0](https://github.com/sgjholt/SpecMod/compare/v0.4.0...v0.5.0) (2026-09-19)
+
+
+### Features
+
+* **acquire:** document the station-selection release, and name its version ([b460d19](https://github.com/sgjholt/SpecMod/commit/b460d1922c21822a81b6aeb06aa6d5f7193d92e1))
+
+
+### Documentation
+
+* **roadmap:** file v0.4.0 as shipped, and the acquire work as merged ([e113abb](https://github.com/sgjholt/SpecMod/commit/e113abb97d80737a2c4a791a6543d945bdb7ba9c))
+
 ## [0.4.0](https://github.com/sgjholt/SpecMod/compare/v0.3.0...v0.4.0) (2026-09-16)
 
 
