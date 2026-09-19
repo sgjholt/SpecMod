@@ -11,14 +11,40 @@ file, so this edit survives. -->
 
 ## [0.5.0](https://github.com/sgjholt/SpecMod/compare/v0.4.0...v0.5.0) (2026-09-19)
 
+<!-- The `acquire` entries below are edited by hand, and are the second entry
+in this file that is. The work shipped in 2af57e8, the squash merge of #45,
+whose subject is not a Conventional Commit — release-please could not parse it
+("unexpected token ' ' at 1:5") and generated nothing for it. What it did
+generate was the later commit that restored the record, which is documentation
+describing the change rather than the change. These name the change and point
+at the commit that carries it. release-please only prepends to this file, so
+the edit survives. -->
 
 ### Features
 
-* **acquire:** document the station-selection release, and name its version ([b460d19](https://github.com/sgjholt/SpecMod/commit/b460d1922c21822a81b6aeb06aa6d5f7193d92e1))
+* **acquire:** rank co-sited instruments with `channel_priorities` and
+  `location_priorities`, so a station carrying a broadband and an
+  accelerometer contributes one record rather than two
+  ([2af57e8](https://github.com/sgjholt/SpecMod/commit/2af57e8e958d474a25e34b9065f9e54d1a1a42fa))
+
+
+### Bug Fixes
+
+* **acquire:** ask for waveforms by name, so `max_radius_km` applies to the
+  download and not only to the station query — FDSN dataselect takes no
+  geographic parameters, so a wildcard request was unbounded
+  ([2af57e8](https://github.com/sgjholt/SpecMod/commit/2af57e8e958d474a25e34b9065f9e54d1a1a42fa))
+* **acquire:** cut the radius against true WGS84 distance rather than a fixed
+  111.195 km per degree, which moved the boundary by up to half a percent with
+  latitude; `min_radius_km` now applies on its own, and a non-positive radius
+  or an inverted annulus is refused
+  ([2af57e8](https://github.com/sgjholt/SpecMod/commit/2af57e8e958d474a25e34b9065f9e54d1a1a42fa))
 
 
 ### Documentation
 
+* **acquire:** upgrading notes for the station selection, and for the
+  `[smoothing] method` behaviour change in 0.4.0 ([b460d19](https://github.com/sgjholt/SpecMod/commit/b460d1922c21822a81b6aeb06aa6d5f7193d92e1))
 * **roadmap:** file v0.4.0 as shipped, and the acquire work as merged ([e113abb](https://github.com/sgjholt/SpecMod/commit/e113abb97d80737a2c4a791a6543d945bdb7ba9c))
 
 ## [0.4.0](https://github.com/sgjholt/SpecMod/compare/v0.3.0...v0.4.0) (2026-09-16)
