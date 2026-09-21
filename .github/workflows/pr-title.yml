@@ -1,0 +1,30 @@
+name: pr-title
+
+# A squash merge replaces the branch's commit subjects with this title, so the
+# title is what release-please parses for the version bump and the changelog.
+# `edited` is in the list because a title is most often fixed after the check
+# has already failed once.
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+# `pull_request`, not `pull_request_target`: this reads a title an outside
+# contributor controls, and must never do so with a write token.
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: The title must be a Conventional Commit
+        # Through the environment rather than as an argument: the title is
+        # attacker-chosen text, and `${{ }}` interpolation into a shell command
+        # would execute it.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python tools/check_pr_title.py
