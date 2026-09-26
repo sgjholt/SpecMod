@@ -41,6 +41,13 @@ to generate `CHANGELOG.md`. See
 - Say *why*, with the measurement if there was one. The history is the record
   of what was checked; a message that only restates the diff wastes it.
 
+**The pull request title is one of them.** A squash merge discards every
+subject on the branch and uses the title instead, composed by GitHub after all
+local hooks have run, so the `commit-msg` hook never sees it. `pr-title.yml`
+checks it against the same types `release-please-config.json` declares. Merging
+with a merge commit keeps the individual subjects and is the safer default; the
+check is what makes a squash safe when one is used anyway.
+
 ## Workflow files need a permission you may not have
 
 `.github/workflows/` is editable directly, but only when the session's GitHub
