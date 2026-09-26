@@ -191,6 +191,44 @@ found by a live fetch rather than by the suite:
   as two independent records of one ground motion. `channel_priorities` and
   `location_priorities` rank them, first match wins per station.
 
+## In progress — not yet released
+
+Merged on `main`, and it will name its version when a release goes out.
+
+### The default is FFT with Konno-Ohmachi smoothing
+
+The shipped pair was multitaper with log-binning. Measured on the 28 PNR
+windows, with each station fitted freely, against that pair:
+
+| | Median ΔMw | Per-station range | `fc` ratio |
+|---|---|---|---|
+| `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
+| `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+
+The smoother is what earns the change. `log_bins` reduces the frequency axis
+without reducing the variance — 151 bins over a few hundred Fourier samples is
+about one sample per bin — so an FFT read through it swings a station by up to
+1.9 magnitude units. A real smoother halves the worst excursion and pulls the
+corner-frequency range in by a third. The median station barely moves either
+way, which is why the per-station spread is the argument and the ensemble
+number is not: this event's corner is unconstrained under all three.
+
+**Every result moves** unless a configuration already pinned both settings.
+[Upgrading](upgrading.md#from-05-to-06) has what to pin to keep the old
+numbers, and the one coupling this exposes: `[fitting] fit_bins` is inert
+under a smoother that preserves the frequency axis.
+
+### A configuration can be held across an ambient read
+
+`config.using()` pins one configuration for everything inside the block,
+including the many pipeline functions that read their settings from call sites
+taking no configuration argument. That was the prerequisite for the change
+above: the golden references were captured under whatever the defaults were,
+so moving a default moved 11 committed numbers, and a deliberate change was
+indistinguishable from a regression. They now carry their own settings in
+`tests/golden/reference.toml`, and a default change leaves every one of them
+untouched.
+
 ## Planned
 
 ### 1.0 — the API stops moving
@@ -258,9 +296,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. **There is no such section right
-now**, because nothing is merged and unreleased; that is the state the page
-should be in between releases, not a section that went missing.
+shipped, and this page does not blur the two. Between releases there is no such
+section at all, which is a state the page should be in rather than a section
+that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was

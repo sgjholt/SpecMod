@@ -3477,11 +3477,15 @@ bumping `smoothing.n_bins` from 151 to 158 and running the suite — and **9 of
 25 golden tests fail**, loudly. The golden values live in a committed JSON
 file, so any behaviour change breaks them whatever moved it.
 
-The residual gap is narrower than the claim suggests but real: the golden file
-records no config, so a *regenerated* reference silently adopts whatever
-defaults were current. Pinning a study file, as this plan proposes, is what
-would close it. Until then the protection is "the numbers are frozen", not
-"the settings are frozen".
+**Closed in 0.6.** `specmod.config.using()` holds a configuration across the
+ambient reads the pipeline makes — a `ContextVar`, so it does not leak between
+threads, and explicit arguments still win — and `tests/golden/reference.toml`
+carries every setting the committed numbers were captured under, not an
+overlay that would inherit future default changes for whatever it omitted.
+`tools/make_golden.py` captures inside the pin and the golden suite compares
+inside it, so the property the claim asserted now holds: changing a shipped
+default leaves every committed number untouched. Measured by doing it — the
+0.6 change of default moved 11 golden tests before the pin and none after.
 
 **Claims that were checked and hold:**
 
@@ -3717,10 +3721,8 @@ changes anything shipped.
 
 ### Still open
 
-1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
-   Konno–Ohmachi (more conventional in engineering seismology)? **No longer
-   blocked** — §6.6's dead `[smoothing] method` is wired up, so the second
-   option is selectable — and now measured, on the 28 PNR windows with each
+1. ~~**Default estimator.**~~ **Resolved: FFT + Konno-Ohmachi**, from 0.6. The
+   measurement below is what decided it, on the 28 PNR windows with each
    station fitted freely:
 
    | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station range | `fc` ratio |
@@ -3733,16 +3735,32 @@ changes anything shipped.
    because `log_bins` reduces the axis without reducing the variance — 151 log
    bins over a few hundred Fourier samples is roughly one sample per bin.
    Pairing it with a real smoother halves the worst excursion and pulls the
-   `fc` range in by a third. The median station barely moves either way.
+   `fc` range in by a third. The median station barely moves either way, so the
+   per-station spread is the whole of the argument.
 
-   What this event cannot settle: the *event* corner is unconstrained under all
-   three (stage-one spread 895% to 1042% of the event value), so the ensemble
-   number is not evidence. Deciding on the ensemble needs an event where it is
-   constrained.
+   What this event cannot settle, and what the decision therefore does not
+   rest on: the *event* corner is unconstrained under all three (stage-one
+   spread 895% to 1042% of the event value), so the ensemble number is not
+   evidence. On the ensemble, PNR's Mw moves −0.1615 under both constant sets
+   — a pure Omega shift, since the constants are an offset applied afterwards.
+   Against the catalogue's 2.9 the two sets move in opposite directions, the
+   default constants from 0.194 to 0.032 away and §4.7's from 0.160 to 0.321,
+   so they no longer both sit within 0.25. Recorded, not offered as evidence.
 
    Speed, measured rather than assumed and far too small to decide on: the
    transform is 0.209 s against 0.323 s for the 28 windows, and the smoothing
    adds 0.14 s (`log_bins`) to 0.83 s (`konno_ohmachi`) on top.
+
+   **What had to be built first.** Changing a default moved 11 golden tests,
+   because §6.6's config pin was a claim with no mechanism: the references were
+   captured under whatever the defaults were. `config.using()` and
+   `tests/golden/reference.toml` close that, so the references now hold their
+   own settings and a default change leaves every committed number untouched.
+
+   **A coupling the measurement did not predict.** `[fitting] fit_bins` selects
+   the binned spectrum, which under an axis-preserving smoother is the Fourier
+   axis — so with Konno-Ohmachi the setting fits the same 98 points either way
+   and is inert. It only bites under `log_bins`.
 
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
 3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook

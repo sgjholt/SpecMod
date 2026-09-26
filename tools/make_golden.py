@@ -28,7 +28,8 @@ import obspy
 import scipy
 
 import specmod.preprocess as pre
-from specmod.config import config_hash, load_config
+from specmod import config as cfg
+from specmod.config import config_hash
 from specmod.datasets import PNR_2019
 from specmod.pipeline import spectrum_set_from_streams
 
@@ -36,6 +37,12 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "tests" / "golden" / "pipeline_reference.json"
 WINDOWS_OUT = ROOT / "tests" / "golden" / "window_reference.json"
 MOTION_OUT = ROOT / "tests" / "golden" / "motion_reference.json"
+
+#: The settings every number below is captured under, pinned rather than read
+#: from the shipped defaults. Capturing ambiently made the references hostage
+#: to the defaults: changing one moved the committed numbers, so a deliberate
+#: default change and an accidental regression were the same failure.
+REFERENCE_CONFIG = ROOT / "tests" / "golden" / "reference.toml"
 
 #: Read from `specmod.datasets` so that the script generating the reference and
 #: the test asserting against it cannot disagree about which event, or which
@@ -209,27 +216,24 @@ def capture_windows() -> dict:
 
 
 def _configuration() -> dict:
-    """The settings these numbers were produced under."""
-    # Nothing pins a config here — the pipeline reads `load_config()` ambiently
-    # — so a regenerated reference adopts whatever defaults were current. This
-    # does not close that gap (REFACTOR_PLAN §6.6); it makes a settings change
-    # land as a diff in this file and as a named key in the test failure,
-    # rather than as nine numeric failures with no cause attached.
-    resolved = load_config()
-    #: `sources` carries only what a layer above the defaults set, so anything
-    #: here came from a `specmod.toml`, a gitignored local file or the
-    #: environment — none of which the repository can reproduce.
-    non_default = {k: v for k, v in resolved.sources.items() if v != "default"}
-    if non_default:
-        print(
-            f"WARNING: {len(non_default)} setting(s) come from a layer above "
-            f"the defaults, e.g. {sorted(non_default)[:3]}. Regenerating under "
-            "an override bakes it into the reference — rerun without it."
-        )
+    """The settings these numbers were produced under.
+
+    Read back from inside the pin, so the stamp records what the capture
+    actually used rather than what it was meant to use.
+    """
+    resolved = cfg.load_config()
+    #: Every value comes from `reference.toml`, which `using()` reads with the
+    #: local file and the environment excluded — so this is empty by
+    #: construction and stays in the file as the assertion that it is.
+    above_the_pin = {
+        k: v
+        for k, v in resolved.sources.items()
+        if v not in ("default", str(REFERENCE_CONFIG))
+    }
     return {
         "hash": config_hash(resolved.config),
         "values": resolved.config.to_dict(),
-        "non_default": dict(sorted(non_default.items())),
+        "non_default": dict(sorted(above_the_pin.items())),
     }
 
 
@@ -297,6 +301,13 @@ def _carry_forward_legacy(fresh: dict, section: str, key: str, path: Path) -> No
 
 
 def main() -> None:
+    # Everything below runs inside the pin, including the capture: the whole
+    # point is that these numbers do not depend on the shipped defaults.
+    with cfg.using(REFERENCE_CONFIG):
+        _capture_all()
+
+
+def _capture_all() -> None:
     reference = {
         "_environment": _environment(),
         **{

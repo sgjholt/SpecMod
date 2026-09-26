@@ -10,7 +10,7 @@ own values in a committed TOML file; personal experimentation goes in
 
 from __future__ import annotations
 
-from .layers import LAYER_NAMES, ResolvedConfig, load_config
+from .layers import LAYER_NAMES, ResolvedConfig, load_config, pinned, using
 from .provenance import Provenance, config_hash
 from .sections import (
     AcquireConfig,
@@ -41,4 +41,6 @@ __all__ = [
     "WindowsConfig",
     "config_hash",
     "load_config",
+    "pinned",
+    "using",
 ]

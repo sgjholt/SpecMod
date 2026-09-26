@@ -40,7 +40,11 @@ def to_toml(config: Config, *, header: str | None = None) -> str:
     """
     lines: list[str] = []
     if header:
-        lines.extend(f"# {line}" for line in header.splitlines())
+        # `"#"` rather than `"# "` on a blank line: a comment marker followed
+        # by a space is trailing whitespace, which the repository's pre-commit
+        # hook strips — leaving a frozen file that no longer matches what this
+        # function would write for it.
+        lines.extend(f"# {line}" if line else "#" for line in header.splitlines())
         lines.append("")
 
     data = config.to_dict()
@@ -49,7 +53,10 @@ def to_toml(config: Config, *, header: str | None = None) -> str:
         for key in sorted(data[section]):
             value = data[section][key]
             if value is None:
-                lines.append(f"# {key} = ")  # TOML has no null
+                # No trailing space after the `=`: a frozen file is committed,
+                # and the repository strips trailing whitespace on commit,
+                # which would leave the file differing from what this writes.
+                lines.append(f"# {key} =")  # TOML has no null
             elif isinstance(value, dict) and not value:
                 lines.append(f"{key} = {{}}")
             else:
