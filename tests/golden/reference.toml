@@ -1,0 +1,115 @@
+# The configuration the golden references were captured under.
+#
+# Every setting, not an overlay: `tests/test_golden_reference.py` pins this file
+# with `config.using()`, and a partial file would still inherit the shipped
+# defaults for whatever it left out — so a later default change would move the
+# committed numbers again, which is the whole failure this closes.
+#
+# Regenerated only alongside the references themselves, by
+# `python tools/make_golden.py`. Changing a value here without regenerating is
+# the same as changing the numbers, and the suite says so.
+
+[acquire]
+channels = ["HH?", "BH?", "EN?"]
+client = "IRIS"
+# depth_km =
+# event_id =
+# latitude =
+locations = ["*"]
+# longitude =
+# magnitude =
+max_radius_km = 400.0
+networks = ["*"]
+# origin_time =
+remove_response = false
+seconds_after = 300.0
+seconds_before = 60.0
+stations = ["*"]
+
+[fitting]
+corner_frequency_min = 0.0
+event_parameter = "fc"
+event_weighting = "inverse_distance"
+exclude = []
+fit_bins = false
+include = []
+initial_alpha = 1e-05
+initial_t_star = 0.01
+method = "powell"
+require_pass = true
+t_star_min = 0.0001
+weight_method = "none"
+
+[geometry]
+distance_measure = "repi"
+
+[model]
+frequency_dependent_attenuation = false
+motion = "velocity"
+source = "brune"
+
+[smoothing]
+f_max = 200.0
+f_min = 0.001
+konno_ohmachi_bandwidth = 40.0
+method = "log_bins"
+n_bins = 151
+octave_fraction = 0.3333333333333333
+savgol_points_per_decade = 200
+savgol_polyorder = 3
+savgol_window_length = 41
+statistic = "geometric"
+window = "hann"
+
+[snr]
+assert_bandwidths = false
+bands = [[2.0, 4.0], [4.0, 6.0], [6.0, 8.0]]
+bandwidth_method = "peak"
+# fixed_band =
+interpolate_noise = true
+# max_nyquist_fraction =
+min_points = 10
+resolution_floor = true
+rotate_noise = true
+rotation_increment = 0.05
+rotation_method = "boost"
+rotation_space = [0.001, 1.001]
+scale_parseval = true
+tolerance = 3.0
+
+[transform]
+adaptive = true
+dj = 0.125
+drop_dc = true
+estimator = "multitaper"
+mask_coi = true
+# n_fft =
+n_tapers = 5
+normalize_to_variance = false
+omega0 = 6.0
+taper = "tukey"
+taper_alpha = 0.05
+time_bandwidth = 3.0
+wavelet = "morlet"
+# welch_segment_length =
+
+[viz]
+plot_columns = 3
+
+[windows]
+emergency_ratio = 1.7
+noise_length = 1.0
+noise_shift = 0.2
+p_before = 0.0
+p_length = 0.8
+p_length_mode = "relative_time"
+p_velocity = 5.9
+pad_seconds = 0.0
+pad_value = 0.0
+refine = true
+refine_percentiles = [1.0, 99.0]
+s_length = 20.0
+s_length_mode = "absolute_time"
+s_start_ratio = 0.8
+s_velocity = 2.9
+station_shifts = {}
