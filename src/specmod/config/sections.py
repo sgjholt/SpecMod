@@ -99,9 +99,14 @@ class WindowsConfig:
 class TransformConfig:
     """Time-to-frequency conversion. Consumed by :mod:`specmod.transforms`."""
 
+    #: FFT since 0.6, paired with the Konno-Ohmachi default in ``[smoothing]``.
+    #: The pairing is the point: an FFT read through a log-binner carries the
+    #: periodogram's variance into the fit, and it is the smoother that removes
+    #: it. ``docs/upgrading.md`` has the measured comparison, and
+    #: REFACTOR_PLAN §8.1 the decision.
     estimator: Literal[
         "multitaper", "fft", "welch", "cwt", "prieto", "quadratic", "mtspec"
-    ] = "multitaper"
+    ] = "fft"
 
     #: Multitaper. ``time_bandwidth`` was previously the literal 3 passed
     #: positionally to mtspec, with no way to configure it.
@@ -146,13 +151,17 @@ class SmoothingConfig:
     method keeps it. See :mod:`specmod.smoothing` for what each one does to a
     seismic spectrum and ``docs/choosing-a-transform.md`` for the measured
     comparison.
+
+    That distinction reaches ``[fitting] fit_bins``, which fits the binned
+    spectrum: under an axis-preserving method there is no separate binned axis,
+    so the setting selects the same points either way.
     """
 
     #: Resolved through `specmod.smoothing.SMOOTHERS`. Only the parameters
     #: belonging to the chosen method are read.
     method: Literal[
         "log_bins", "konno_ohmachi", "log_window", "savitzky_golay", "none"
-    ] = "log_bins"
+    ] = "konno_ohmachi"
 
     #: Log bin edges, for `log_bins`. ``None`` derives them from the record:
     #: fmin from 1/T, fmax from Nyquist. The old code hardcoded 0.001-200 Hz

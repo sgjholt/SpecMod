@@ -25,15 +25,24 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from pathlib import Path  # noqa: E402
+
+from specmod import config as cfg  # noqa: E402
 from specmod.config import load_config  # noqa: E402
 from specmod.fitting import FitSpectra, initial_guess  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
+
+#: The settings the committed references hold, which still bin. These tests
+#: assert that a `[fitting]` value is read at all, so they need a spectrum
+#: whose shape does not depend on what the shipped smoother happens to be.
+REFERENCE_CONFIG = Path(__file__).parent / "golden" / "reference.toml"
 
 
 @functools.cache
 def _spectra(windows: Any) -> Any:
     signal, noise = windows()
-    return spectrum_set_from_streams(signal, noise, estimator="fft")
+    with cfg.using(REFERENCE_CONFIG):
+        return spectrum_set_from_streams(signal, noise, estimator="fft")
 
 
 def _fit(spectra: Any, **kwargs: Any) -> Any:
@@ -160,7 +169,15 @@ class TestTheSettingsBite:
         assert load_config().config.fitting.corner_frequency_min == 0.0
 
     def test_fit_bins_comes_from_configuration(self, pnr_windows: Any) -> None:
-        """Fitting the binned spectrum uses far fewer points than the raw one."""
+        """Fitting the binned spectrum uses far fewer points than the raw one.
+
+        Only where the smoother replaces the frequency axis, which is why this
+        runs under the pinned reference config rather than the shipped
+        defaults. Under an axis-preserving smoother — Konno-Ohmachi, which is
+        the default from 0.6 — the comparison axis *is* the Fourier axis, so
+        ``fit_bins`` selects the same 98 points either way and the setting is
+        inert. See ``docs/upgrading.md``.
+        """
         spectra = _spectra(pnr_windows)
         raw = _fit(spectra, fit_bins=False)
         binned = _fit(spectra, fit_bins=True)

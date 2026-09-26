@@ -1,14 +1,69 @@
 # Upgrading
 
-Four moves are documented here. Most readers porting code want `0.2` to `0.3`,
+Five moves are documented here. Most readers porting code want `0.2` to `0.3`,
 which renamed ten functions in `specmod.preprocess` and changed what they do
-with the stream they are given. The two moves above it rename nothing: they are
-settings that began doing what they always said, so the break is in the numbers
-rather than in the call.
+with the stream they are given. The three moves above it rename nothing: they
+change what a setting does, or which one is the default, so the break is in the
+numbers rather than in the call.
 
 `0.x` ships breaking changes in minor bumps without a deprecation cycle,
 because shimming an API still being worked out costs more than it protects.
 See [Releasing the software](releasing.md#what-a-version-number-means-while-this-is-0x).
+
+## From 0.5 to 0.6
+
+**The default estimator is `fft` and the default smoother is `konno_ohmachi`.**
+They were `multitaper` and `log_bins`. Nothing is renamed and no signature
+moves; **every result changes** unless your configuration already pinned both.
+
+On the 28 PNR windows, against the old pair:
+
+| | Median ΔMw | Per-station range | `fc` ratio |
+|---|---|---|---|
+| `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
+| `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+
+The smoother is what earns the change, not the transform. `log_bins` reduces
+the frequency axis without reducing the variance — 151 bins over a few hundred
+Fourier samples is about one sample per bin — so an FFT paired with it swings a
+station by up to 1.9 magnitude units. A real smoother halves the worst
+excursion. The median station barely moves either way.
+
+**To keep the old numbers**, pin both:
+
+```toml
+[transform]
+estimator = "multitaper"
+
+[smoothing]
+method = "log_bins"
+```
+
+Two consequences worth knowing:
+
+- **`[fitting] fit_bins` is inert under the new default.** It fits the binned
+  spectrum, and Konno–Ohmachi preserves the frequency axis, so the "binned"
+  axis *is* the Fourier axis and the setting selects the same points either
+  way. It only bites under `log_bins`, or any other axis-reducing smoother.
+- **Published results should pin the version anyway**, but this is the release
+  that shows why: a re-run under 0.6 of an analysis done under 0.5 will not
+  reproduce it, and nothing in the call changed to warn you.
+
+**New: `specmod.config.using()`**, a context manager that holds one
+configuration across the ambient reads the pipeline makes. This is what lets a
+regression test fix the settings its numbers were produced under — most of the
+pipeline reads settings from functions that take no configuration argument, so
+passing one down was not possible before:
+
+```python
+from specmod import config
+
+with config.using("studies/my_study.toml"):
+    result = spectrum_set_from_streams(signal, noise)
+```
+
+The local file and the environment are excluded inside the block, and an
+explicit `load_config(project_file=...)` still wins.
 
 ## From 0.4 to 0.5
 

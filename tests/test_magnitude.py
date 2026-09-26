@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -135,6 +137,10 @@ PLAN_CONSTANTS = MediumConstants(
     density=2500.0, velocity=2500.0, radiation_pattern=0.63, free_surface=2.0
 )
 
+#: The settings §4.7's recorded magnitudes were measured under, and the ones
+#: the golden references hold.
+REFERENCE_CONFIG = Path(__file__).parent / "golden" / "reference.toml"
+
 
 @pytest.mark.usefixtures("pnr_windows")
 class TestOnTheRealEvent:
@@ -147,11 +153,22 @@ class TestOnTheRealEvent:
 
     @staticmethod
     def _staged(windows):  # type: ignore[no-untyped-def]
+        """Under the settings §4.7 recorded its numbers with.
+
+        Pinned, because what these tests pin is the magnitude computation and
+        the spreading exponent — not which estimator ships as the default. The
+        values below are quoted from the plan, and a default change that moved
+        them would make the quotation false without anything about magnitude
+        having changed. ``test_the_shipped_default_gives_a_different_number``
+        is where the default's own answer is asserted.
+        """
+        from specmod import config as cfg  # noqa: PLC0415
         from specmod.pipeline import spectrum_set_from_streams  # noqa: PLC0415
         from specmod.staged import fit_event  # noqa: PLC0415
 
         signal, noise = windows()
-        return fit_event(spectrum_set_from_streams(signal, noise))
+        with cfg.using(REFERENCE_CONFIG):
+            return fit_event(spectrum_set_from_streams(signal, noise))
 
     def test_the_event_magnitude_is_unchanged(self, pnr_windows) -> None:  # type: ignore[no-untyped-def]
         event = event_magnitude(self._staged(pnr_windows))
@@ -261,6 +278,7 @@ def test_the_pnr_event_brackets_its_catalogue_magnitude(pnr_windows) -> None:  #
     unlabelled number is what made an earlier version of this look 1.15
     magnitude units out.
     """
+    from specmod import config as cfg  # noqa: PLC0415
     from specmod.datasets import PNR_2019  # noqa: PLC0415
     from specmod.pipeline import spectrum_set_from_streams  # noqa: PLC0415
     from specmod.staged import fit_event  # noqa: PLC0415
@@ -270,9 +288,55 @@ def test_the_pnr_event_brackets_its_catalogue_magnitude(pnr_windows) -> None:  #
     assert catalogue == 2.9
 
     signal, noise = pnr_windows()
-    staged = fit_event(spectrum_set_from_streams(signal, noise))
+    with cfg.using(REFERENCE_CONFIG):
+        staged = fit_event(spectrum_set_from_streams(signal, noise))
     low = event_magnitude(staged, constants=PLAN_CONSTANTS).value
     high = event_magnitude(staged).value
     assert low < catalogue < high
     assert abs(low - catalogue) < 0.25
     assert abs(high - catalogue) < 0.25
+
+
+def test_the_shipped_default_moves_omega_by_a_constant(pnr_windows) -> None:  # type: ignore[no-untyped-def]
+    """What a user with no configuration gets, and how far it is from the pin.
+
+    Everything else in this module runs under `tests/golden/reference.toml`,
+    so without this the default's own answer would be asserted nowhere and
+    the change of default would be invisible to the suite.
+
+    The shift is **-0.1615 Mw, identical under both constant sets**, which is
+    the shape a change of estimator and smoother should have: it moves the
+    low-frequency plateau the fit reads Omega off, and the medium constants
+    are an offset applied afterwards. A number that moved differently under
+    the two would mean something had changed in the fitting instead.
+
+    Against the catalogue's 2.9 the two sets move in opposite directions —
+    the default constants from 0.194 to 0.032 away, the plan's from 0.160 to
+    0.321 — so the pair no longer both sit within 0.25. That is one event
+    whose corner is unconstrained (REFACTOR_PLAN §8.1), so it is recorded
+    rather than offered as evidence either way.
+    """
+    from specmod import config as cfg  # noqa: PLC0415
+    from specmod.pipeline import spectrum_set_from_streams  # noqa: PLC0415
+    from specmod.staged import fit_event  # noqa: PLC0415
+
+    signal, noise = pnr_windows()
+
+    def staged_under(context):  # type: ignore[no-untyped-def]
+        with context:
+            return fit_event(spectrum_set_from_streams(signal.copy(), noise.copy()))
+
+    pinned = staged_under(cfg.using(REFERENCE_CONFIG))
+    shipped = staged_under(contextlib.nullcontext())
+
+    assert event_magnitude(shipped).value == pytest.approx(2.932, abs=0.01)
+    assert event_magnitude(shipped, constants=PLAN_CONSTANTS).value == pytest.approx(
+        2.579, abs=0.01
+    )
+
+    shifts = [
+        event_magnitude(shipped, **kw).value - event_magnitude(pinned, **kw).value
+        for kw in ({}, {"constants": PLAN_CONSTANTS})
+    ]
+    assert shifts[0] == pytest.approx(-0.1615, abs=0.005)
+    assert shifts[0] == pytest.approx(shifts[1], abs=1e-9)
