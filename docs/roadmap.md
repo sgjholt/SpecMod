@@ -198,25 +198,23 @@ Merged on `main`, and it will name its version when a release goes out.
 ### The default is FFT with Konno-Ohmachi smoothing
 
 The shipped pair was multitaper with log-binning. Measured on the 28 PNR
-windows, with each station fitted freely, against that pair:
+channels, each fitted independently on velocity, against that pair:
 
-| | Median ΔMw | Per-station range | `fc` ratio |
+| | Median ΔMw | Per-station ΔMw | `fc` ratio, median (range) |
 |---|---|---|---|
-| `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
-| `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+| `fft` + `log_bins` | −0.079 | −0.71 to +0.23 | 0.91 (0.18 to 3.9) |
+| `fft` + `konno_ohmachi` | −0.068 | −0.25 to +0.19 | 0.82 (0.17 to 3.5) |
 
-The smoother is what earns the change. `log_bins` reduces the frequency axis
-without reducing the variance — 151 bins over a few hundred Fourier samples is
-about one sample per bin — so an FFT read through it swings a station by up to
-1.9 magnitude units. A real smoother halves the worst excursion and pulls the
-corner-frequency range in by a third. The median station barely moves either
-way, which is why the per-station spread is the argument and the ensemble
-number is not: this event's corner is unconstrained under all three.
+By default the fit reads the unsmoothed spectrum inside the band the smoothed
+signal-to-noise ratio selects, so the two FFT rows fit identical amplitudes
+and differ only in the band. Konno–Ohmachi's is wider, and that is what
+narrows the per-station spread. This event's corner is unconstrained under
+every pair, so the event-level number is not evidence either way.
 
 **Every result moves** unless a configuration already pinned both settings.
 [Upgrading](upgrading.md#from-05-to-06) has what to pin to keep the old
-numbers, and the one coupling this exposes: `[fitting] fit_bins` is inert
-under a smoother that preserves the frequency axis.
+numbers, and what `[fitting] fit_bins = true` changes: it fits the smoothed
+spectrum instead of the unsmoothed one.
 
 ### A configuration can be held across an ambient read
 

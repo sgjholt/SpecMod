@@ -304,11 +304,11 @@ def test_the_shipped_default_moves_omega_by_a_constant(pnr_windows) -> None:  # 
     so without this the default's own answer would be asserted nowhere and
     the change of default would be invisible to the suite.
 
-    The shift is **-0.1615 Mw, identical under both constant sets**, which is
-    the shape a change of estimator and smoother should have: it moves the
-    low-frequency plateau the fit reads Omega off, and the medium constants
-    are an offset applied afterwards. A number that moved differently under
-    the two would mean something had changed in the fitting instead.
+    The shift is **-0.1615 Mw, identical under both constant sets**, as it
+    must be: the medium constants add the same offset to every station's
+    ``log10 M0``, so only the fitted plateaus move. They move because the
+    estimator changes the amplitudes the fit reads and the smoother changes
+    the band it reads them over.
 
     Against the catalogue's 2.9 the two sets move in opposite directions —
     the default constants from 0.194 to 0.032 away, the plan's from 0.160 to

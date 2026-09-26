@@ -3722,21 +3722,31 @@ changes anything shipped.
 ### Still open
 
 1. ~~**Default estimator.**~~ **Resolved: FFT + Konno-Ohmachi**, from 0.6. The
-   measurement below is what decided it, on the 28 PNR windows with each
-   station fitted freely:
+   measurement below is what decided it, on the 28 PNR channels, each fitted
+   independently (stage one) on velocity, which is the motion the pipeline fits
+   by default and from which `llpsp` is the displacement plateau:
 
-   | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station range | `fc` ratio |
-   |---|---|---|---|
-   | `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
-   | `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+   | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station ΔMw | `fc` ratio, median (range) | Median band (decades) | Median points fitted |
+   |---|---|---|---|---|---|
+   | `multitaper` + `log_bins` | — | — | — | 1.73 | 113 |
+   | `fft` + `log_bins` | −0.079 | −0.71 to +0.23 | 0.91 (0.18 to 3.9) | 1.55 | 107 |
+   | `fft` + `konno_ohmachi` | −0.068 | −0.25 to +0.19 | 0.82 (0.17 to 3.5) | 1.68 | 120 |
+   | `fft` + `konno_ohmachi`, `fit_bins = true` | −0.073 | −0.25 to +0.15 | 0.90 (0.18 to 2.2) | 1.68 | 120 |
 
-   **The smoothing is what makes the switch defensible, not the estimator.**
-   FFT with the shipped binner moves a station by up to 1.9 magnitude units,
-   because `log_bins` reduces the axis without reducing the variance — 151 log
-   bins over a few hundred Fourier samples is roughly one sample per bin.
-   Pairing it with a real smoother halves the worst excursion and pulls the
-   `fc` range in by a third. The median station barely moves either way, so the
-   per-station spread is the whole of the argument.
+   **What each setting reaches.** The estimator sets the spectrum that is
+   fitted. The smoother sets the band: the signal-to-noise ratio and the gate
+   are computed on smoothed spectra. With `[fitting] fit_bins = false`, the
+   default in 0.1.1 and since, the fit and the initial guess both read the
+   *unsmoothed* amplitudes inside that band, so the smoother reaches `Omega`
+   only through the band. The two default-path FFT rows therefore fit identical
+   amplitudes, and the whole difference between them — the per-station range
+   narrowing from −0.71/+0.23 to −0.25/+0.19 — comes from Konno–Ohmachi
+   selecting a wider band. Fitting the smoothed spectrum instead
+   (`fit_bins = true`) changes little further on this event.
+
+   Measured on displacement instead, the same comparison gives −0.85/+0.70 for
+   `fft` + `log_bins` and −0.56/+0.52 for `fft` + `konno_ohmachi`: the same
+   ordering, a wider spread.
 
    What this event cannot settle, and what the decision therefore does not
    rest on: the *event* corner is unconstrained under all three (stage-one
@@ -3757,10 +3767,10 @@ changes anything shipped.
    `tests/golden/reference.toml` close that, so the references now hold their
    own settings and a default change leaves every committed number untouched.
 
-   **A coupling the measurement did not predict.** `[fitting] fit_bins` selects
-   the binned spectrum, which under an axis-preserving smoother is the Fourier
-   axis — so with Konno-Ohmachi the setting fits the same 98 points either way
-   and is inert. It only bites under `log_bins`.
+   **The fitting choice is documented where it is made.** Whether the fit
+   reads the unsmoothed or the smoothed spectrum is a modelling decision a user
+   should make knowingly, so the tutorial's *What the fit reads* states the
+   default and fits the event both ways.
 
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
 3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook

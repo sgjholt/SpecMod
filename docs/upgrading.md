@@ -16,18 +16,24 @@ See [Releasing the software](releasing.md#what-a-version-number-means-while-this
 They were `multitaper` and `log_bins`. Nothing is renamed and no signature
 moves; **every result changes** unless your configuration already pinned both.
 
-On the 28 PNR windows, against the old pair:
+The two do different jobs. The estimator sets the spectrum that is fitted.
+The smoother sets the band the fit is confined to — the signal-to-noise ratio
+and the gate are computed on the smoothed spectra — but **by default the fit
+reads the unsmoothed spectrum inside that band** (`[fitting] fit_bins = false`),
+so the smoother reaches the result only through the band.
 
-| | Median ΔMw | Per-station range | `fc` ratio |
-|---|---|---|---|
-| `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
-| `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+On the 28 PNR channels, each fitted independently on velocity, against the old
+pair:
 
-The smoother is what earns the change, not the transform. `log_bins` reduces
-the frequency axis without reducing the variance — 151 bins over a few hundred
-Fourier samples is about one sample per bin — so an FFT paired with it swings a
-station by up to 1.9 magnitude units. A real smoother halves the worst
-excursion. The median station barely moves either way.
+| | Median ΔMw | Per-station ΔMw | `fc` ratio, median (range) | Median band (decades) |
+|---|---|---|---|---|
+| `multitaper` + `log_bins` (0.5) | — | — | — | 1.73 |
+| `fft` + `log_bins` | −0.079 | −0.71 to +0.23 | 0.91 (0.18 to 3.9) | 1.55 |
+| `fft` + `konno_ohmachi` | −0.068 | −0.25 to +0.19 | 0.82 (0.17 to 3.5) | 1.68 |
+
+The two FFT rows fit identical amplitudes; they differ only in the band.
+Konno–Ohmachi gives a wider one — a median 120 points fitted per channel
+against 107 — and that is what narrows the per-station spread.
 
 **To keep the old numbers**, pin both:
 
@@ -39,12 +45,13 @@ estimator = "multitaper"
 method = "log_bins"
 ```
 
-Two consequences worth knowing:
+Two things worth knowing:
 
-- **`[fitting] fit_bins` is inert under the new default.** It fits the binned
-  spectrum, and Konno–Ohmachi preserves the frequency axis, so the "binned"
-  axis *is* the Fourier axis and the setting selects the same points either
-  way. It only bites under `log_bins`, or any other axis-reducing smoother.
+- **`[fitting] fit_bins = true` fits the smoothed spectrum instead.** Under
+  Konno–Ohmachi that is the same frequencies with the scatter averaged down;
+  on PNR the per-station range becomes −0.25 to +0.15. Neighbouring smoothed
+  points share samples, so they are not independent. The tutorial's *What the
+  fit reads* compares the two.
 - **Published results should pin the version anyway**, but this is the release
   that shows why: a re-run under 0.6 of an analysis done under 0.5 will not
   reproduce it, and nothing in the call changed to warn you.

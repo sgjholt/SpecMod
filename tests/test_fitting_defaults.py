@@ -171,12 +171,8 @@ class TestTheSettingsBite:
     def test_fit_bins_comes_from_configuration(self, pnr_windows: Any) -> None:
         """Fitting the binned spectrum uses far fewer points than the raw one.
 
-        Only where the smoother replaces the frequency axis, which is why this
-        runs under the pinned reference config rather than the shipped
-        defaults. Under an axis-preserving smoother — Konno-Ohmachi, which is
-        the default from 0.6 — the comparison axis *is* the Fourier axis, so
-        ``fit_bins`` selects the same 98 points either way and the setting is
-        inert. See ``docs/upgrading.md``.
+        Under `log_bins`, which the pinned reference config uses: one value per
+        occupied bin against every Fourier sample in the band.
         """
         spectra = _spectra(pnr_windows)
         raw = _fit(spectra, fit_bins=False)
@@ -187,6 +183,31 @@ class TestTheSettingsBite:
         # The shipped default is the unbinned spectrum.
         assert load_config().config.fitting.fit_bins is False
         assert _fit(spectra).models[id].mod_freq.size == raw.models[id].mod_freq.size
+
+    def test_under_konno_ohmachi_it_switches_the_amplitudes_not_the_points(
+        self, pnr_windows: Any
+    ) -> None:
+        """The shipped default smoother keeps the frequency axis.
+
+        So ``fit_bins`` selects the same frequencies either way and changes the
+        amplitudes read at them: unsmoothed by default, smoothed when on. The
+        default reading the unsmoothed ones is the modelling choice the
+        tutorial's "What the fit reads" documents.
+        """
+        signal, noise = pnr_windows()
+        with cfg.using(smoothing={"method": "konno_ohmachi"}):
+            spectra = spectrum_set_from_streams(signal, noise, estimator="fft")
+        unsmoothed = _fit(spectra, fit_bins=False)
+        smoothed = _fit(spectra, fit_bins=True)
+
+        id = next(iter(unsmoothed.models))
+        raw, smooth = unsmoothed.models[id], smoothed.models[id]
+        assert np.array_equal(raw.mod_freq, smooth.mod_freq)
+        assert not np.allclose(raw.mod_amp, smooth.mod_amp)
+        # And the amplitudes the default fit reads are the unsmoothed ones.
+        expected = np.log10(spectra[id].signal.amp)
+        inside = np.isin(spectra[id].signal.freq, raw.mod_freq)
+        np.testing.assert_array_equal(raw.mod_amp, expected[inside])
 
 
 class TestInitialGuess:

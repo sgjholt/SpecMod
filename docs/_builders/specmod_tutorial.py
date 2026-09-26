@@ -237,12 +237,14 @@ spectrum_set_from_streams
 ```
 
 `spectrum_set_from_streams` transforms both windows, puts the noise on the
-signal's frequency axis, bins both, raises the noise to account for what sits
-*under* the signal, takes the ratio and selects the band where it passes.
+signal's frequency axis, smooths both, raises the noise to account for what
+sits *under* the signal, takes the ratio and selects the band where it passes.
+The smoothing is Konno–Ohmachi by default (`[smoothing] method`). It is used
+for the ratio and the band, not for the fit — see *What the fit reads* below.
 
 Which estimator is used is configuration, not code: `fft`, `welch`,
 `multitaper`, `quadratic` and `cwt` all satisfy the same Parseval contract, so
-they are interchangeable here. The shipped default is `multitaper`.
+they are interchangeable here. The shipped default is `fft`.
 """)
 
 
@@ -256,7 +258,7 @@ print(
 
 
 code("""
-# One station in detail: signal, noise, the binned spectra the ratio is
+# One station in detail: signal, noise, the smoothed spectra the ratio is
 # actually computed on, the selected band (red) and the resolution floor (grey).
 from specmod.plotting import plot_pair, plot_set
 
@@ -453,9 +455,10 @@ displacement = spectra.to_motion("displacement")
 print(f"velocity     {spectra[station].signal.unit}")
 print(f"displacement {displacement[station].signal.unit}")
 
-# The unbinned signal-to-noise ratio is invariant under this — both spectra are
-# divided by the same 2*pi*f — but the *binned* ratio is not, because a bin
-# holds a geometric mean. So a few bands do move.
+# The unsmoothed signal-to-noise ratio is invariant under this — both spectra
+# are divided by the same 2*pi*f — but the smoothed ratio is not: Konno-Ohmachi
+# averages amplitudes across a window over which 2*pi*f changes, so some
+# bands move.
 moved = [i for i in spectra.ids() if spectra[i].band != displacement[i].band]
 print(f"bands that moved: {len(moved)} of {len(spectra)}")
 """)
@@ -473,9 +476,10 @@ from the largest amplitude inside the band, the corner from where that
 maximum falls.
 
 `FitSpectra(spectra)` then `fit_spectra()` is the whole thing. The minimiser
-(Powell), the `t*` lower bound and whether to fit the binned or unbinned
+(Powell), the `t*` lower bound and whether to fit the smoothed or unsmoothed
 spectrum all come from `[fitting]` in the configuration, so the defaults are
-recorded rather than remembered.
+recorded rather than remembered. The last of those is a modelling choice with
+consequences; *What the fit reads* below compares the two.
 """)
 
 
@@ -548,6 +552,62 @@ plt.show()
 
 code("""
 fits.table[["id", "fc", "fc-stderr", "llpsp", "ts", "pass_fitting"]].head(10)
+""")
+
+
+md("""
+### What the fit reads
+
+The smoothed spectra choose the band — the signal-to-noise ratio and the gate
+are computed on them — but **the fit reads the unsmoothed spectrum inside that
+band**. Smoothing decides *where* the model is fitted, not *what* it is fitted
+to. That is `[fitting] fit_bins = false`, the default, and it is a modelling
+choice:
+
+- **Unsmoothed** (the default). Every Fourier sample in the band, each with its
+  full scatter. The samples are evenly spaced in Hz, so most of them sit in the
+  top decade of the band and dominate an unweighted misfit;
+  `[fitting] weight_method = "log"` weights residuals by `1/f` to shift that.
+- **Smoothed** (`fit_bins = true`). The spectrum the band was chosen on. Under
+  Konno–Ohmachi that is the same frequencies with the scatter averaged down,
+  but neighbouring points share samples, so they are not independent and the
+  misfit counts the same information more than once. Under `log_bins` it is
+  one value per occupied bin, evenly spaced in log frequency.
+
+The cell below fits the event both ways.
+""")
+
+
+code("""
+smoothed_fits = FitSpectra(spectra, fit_bins=True)
+smoothed_fits.fit_spectra()
+
+first = spectra.ids()[0]
+raw_fit, smoothed_fit = fits.models[first], smoothed_fits.models[first]
+low, high = raw_fit.mod_freq[0], raw_fit.mod_freq[-1]
+top_decade = np.mean(raw_fit.mod_freq >= high / 10)
+print(
+    f"{first}: {raw_fit.mod_freq.size} points unsmoothed, "
+    f"{smoothed_fit.mod_freq.size} smoothed, over {low:.2f}-{high:.2f} Hz"
+)
+print(f"  share of the points in the band's top decade: {top_decade:.0%}")
+print(
+    "  median |difference| in the log10 amplitudes the two fits see: "
+    f"{np.median(np.abs(raw_fit.mod_amp - smoothed_fit.mod_amp)):.3f}"
+)
+
+raw_table = fits.table.set_index("id")
+smoothed_table = smoothed_fits.table.set_index("id")
+d_plateau = (smoothed_table["llpsp"] - raw_table["llpsp"]).abs()
+fc_ratio = smoothed_table["fc"] / raw_table["fc"]
+print(f"\\nacross {len(raw_table)} channels, smoothed against unsmoothed:")
+print(
+    f"  |d log10 plateau|  median {d_plateau.median():.3f}, max {d_plateau.max():.3f}"
+)
+print(
+    f"  fc ratio           median {fc_ratio.median():.2f}, "
+    f"range {fc_ratio.min():.2f} to {fc_ratio.max():.2f}"
+)
 """)
 
 
