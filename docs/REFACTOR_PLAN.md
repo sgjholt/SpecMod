@@ -3477,11 +3477,15 @@ bumping `smoothing.n_bins` from 151 to 158 and running the suite — and **9 of
 25 golden tests fail**, loudly. The golden values live in a committed JSON
 file, so any behaviour change breaks them whatever moved it.
 
-The residual gap is narrower than the claim suggests but real: the golden file
-records no config, so a *regenerated* reference silently adopts whatever
-defaults were current. Pinning a study file, as this plan proposes, is what
-would close it. Until then the protection is "the numbers are frozen", not
-"the settings are frozen".
+**Closed in 0.6.** `specmod.config.using()` holds a configuration across the
+ambient reads the pipeline makes — a `ContextVar`, so it does not leak between
+threads, and explicit arguments still win — and `tests/golden/reference.toml`
+carries every setting the committed numbers were captured under, not an
+overlay that would inherit future default changes for whatever it omitted.
+`tools/make_golden.py` captures inside the pin and the golden suite compares
+inside it, so the property the claim asserted now holds: changing a shipped
+default leaves every committed number untouched. Measured by doing it — the
+0.6 change of default moved 11 golden tests before the pin and none after.
 
 **Claims that were checked and hold:**
 
@@ -3717,32 +3721,56 @@ changes anything shipped.
 
 ### Still open
 
-1. **Default estimator.** Multitaper (matching current behaviour) or FFT +
-   Konno–Ohmachi (more conventional in engineering seismology)? **No longer
-   blocked** — §6.6's dead `[smoothing] method` is wired up, so the second
-   option is selectable — and now measured, on the 28 PNR windows with each
-   station fitted freely:
+1. ~~**Default estimator.**~~ **Resolved: FFT + Konno-Ohmachi**, from 0.6. The
+   measurement below is what decided it, on the 28 PNR channels, each fitted
+   independently (stage one) on velocity, which is the motion the pipeline fits
+   by default and from which `llpsp` is the displacement plateau:
 
-   | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station range | `fc` ratio |
-   |---|---|---|---|
-   | `fft` + `log_bins` | −0.039 | −0.85 to +1.90 | 0.003 to 5.0 |
-   | `fft` + `konno_ohmachi` | +0.027 | −0.52 to +0.51 | 0.038 to 3.2 |
+   | Against the shipped multitaper + `log_bins` | Median ΔMw | Per-station ΔMw | `fc` ratio, median (range) | Median band (decades) | Median points fitted |
+   |---|---|---|---|---|---|
+   | `multitaper` + `log_bins` | — | — | — | 1.73 | 113 |
+   | `fft` + `log_bins` | −0.079 | −0.71 to +0.23 | 0.91 (0.18 to 3.9) | 1.55 | 107 |
+   | `fft` + `konno_ohmachi` | −0.068 | −0.25 to +0.19 | 0.82 (0.17 to 3.5) | 1.68 | 120 |
+   | `fft` + `konno_ohmachi`, `fit_bins = true` | −0.073 | −0.25 to +0.15 | 0.90 (0.18 to 2.2) | 1.68 | 120 |
 
-   **The smoothing is what makes the switch defensible, not the estimator.**
-   FFT with the shipped binner moves a station by up to 1.9 magnitude units,
-   because `log_bins` reduces the axis without reducing the variance — 151 log
-   bins over a few hundred Fourier samples is roughly one sample per bin.
-   Pairing it with a real smoother halves the worst excursion and pulls the
-   `fc` range in by a third. The median station barely moves either way.
+   **What each setting reaches.** The estimator sets the spectrum that is
+   fitted. The smoother sets the band: the signal-to-noise ratio and the gate
+   are computed on smoothed spectra. With `[fitting] fit_bins = false`, the
+   default in 0.1.1 and since, the fit and the initial guess both read the
+   *unsmoothed* amplitudes inside that band, so the smoother reaches `Omega`
+   only through the band. The two default-path FFT rows therefore fit identical
+   amplitudes, and the whole difference between them — the per-station range
+   narrowing from −0.71/+0.23 to −0.25/+0.19 — comes from Konno–Ohmachi
+   selecting a wider band. Fitting the smoothed spectrum instead
+   (`fit_bins = true`) changes little further on this event.
 
-   What this event cannot settle: the *event* corner is unconstrained under all
-   three (stage-one spread 895% to 1042% of the event value), so the ensemble
-   number is not evidence. Deciding on the ensemble needs an event where it is
-   constrained.
+   Measured on displacement instead, the same comparison gives −0.85/+0.70 for
+   `fft` + `log_bins` and −0.56/+0.52 for `fft` + `konno_ohmachi`: the same
+   ordering, a wider spread.
+
+   What this event cannot settle, and what the decision therefore does not
+   rest on: the *event* corner is unconstrained under all three (stage-one
+   spread 895% to 1042% of the event value), so the ensemble number is not
+   evidence. On the ensemble, PNR's Mw moves −0.1615 under both constant sets
+   — a pure Omega shift, since the constants are an offset applied afterwards.
+   Against the catalogue's 2.9 the two sets move in opposite directions, the
+   default constants from 0.194 to 0.032 away and §4.7's from 0.160 to 0.321,
+   so they no longer both sit within 0.25. Recorded, not offered as evidence.
 
    Speed, measured rather than assumed and far too small to decide on: the
    transform is 0.209 s against 0.323 s for the 28 windows, and the smoothing
    adds 0.14 s (`log_bins`) to 0.83 s (`konno_ohmachi`) on top.
+
+   **What had to be built first.** Changing a default moved 11 golden tests,
+   because §6.6's config pin was a claim with no mechanism: the references were
+   captured under whatever the defaults were. `config.using()` and
+   `tests/golden/reference.toml` close that, so the references now hold their
+   own settings and a default change leaves every committed number untouched.
+
+   **The fitting choice is documented where it is made.** Whether the fit
+   reads the unsmoothed or the smoothed spectrum is a modelling decision a user
+   should make knowingly, so the tutorial's *What the fit reads* states the
+   default and fits the event both ways.
 
 2. **Python floor.** 3.11 is proposed. Any users stuck on 3.9/3.10?
 3. **History rewrite.** Deleting the 9.9 MB catalog and stripping the notebook

@@ -99,9 +99,13 @@ class WindowsConfig:
 class TransformConfig:
     """Time-to-frequency conversion. Consumed by :mod:`specmod.transforms`."""
 
+    #: FFT since 0.6, paired with Konno-Ohmachi in ``[smoothing]``. This is the
+    #: spectrum the fit reads; the smoother only chooses the band it is read
+    #: over, unless ``[fitting] fit_bins`` is on. ``docs/upgrading.md`` has the
+    #: measured comparison, and REFACTOR_PLAN §8.1 the decision.
     estimator: Literal[
         "multitaper", "fft", "welch", "cwt", "prieto", "quadratic", "mtspec"
-    ] = "multitaper"
+    ] = "fft"
 
     #: Multitaper. ``time_bandwidth`` was previously the literal 3 passed
     #: positionally to mtspec, with no way to configure it.
@@ -146,13 +150,19 @@ class SmoothingConfig:
     method keeps it. See :mod:`specmod.smoothing` for what each one does to a
     seismic spectrum and ``docs/choosing-a-transform.md`` for the measured
     comparison.
+
+    The smoothed spectra set the signal-to-noise ratio and the band. The fit
+    reads the unsmoothed spectrum inside that band unless ``[fitting]
+    fit_bins`` is on, in which case it reads the smoothed one: one value per
+    bin under ``log_bins``, the smoothed amplitude at every frequency under the
+    others.
     """
 
     #: Resolved through `specmod.smoothing.SMOOTHERS`. Only the parameters
     #: belonging to the chosen method are read.
     method: Literal[
         "log_bins", "konno_ohmachi", "log_window", "savitzky_golay", "none"
-    ] = "log_bins"
+    ] = "konno_ohmachi"
 
     #: Log bin edges, for `log_bins`. ``None`` derives them from the record:
     #: fmin from 1/T, fmax from Nyquist. The old code hardcoded 0.001-200 Hz
@@ -255,6 +265,10 @@ class FittingConfig:
     """Minimisation."""
 
     method: str = "powell"
+    #: Fit the smoothed spectrum rather than the unsmoothed one. Off by default:
+    #: the smoothed spectra choose the band, and the fit reads the unsmoothed
+    #: amplitudes inside it. A modelling choice, compared in the tutorial's
+    #: "What the fit reads".
     fit_bins: bool = False
     weight_method: Literal["none", "log"] = "none"
 

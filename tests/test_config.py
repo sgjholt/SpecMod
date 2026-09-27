@@ -305,13 +305,29 @@ class TestEverySmoothingMethodIsWiredUp:
         else:
             assert isinstance(smoother, SMOOTHERS[method])
 
-    def test_the_defaults_still_bin(self) -> None:
-        """The shipped default is the path every committed number came from."""
+    def test_the_shipped_default_smooths_rather_than_bins(self) -> None:
+        """What a user gets with no configuration at all.
+
+        This used to assert the opposite, on the premise that the default was
+        "the path every committed number came from". That premise is gone:
+        the committed numbers now come from `tests/golden/reference.toml`,
+        pinned, so the default is free to be the one that measures better
+        rather than the one the references happen to hold.
+        """
         from specmod.pipeline import _compare_settings  # noqa: PLC0415
 
-        settings = _compare_settings()
-        assert settings["smoother"] is None
-        assert settings["n_bins"] == load_config().config.smoothing.n_bins
+        assert isinstance(_compare_settings()["smoother"], SMOOTHERS["konno_ohmachi"])
+
+    def test_the_pinned_reference_config_still_bins(self) -> None:
+        """And the references keep the path they were captured under."""
+        from specmod import config as cfg  # noqa: PLC0415
+        from specmod.pipeline import _compare_settings  # noqa: PLC0415
+
+        reference = Path(__file__).parent / "golden" / "reference.toml"
+        with cfg.using(reference):
+            settings = _compare_settings()
+            assert settings["smoother"] is None
+            assert settings["n_bins"] == cfg.load_config().config.smoothing.n_bins
 
     def test_the_section_parameters_reach_the_smoother(
         self, isolated: Path, monkeypatch: pytest.MonkeyPatch

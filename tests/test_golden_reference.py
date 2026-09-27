@@ -68,12 +68,18 @@ import pytest
 obspy = pytest.importorskip("obspy")
 
 import specmod.preprocess as pre  # noqa: E402
+from specmod import config as cfg  # noqa: E402
 from specmod.datasets import PNR_2019  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parent.parent
 
 _REFERENCE = _ROOT / "tests" / "golden" / "pipeline_reference.json"
+
+#: The settings the references were captured under. Pinned rather than
+#: inherited, so that changing a shipped default cannot move a committed
+#: number — the property REFACTOR_PLAN §6.6 recorded as claimed but absent.
+REFERENCE_CONFIG = _ROOT / "tests" / "golden" / "reference.toml"
 
 # The event and its layout come from `specmod.datasets`, which is also what
 # `conftest.py` and `tools/make_golden.py` read. This module cannot import the
@@ -241,29 +247,23 @@ def _flatten(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_the_settings_behind_the_reference_are_still_current() -> None:
-    """Which configuration produced these numbers, and is it still the one.
+    """The pinned file and the stamp in the reference must describe one config.
 
-    The gap this closes is narrow and worth stating exactly.
-    ``docs/REFACTOR_PLAN.md`` §6.6 records that nothing pins a config here: the
-    pipeline reads ``load_config()`` ambiently, so this suite runs against
-    whatever the defaults currently are. The numbers are frozen by the
-    committed file, which is why moving a default fails the amplitude tests
-    loudly — 9 of 25 of them, measured, when ``smoothing.n_bins`` was bumped
-    from 151 to 158.
+    ``docs/REFACTOR_PLAN.md`` §6.6 recorded a claim whose mechanism was absent:
+    "regression tests pin an explicit config file, never the defaults, so
+    changing a default cannot silently move a golden test". Nothing pinned
+    anything — the pipeline reads ``load_config()`` ambiently — so bumping
+    ``smoothing.n_bins`` from 151 to 158 moved nine of these tests, and so did
+    any deliberate default change, indistinguishably.
 
-    What it did not do is say *why*. Nine numeric failures name stations and
-    ratios, not the setting behind them, and a **regenerated** reference
-    adopted the new default silently. So the generator now stamps the resolved
-    configuration into the file, and this test is the assertion over it: the
-    failure names the key that moved, and a regeneration under changed settings
-    shows up as a diff in ``_environment.config`` rather than as numbers alone.
-
-    It is not the pin §6.6 asks for. Pinning needs a way to hold a
-    configuration across an ambient read, which does not exist yet; until then
-    the protection is "the numbers are frozen, and the settings behind them are
-    recorded", not "the settings are frozen".
+    ``reference.toml`` is the pin, ``config.using()`` is what makes an ambient
+    read see it, and this is the assertion that the file still describes the
+    configuration the committed numbers were captured under. It compares the
+    two recorded artefacts, not the shipped defaults: **a default change is now
+    expected to leave every number here untouched**, and if it does not, the
+    pin has been bypassed rather than a setting having moved.
     """
-    from specmod.config import config_hash, load_config  # noqa: PLC0415
+    from specmod.config import config_hash  # noqa: PLC0415
 
     stamp = _reference()["_environment"].get("config")
     assert stamp is not None, (
@@ -272,15 +272,21 @@ def test_the_settings_behind_the_reference_are_still_current() -> None:
     )
     assert stamp["non_default"] == {}, (
         f"the reference was generated with {sorted(stamp['non_default'])} set "
-        "by a layer above the defaults — a local file or the environment, "
-        "neither of which the repository can reproduce. Regenerate it without."
+        "by a layer above the pin — a local file or the environment, neither "
+        "of which the repository can reproduce. Regenerate it without."
+    )
+    assert REFERENCE_CONFIG.is_file(), (
+        f"{REFERENCE_CONFIG.name} is missing. It is the configuration these "
+        "numbers were captured under, and without it the suite falls back to "
+        "the shipped defaults — which is the failure it exists to prevent."
     )
 
-    resolved = load_config()
-    if config_hash(resolved.config) == stamp["hash"]:
-        return
+    with cfg.using(REFERENCE_CONFIG) as resolved:
+        if config_hash(resolved.config) == stamp["hash"]:
+            return
+        now = _flatten(resolved.config.to_dict())
 
-    was, now = _flatten(stamp["values"]), _flatten(resolved.config.to_dict())
+    was = _flatten(stamp["values"])
     moved = [
         f"  {key}: {was.get(key, '<absent>')!r} -> {now.get(key, '<absent>')!r}"
         for key in sorted(set(was) | set(now))
@@ -289,14 +295,15 @@ def test_the_settings_behind_the_reference_are_still_current() -> None:
     raise AssertionError(
         "\n".join(
             [
-                f"{len(moved)} setting(s) differ from those the reference was "
-                "captured under:",
+                f"{len(moved)} setting(s) in {REFERENCE_CONFIG.name} differ "
+                "from those the reference was captured under:",
                 *moved,
                 "",
-                "If the change is intended, the numbers this suite compares "
-                "against were produced under the old ones. Regenerate with "
-                "`python tools/make_golden.py` and say in the commit message "
-                "which numbers moved and by how much.",
+                "These two are regenerated together. Editing the pinned config "
+                "without rerunning `python tools/make_golden.py` leaves the "
+                "committed numbers describing settings nothing uses; "
+                "regenerate, and say in the commit message which numbers moved "
+                "and by how much.",
             ]
         )
     )
@@ -314,7 +321,14 @@ def _run(estimator: str) -> Any:
     estimators.
     """
     signal, noise = _build_windows()
-    return spectrum_set_from_streams(signal.copy(), noise.copy(), estimator=estimator)
+    # Under the settings the reference was captured with, not the shipped
+    # defaults. Without this the committed numbers move whenever a default
+    # does, which makes a deliberate default change and an accidental
+    # regression the same failure — REFACTOR_PLAN §6.6.
+    with cfg.using(REFERENCE_CONFIG):
+        return spectrum_set_from_streams(
+            signal.copy(), noise.copy(), estimator=estimator
+        )
 
 
 ESTIMATORS = ["fft", "welch", "multitaper", "quadratic", "cwt"]

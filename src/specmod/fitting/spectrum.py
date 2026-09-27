@@ -173,10 +173,11 @@ class FitSpectrum:
         ``# self.set_bounds('fc', min=0)`` sat commented out here. It is not a
         poor fit but an unphysical one: a negative ``t*`` says the wave gained
         energy travelling, and a corner frequency below zero says nothing at
-        all. lmfit returns either if the misfit surface leans that way, and
-        with the shipped multitaper default it returned ``fc = -4.45 Hz`` on
-        one PNR station while ``pass_fitting`` reported success — because a
-        parameter with no bound cannot be *at* its bound.
+        all. lmfit returns either if the misfit surface leans that way: under
+        multitaper with log-binning, which was the default through 0.5, it
+        returned ``fc = -4.45 Hz`` on one PNR station while ``pass_fitting``
+        reported success — because a parameter with no bound cannot be *at*
+        its bound.
         """
         # `**params: Any` rather than `float`, because lmfit's `make_params`
         # takes a leading `verbose` argument: a model with a parameter of that

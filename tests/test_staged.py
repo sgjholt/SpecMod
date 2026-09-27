@@ -19,6 +19,9 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from pathlib import Path  # noqa: E402
+
+from specmod import config as cfg  # noqa: E402
 from specmod.config import load_config  # noqa: E402
 from specmod.distance import (  # noqa: E402
     Epicentral,
@@ -37,11 +40,17 @@ from specmod.staged import (  # noqa: E402
     get_weight_model,
 )
 
+#: These tests are about selection patterns and minimiser comparison, not
+#: about which estimator ships as the default, so they pin the settings the
+#: committed references hold and stay on one spectrum whatever the default
+#: becomes.
+REFERENCE_CONFIG = Path(__file__).parent / "golden" / "reference.toml"
+
 
 @functools.cache
 def _spectra(windows: Any) -> Any:
     signal, noise = windows()
-    with contextlib.redirect_stdout(io.StringIO()):
+    with contextlib.redirect_stdout(io.StringIO()), cfg.using(REFERENCE_CONFIG):
         return spectrum_set_from_streams(signal, noise)
 
 

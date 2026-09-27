@@ -25,15 +25,24 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from pathlib import Path  # noqa: E402
+
+from specmod import config as cfg  # noqa: E402
 from specmod.config import load_config  # noqa: E402
 from specmod.fitting import FitSpectra, initial_guess  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
+
+#: The settings the committed references hold, which still bin. These tests
+#: assert that a `[fitting]` value is read at all, so they need a spectrum
+#: whose shape does not depend on what the shipped smoother happens to be.
+REFERENCE_CONFIG = Path(__file__).parent / "golden" / "reference.toml"
 
 
 @functools.cache
 def _spectra(windows: Any) -> Any:
     signal, noise = windows()
-    return spectrum_set_from_streams(signal, noise, estimator="fft")
+    with cfg.using(REFERENCE_CONFIG):
+        return spectrum_set_from_streams(signal, noise, estimator="fft")
 
 
 def _fit(spectra: Any, **kwargs: Any) -> Any:
@@ -160,7 +169,11 @@ class TestTheSettingsBite:
         assert load_config().config.fitting.corner_frequency_min == 0.0
 
     def test_fit_bins_comes_from_configuration(self, pnr_windows: Any) -> None:
-        """Fitting the binned spectrum uses far fewer points than the raw one."""
+        """Fitting the binned spectrum uses far fewer points than the raw one.
+
+        Under `log_bins`, which the pinned reference config uses: one value per
+        occupied bin against every Fourier sample in the band.
+        """
         spectra = _spectra(pnr_windows)
         raw = _fit(spectra, fit_bins=False)
         binned = _fit(spectra, fit_bins=True)
@@ -170,6 +183,31 @@ class TestTheSettingsBite:
         # The shipped default is the unbinned spectrum.
         assert load_config().config.fitting.fit_bins is False
         assert _fit(spectra).models[id].mod_freq.size == raw.models[id].mod_freq.size
+
+    def test_under_konno_ohmachi_it_switches_the_amplitudes_not_the_points(
+        self, pnr_windows: Any
+    ) -> None:
+        """The shipped default smoother keeps the frequency axis.
+
+        So ``fit_bins`` selects the same frequencies either way and changes the
+        amplitudes read at them: unsmoothed by default, smoothed when on. The
+        default reading the unsmoothed ones is the modelling choice the
+        tutorial's "What the fit reads" documents.
+        """
+        signal, noise = pnr_windows()
+        with cfg.using(smoothing={"method": "konno_ohmachi"}):
+            spectra = spectrum_set_from_streams(signal, noise, estimator="fft")
+        unsmoothed = _fit(spectra, fit_bins=False)
+        smoothed = _fit(spectra, fit_bins=True)
+
+        id = next(iter(unsmoothed.models))
+        raw, smooth = unsmoothed.models[id], smoothed.models[id]
+        assert np.array_equal(raw.mod_freq, smooth.mod_freq)
+        assert not np.allclose(raw.mod_amp, smooth.mod_amp)
+        # And the amplitudes the default fit reads are the unsmoothed ones.
+        expected = np.log10(spectra[id].signal.amp)
+        inside = np.isin(spectra[id].signal.freq, raw.mod_freq)
+        np.testing.assert_array_equal(raw.mod_amp, expected[inside])
 
 
 class TestInitialGuess:

@@ -23,6 +23,7 @@ import pytest
 
 obspy = pytest.importorskip("obspy")
 
+from specmod import config as cfg  # noqa: E402
 from specmod.core import Spectrum, SpectrumPair, SpectrumSet  # noqa: E402
 from specmod.core.collection import log_bin  # noqa: E402
 from specmod.pipeline import (  # noqa: E402
@@ -54,10 +55,24 @@ def _summary(a: Any) -> dict[str, Any]:
     }
 
 
+#: The settings the committed references were captured under; shared with
+#: `test_golden_reference.py`.
+REFERENCE_CONFIG = Path(__file__).parent / "golden" / "reference.toml"
+
+
 @functools.cache
 def _direct(estimator: str, windows: Any) -> SpectrumSet:
+    """Build a set under the configuration the committed references hold.
+
+    Pinned rather than ambient because what these tests assert — the recorded
+    displacement, the Parseval contract, the band a noise floor selects — is
+    the pipeline's behaviour, not whichever estimator and smoother happen to
+    be the shipped defaults this month. `tests/golden/reference.toml` is the
+    same pin `test_golden_reference.py` uses; see REFACTOR_PLAN §6.6.
+    """
     signal, noise = windows()
-    return spectrum_set_from_streams(signal, noise, estimator=estimator)
+    with cfg.using(REFERENCE_CONFIG):
+        return spectrum_set_from_streams(signal, noise, estimator=estimator)
 
 
 # ------------------------------------------------------------ the unit itself
