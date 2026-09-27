@@ -9,6 +9,30 @@ release could have this problem — every later one has a real predecessor tag �
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.6.0](https://github.com/sgjholt/SpecMod/compare/v0.5.0...v0.6.0) (2026-09-27)
+
+<!-- One Documentation line below was removed by hand, the third edit in this
+file. release-please listed the roadmap entry twice: once for 9f35727, the
+commit, and again for ed4e10c, the merge commit of #48, whose body repeated the
+commit's subject and so parsed as a second commit. The entry kept points at the
+commit itself. release-please only prepends to this file, so the edit
+survives. -->
+
+### ⚠ BREAKING CHANGES
+
+* **config:** default to FFT with Konno-Ohmachi smoothing
+
+### Features
+
+* **config:** default to FFT with Konno-Ohmachi smoothing ([1081364](https://github.com/sgjholt/SpecMod/commit/108136484a55ea5cc6c3490ced0fc8cdaf0052b5))
+* **config:** hold a configuration across an ambient read, and pin the goldens ([71a4e9c](https://github.com/sgjholt/SpecMod/commit/71a4e9c68c60c7ded332b6e2cdecd8da7c0b7a99))
+
+
+### Documentation
+
+* **fitting:** say what the fit reads, and document it as a modelling choice ([33975ed](https://github.com/sgjholt/SpecMod/commit/33975ed1042e7374e7750c46aa879e666cf0296a))
+* **roadmap:** file the station selection as shipped in v0.5.0 ([9f35727](https://github.com/sgjholt/SpecMod/commit/9f357276a6e6a7fd4694cd5107405b4d53f12f44))
+
 ## [0.5.0](https://github.com/sgjholt/SpecMod/compare/v0.4.0...v0.5.0) (2026-09-19)
 
 <!-- The `acquire` entries below are edited by hand, and are the second entry
