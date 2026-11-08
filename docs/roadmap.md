@@ -191,9 +191,7 @@ found by a live fetch rather than by the suite:
   as two independent records of one ground motion. `channel_priorities` and
   `location_priorities` rank them, first match wins per station.
 
-## In progress — not yet released
-
-Merged on `main`, and it will name its version when a release goes out.
+## Shipped in v0.6.0
 
 ### The default is FFT with Konno-Ohmachi smoothing
 
@@ -268,7 +266,15 @@ Twice in a row makes it worth naming: what keeps moving is not the API, it is
 what the API *does* with a setting that was already there. A deprecation cycle
 does not protect against that, since there is nothing to deprecate; the
 [upgrading guide](upgrading.md) is the only thing that does, and 1.0 will not
-change that. The count stands at zero.
+change that.
+
+**v0.6.0 is not clean either, and is the first to break on purpose.** Its
+default estimator and smoother changed, so every result moves unless a
+configuration pinned both; the change is marked breaking, and
+[Upgrading](upgrading.md#from-05-to-06) says what to pin. One signature moved
+as well: the first argument of `load_config` is positional-only, so
+`load_config(start=path)` is now read as a `[start]` configuration section and
+refused. The count stands at zero.
 
 ## After 1.0
 
@@ -294,9 +300,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. Between releases there is no such
-section at all, which is a state the page should be in rather than a section
-that went missing.
+shipped, and this page does not blur the two. **There is no such section right
+now**, because nothing is merged and unreleased; that is the state the page
+should be in between releases, not a section that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was

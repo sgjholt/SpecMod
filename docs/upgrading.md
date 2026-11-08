@@ -13,8 +13,8 @@ See [Releasing the software](releasing.md#what-a-version-number-means-while-this
 ## From 0.5 to 0.6
 
 **The default estimator is `fft` and the default smoother is `konno_ohmachi`.**
-They were `multitaper` and `log_bins`. Nothing is renamed and no signature
-moves; **every result changes** unless your configuration already pinned both.
+They were `multitaper` and `log_bins`. Nothing is renamed; **every result
+changes** unless your configuration already pinned both.
 
 The two do different jobs. The estimator sets the spectrum that is fitted.
 The smoother sets the band the fit is confined to — the signal-to-noise ratio
@@ -71,6 +71,11 @@ with config.using("studies/my_study.toml"):
 
 The local file and the environment are excluded inside the block, and an
 explicit `load_config(project_file=...)` still wins.
+
+**The first argument of `load_config` is positional-only.**
+`load_config(start=path)` now reads `start` as a configuration section and
+raises `ValueError: Configuration section [start] must be a table`; write
+`load_config(path)`. The keyword arguments are unchanged.
 
 ## From 0.4 to 0.5
 
