@@ -1,10 +1,70 @@
 # Upgrading
 
-Five moves are documented here. Most readers porting code want `0.2` to `0.3`,
+Six moves are documented here. Most readers porting code want `0.2` to `0.3`,
 which renamed ten functions in `specmod.preprocess` and changed what they do
-with the stream they are given. The three moves above it rename nothing: they
-change what a setting does, or which one is the default, so the break is in the
-numbers rather than in the call.
+with the stream they are given. Three of the moves above it rename nothing:
+they change what a setting does, or which one is the default, so the break is
+in the numbers rather than in the call. `0.6` to `0.7` renames files on disk,
+and comes with a command that does it for you.
+
+## From 0.6 to 0.7
+
+**Times in file and directory names no longer contain colons.** An event
+directory and the files inside it were named by the origin as ObsPy prints it,
+`2019-08-26T07:30:47.000000Z`. They are now named in ISO 8601 basic format,
+`20190826T073047.000000Z`, through `specmod.datasets.path_name`. Nothing in any
+file changes, only names; no result moves.
+
+The old names had two problems. Windows does not allow a colon in a file name,
+so the repository could not be checked out there, and uv 0.13 refuses to build
+a source distribution containing one, which stopped the release.
+
+| | Before 0.7 | From 0.7 |
+|---|---|---|
+| Event directory | `events/2019-08-26T07:30:47.000000Z/` | `events/20190826T073047.000000Z/` |
+| Waveform file | `LV.L001..HHE_2019-08-26T07:30:47.000000Z` | `LV.L001..HHE_20190826T073047.000000Z` |
+| Pick file | `picks/2019-08-26T07:30:47.000000Z.picks` | `picks/20190826T073047.000000Z.picks` |
+| `manifest.json` `files` keys | the old paths | the new paths |
+
+**`specmod fetch` writes the new names.** Data you fetched with an earlier
+version keeps the old ones until you migrate it.
+
+**To migrate a directory**, point the command at anything that contains event
+data — one fetch, a tree of them, or a checkout's `tutorial/data/events`:
+
+```bash
+specmod migrate-names build/magna_2020 --dry-run   # list what would change
+specmod migrate-names build/magna_2020
+specmod fetch datasets/magna_2020.toml -o build/magna_2020 --verify
+```
+
+It rewrites every extended-format time in every name under the directory, and
+the `files` keys of any `manifest.json` there, so `fetch --verify` still passes:
+the hashes are of file contents, which the migration does not touch. From
+Python it is `specmod.datasets.migrate_names(root, dry_run=False)`, which
+returns the `(old, new)` pairs. Running it twice is safe; the second run finds
+nothing to do. It refuses, before renaming anything, when a new name is
+already taken, which happens when one event exists in both layouts. Which copy
+to keep is yours to decide.
+
+**Unmigrated data is still read, until 0.8.** `Event.directory()` looks for the
+new name first and falls back to the old one with a `DeprecationWarning` naming
+the command to run. The fallback goes in 0.8, under the usual one-minor
+deprecation.
+
+**Code that built a path from the origin string** has to call `path_name`
+instead:
+
+```python
+from specmod.datasets import path_name
+
+event_dir = out / path_name(event.origin)        # was: out / event.origin
+save(spectra_dir / path_name(spectra.event), s)  # was: spectra_dir / spectra.event
+```
+
+The origin itself is unchanged everywhere it is a time rather than a name:
+`Event.origin`, `datasets/*.toml`, the manifest's `resolved.origin`, and
+`SpectrumSet.event` all keep the extended format.
 
 `0.x` ships breaking changes in minor bumps without a deprecation cycle,
 because shimming an API still being worked out costs more than it protects.
@@ -13,8 +73,8 @@ See [Releasing the software](releasing.md#what-a-version-number-means-while-this
 ## From 0.5 to 0.6
 
 **The default estimator is `fft` and the default smoother is `konno_ohmachi`.**
-They were `multitaper` and `log_bins`. Nothing is renamed and no signature
-moves; **every result changes** unless your configuration already pinned both.
+They were `multitaper` and `log_bins`. Nothing is renamed; **every result
+changes** unless your configuration already pinned both.
 
 The two do different jobs. The estimator sets the spectrum that is fitted.
 The smoother sets the band the fit is confined to — the signal-to-noise ratio
@@ -71,6 +131,11 @@ with config.using("studies/my_study.toml"):
 
 The local file and the environment are excluded inside the block, and an
 explicit `load_config(project_file=...)` still wins.
+
+**The first argument of `load_config` is positional-only.**
+`load_config(start=path)` now reads `start` as a configuration section and
+raises `ValueError: Configuration section [start] must be a table`; write
+`load_config(path)`. The keyword arguments are unchanged.
 
 ## From 0.4 to 0.5
 

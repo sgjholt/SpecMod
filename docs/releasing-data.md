@@ -30,6 +30,13 @@ station wildcards against the data centre, cuts each channel to the window
 relative to origin, and writes an `EventDirectory` with a `manifest.json`
 beside it.
 
+The event directory and each waveform file carry the origin in ISO 8601 basic
+format — `20200318T130931.000000Z`, not `2020-03-18T13:09:31.000000Z` — because
+the colons are not legal in a Windows file name, and a source distribution or
+archive containing one is refused by uv 0.13. A fetch made before 0.7 has the
+old names: run `specmod migrate-names build/magna_2020` before archiving it,
+which renames them and updates the manifest to match.
+
 Expect it to take a few minutes — Magna is 88 stations across seven networks.
 
 **Check the manifest before going further.** It records what came back, not

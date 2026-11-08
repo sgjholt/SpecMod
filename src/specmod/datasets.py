@@ -4,7 +4,7 @@ The layout follows ObsPy's ``mass_downloader``, which writes ``waveforms/``
 and ``stations/`` beneath a per-event directory. This adds the three things a
 spectral workflow needs alongside them::
 
-    tutorial/data/events/<origin>/
+    tutorial/data/events/<path_name(origin)>/
         event.xml                  # QuakeML: origin, magnitudes, uncertainties
         waveforms/                 # one miniSEED file per channel
         stations/inventory.xml     # StationXML for those channels
@@ -20,6 +20,14 @@ Datasets that ship with the repository have their own loader —
 :func:`load_pnr_2019` — and need no network. Published ones are fetched by
 :func:`load`, cached by pooch and pinned by hash. :mod:`specmod.acquire`
 produces both.
+
+A time in a file or directory name is written by :func:`path_name`, in ISO 8601
+basic format — ``20190826T073047.000000Z`` rather than
+``2019-08-26T07:30:47.000000Z``. The extended form's colons are not legal in a
+Windows file name, and uv 0.13 refuses to build a source distribution that
+contains one. Directories written before 0.7 used the extended form;
+:func:`migrate_names` renames them, and :meth:`Event.directory` still finds an
+unmigrated one until 0.8.
 """
 
 from __future__ import annotations
@@ -27,6 +35,8 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,10 +52,44 @@ __all__ = [
     "data_dir",
     "load",
     "load_pnr_2019",
+    "migrate_names",
+    "path_name",
 ]
 
 #: Event directories, relative to the repository root.
 EVENTS = Path("tutorial") / "data" / "events"
+
+#: A time in ISO 8601 extended format, as names were written before 0.7: the
+#: form :func:`str` gives an ``obspy.UTCDateTime``. The colons are what
+#: :func:`migrate_names` exists to remove, so a time without them is left alone.
+_EXTENDED_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?")
+
+
+def path_name(time: Any) -> str:
+    """``time`` as it is written in a file or directory name.
+
+    ISO 8601 basic format with microseconds, ``20190826T073047.000000Z``: no
+    colons, which Windows does not allow in a name and uv 0.13 does not allow
+    in a source distribution, and the same fixed width for every time, so names
+    sort chronologically. Microseconds are kept so that two events in the same
+    second do not share a directory.
+
+    Takes anything ``obspy.UTCDateTime`` accepts, including a name this
+    function produced, so applying it twice changes nothing.
+
+    >>> path_name("2019-08-26T07:30:47.000000Z")
+    '20190826T073047.000000Z'
+    >>> path_name("2019-08-26T07:49:24.2")
+    '20190826T074924.200000Z'
+    """
+    import obspy  # noqa: PLC0415
+
+    return obspy.UTCDateTime(time).strftime("%Y%m%dT%H%M%S.%fZ")
+
+
+def _renamed(name: str) -> str:
+    """``name`` with every extended-format time in it rewritten by :func:`path_name`."""
+    return _EXTENDED_TIME.sub(lambda match: path_name(match.group(0)), name)
 
 
 @dataclass(frozen=True)
@@ -133,13 +177,32 @@ class Event:
     catalogue_magnitude_type: str | None = None
 
     def directory(self, project_root: Path | str) -> EventDirectory:
-        """Locate this event beneath ``project_root``, the repository root."""
-        return EventDirectory(Path(project_root) / EVENTS / self.origin)
+        """Locate this event beneath ``project_root``, the repository root.
+
+        The directory is named by :func:`path_name`. One written before 0.7,
+        named by the origin itself, is still found when the new name is
+        absent, with a :class:`DeprecationWarning`; that fallback is removed
+        in 0.8. ``specmod migrate-names`` renames it.
+        """
+        events = Path(project_root) / EVENTS
+        current = events / path_name(self.origin)
+        legacy = events / self.origin
+        if not current.exists() and legacy.is_dir():
+            warnings.warn(
+                f"{legacy} is named in the pre-0.7 layout, whose colons are "
+                f"not legal on Windows; it is read for now, and will not be "
+                f"found from 0.8. Run `specmod migrate-names {events}` to "
+                f"rename it to {current.name}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return EventDirectory(legacy)
+        return EventDirectory(current)
 
 
 #: Preston New Road, 26 August 2019 — the induced event the tutorial and both
 #: golden references are built around, and the largest of the PNR-2 sequence.
-#: The origin time doubles as the directory name.
+#: The origin time, through :func:`path_name`, is the directory name.
 #:
 #: ``Mw 2.9`` is from the PNR-2 catalogue published with Cuadrilla's
 #: hydraulic-fracture monitoring (NGDC, `709cbc2f-af5c-4d09-a4ea-6deb5aa8c5d8
@@ -314,3 +377,78 @@ def load(name: str, *, downloader: Any = None) -> Dataset:
         json.loads(manifest_file.read_text()) if manifest_file.is_file() else None
     )
     return Dataset(event=spec.event, paths=paths, manifest=manifest)
+
+
+# --------------------------------------------------------------- migrating
+
+
+def migrate_names(
+    root: Path | str, *, dry_run: bool = False
+) -> list[tuple[Path, Path]]:
+    """Rename every file and directory under ``root`` to the 0.7 layout.
+
+    Each ISO 8601 extended-format time in a name is rewritten by
+    :func:`path_name`, so ``2019-08-26T07:30:47.000000Z/`` becomes
+    ``20190826T073047.000000Z/`` and a waveform file
+    ``LV.L001..HHE_2019-08-26T07:30:47.000000Z`` becomes
+    ``LV.L001..HHE_20190826T073047.000000Z``. Nothing else in a name changes,
+    and no file's contents change, so every hash a manifest records stays
+    valid. What a ``manifest.json`` under ``root`` changes is its ``files``
+    keys, which are paths: they are rewritten the same way, so
+    ``specmod fetch --verify`` still passes afterwards.
+
+    Returns ``(old, new)`` for every rename, deepest first, which is the order
+    they are made in. With ``dry_run`` nothing is renamed or rewritten. Running
+    it again on a migrated tree finds nothing to do.
+
+    Refuses before renaming anything if a new name is already taken, so a tree
+    that holds both layouts of one event is left for a person to reconcile
+    rather than half-migrated.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        raise NotADirectoryError(f"{root} is not a directory")
+
+    # Deepest first, so a directory is renamed after everything inside it and
+    # no path in the plan is invalidated by an earlier rename.
+    renames: list[tuple[Path, Path]] = []
+    for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        new_name = _renamed(path.name)
+        if new_name != path.name:
+            renames.append((path, path.with_name(new_name)))
+
+    targets = [new for _, new in renames]
+    taken = [new for new in targets if new.exists()]
+    if len(set(targets)) != len(targets) or taken:
+        clash = taken or [t for t in targets if targets.count(t) > 1]
+        raise FileExistsError(
+            f"migrating {root} would overwrite {sorted(set(map(str, clash)))}. "
+            f"Nothing was renamed: this tree holds both layouts of the same "
+            f"data, and which copy to keep is not a choice to make silently."
+        )
+
+    # Where each manifest will be once its directories are renamed.
+    manifests = [
+        root.joinpath(*(_renamed(part) for part in path.relative_to(root).parts))
+        for path in root.rglob("manifest.json")
+        if path.is_file()
+    ]
+    if dry_run:
+        return renames
+
+    for old, new in renames:
+        old.rename(new)
+
+    for manifest_file in manifests:
+        manifest = json.loads(manifest_file.read_text())
+        files = manifest.get("files")
+        if not isinstance(files, dict):
+            continue
+        migrated = {
+            "/".join(_renamed(part) for part in name.split("/")): digest
+            for name, digest in files.items()
+        }
+        if migrated != files:
+            manifest["files"] = dict(sorted(migrated.items()))
+            manifest_file.write_text(json.dumps(manifest, indent=1) + "\n")
+    return renames

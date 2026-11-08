@@ -91,13 +91,15 @@ from pandas.core.series import Series
 import specmod.preprocess as pre
 import specmod.utils as ut
 from specmod.core.collection import SpectrumPair, SpectrumSet
+from specmod.datasets import path_name
 from specmod.pipeline import spectrum_set_from_streams
 from specmod.staged import StagedFit
 
 # Relative to this notebook, so it runs from wherever it is opened.
 EVENTS = Path("data/events")
 EVENT = "2019-08-26T07:30:47.000000Z" # Event origin time
-DATA: Path = EVENTS / EVENT
+# Named without colons, which Windows does not allow: 20190826T073047.000000Z.
+DATA: Path = EVENTS / path_name(EVENT)
 WAVEFORMS: Path = DATA / "waveforms"
 STATIONS: Path = DATA / "stations" / "*.xml"
 PICKS: Path = DATA / "picks"
@@ -1004,7 +1006,7 @@ it, because journal supplements want one.
 code("""
 from specmod.io import load, save
 
-path: Path = save(path=OUTPUT / spectra.event, spectra=spectra)
+path: Path = save(path=OUTPUT / path_name(spectra.event), spectra=spectra)
 print(f"{path}  ({path.stat().st_size // 1024} KB)")
 
 back: SpectrumSet = load(path)
@@ -1016,8 +1018,8 @@ print(
 
 
 code("""
-FitSpectra.write_flatfile(path=OUTPUT / "flatfiles" / f"{spectra.event}.parquet", fits=fits)
-FitSpectra.write_flatfile(path=OUTPUT / "flatfiles" / f"{spectra.event}.csv", fits=fits)
+FitSpectra.write_flatfile(path=OUTPUT / "flatfiles" / f"{path_name(spectra.event)}.parquet", fits=fits)
+FitSpectra.write_flatfile(path=OUTPUT / "flatfiles" / f"{path_name(spectra.event)}.csv", fits=fits)
 sorted(p.name for p in (OUTPUT / "flatfiles").iterdir())
 """)
 

@@ -19,6 +19,7 @@ from .acquire import fetch, verify
 from .config import load_config
 from .config.provenance import Provenance
 from .config.serialize import to_toml
+from .datasets import migrate_names
 
 #: Shared by every command that resolves configuration, so the layering flags
 #: cannot drift apart between them.
@@ -133,6 +134,28 @@ def fetch_command(config_file: str, out: str, verify_only: bool) -> None:
         f"{manifest['name']}: {len(channels)} channels from "
         f"{manifest['data_centre']} -> {out}"
     )
+
+
+@main.command("migrate-names")
+@click.argument("root", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="List what would be renamed, and rename nothing.",
+)
+def migrate_names_command(root: str, dry_run: bool) -> None:
+    """Rename event data written before 0.7 to colon-free names.
+
+    Every time in a file or directory name under ROOT is rewritten from
+    2019-08-26T07:30:47.000000Z to 20190826T073047.000000Z, and any
+    manifest.json there is updated to match, so `fetch --verify` still
+    passes. File contents are untouched. Safe to run twice.
+    """
+    renames = migrate_names(root, dry_run=dry_run)
+    for old, new in renames:
+        click.echo(f"{old} -> {new.name}")
+    verb = "would rename" if dry_run else "renamed"
+    click.echo(f"{root}: {verb} {len(renames)} path(s)")
 
 
 if __name__ == "__main__":  # pragma: no cover

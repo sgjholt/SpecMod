@@ -32,6 +32,8 @@ jobs:
       # fails every job at "Getting action download info", before a step runs.
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
       - run: uv python install 3.11
       - run: uv venv # create a venv to install into
 

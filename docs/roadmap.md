@@ -191,9 +191,7 @@ found by a live fetch rather than by the suite:
   as two independent records of one ground motion. `channel_priorities` and
   `location_priorities` rank them, first match wins per station.
 
-## In progress — not yet released
-
-Merged on `main`, and it will name its version when a release goes out.
+## Shipped in v0.6.0
 
 ### The default is FFT with Konno-Ohmachi smoothing
 
@@ -226,6 +224,22 @@ so moving a default moved 11 committed numbers, and a deliberate change was
 indistinguishable from a regression. They now carry their own settings in
 `tests/golden/reference.toml`, and a default change leaves every one of them
 untouched.
+
+## In progress — not yet released
+
+Merged on `main`, and it will name its version when a release goes out.
+
+### Names on disk carry no colons
+
+Event directories and the files in them were named by the origin as ObsPy
+prints it, `2019-08-26T07:30:47.000000Z`. Windows does not allow the colons,
+and uv 0.13 refuses to build a source distribution containing them, which
+stopped the release. Names are now ISO 8601 basic format,
+`20190826T073047.000000Z`, from `specmod.datasets.path_name`, and
+`specmod fetch` writes them. `specmod migrate-names` renames data written
+earlier and keeps its manifest verifying; until 0.8, data that has not been
+migrated is still found, with a warning.
+[Upgrading](upgrading.md#from-06-to-07) has the steps.
 
 ## Planned
 
@@ -268,7 +282,15 @@ Twice in a row makes it worth naming: what keeps moving is not the API, it is
 what the API *does* with a setting that was already there. A deprecation cycle
 does not protect against that, since there is nothing to deprecate; the
 [upgrading guide](upgrading.md) is the only thing that does, and 1.0 will not
-change that. The count stands at zero.
+change that.
+
+**v0.6.0 is not clean either, and is the first to break on purpose.** Its
+default estimator and smoother changed, so every result moves unless a
+configuration pinned both; the change is marked breaking, and
+[Upgrading](upgrading.md#from-05-to-06) says what to pin. One signature moved
+as well: the first argument of `load_config` is positional-only, so
+`load_config(start=path)` is now read as a `[start]` configuration section and
+refused. The count stands at zero.
 
 ## After 1.0
 
