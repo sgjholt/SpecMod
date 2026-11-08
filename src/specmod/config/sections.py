@@ -12,7 +12,7 @@ values used for the published Magna run. Those live in
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from typing import Any, Literal, Self
 
 __all__ = [
@@ -396,9 +396,14 @@ class Config:
                 f"Valid sections are {sorted(known)}."
             )
         kwargs: dict[str, Any] = {}
-        for name, f in ((f.name, f) for f in fields(cls)):
-            if name in data:
-                kwargs[name] = _build_section(f.default_factory(), data[name], name)  # type: ignore[misc]
+        for f in fields(cls):
+            if f.name in data:
+                # Every section field has a default_factory; the check narrows
+                # the MISSING sentinel away for the type checker.
+                assert f.default_factory is not MISSING
+                kwargs[f.name] = _build_section(
+                    f.default_factory(), data[f.name], f.name
+                )
         return cls(**kwargs)
 
 
