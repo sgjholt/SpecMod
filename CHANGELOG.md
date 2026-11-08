@@ -9,6 +9,14 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.7.1](https://github.com/sgjholt/SpecMod/compare/v0.7.0...v0.7.1) (2026-11-08)
+
+
+### Documentation
+
+* **roadmap:** file the colon-free names as shipped in v0.7.0 ([d44bebb](https://github.com/sgjholt/SpecMod/commit/d44bebb884e3c7dee32553328d23c328025d8b3f))
+* **roadmap:** file the colon-free names as shipped in v0.7.0 ([e364939](https://github.com/sgjholt/SpecMod/commit/e3649393ea013fc2208cd8634a8c02a035f09f66))
+
 ## [0.7.0](https://github.com/sgjholt/SpecMod/compare/v0.6.0...v0.7.0) (2026-11-08)
 
 
