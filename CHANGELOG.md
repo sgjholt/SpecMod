@@ -9,6 +9,27 @@ release could have this problem — every later one has a real predecessor tag �
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.7.0](https://github.com/sgjholt/SpecMod/compare/v0.6.0...v0.7.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **datasets:** event directories, waveform files and pick files are named in ISO 8601 basic format (`20190826T073047.000000Z`) instead of extended format (`2019-08-26T07:30:47.000000Z`), and `specmod fetch` writes the new names. Run `specmod migrate-names <dir>` on data fetched before 0.7; `Event.directory()` reads the old names with a DeprecationWarning until 0.8. Code that built a path from `Event.origin` or `SpectrumSet.event` should call `specmod.datasets.path_name` on it. See docs/upgrading.md, From 0.6 to 0.7.
+
+### Features
+
+* **datasets:** name times on disk without colons, and migrate existing data ([52168de](https://github.com/sgjholt/SpecMod/commit/52168dea5cd9ffd8ff16dd9dd70996824c0bbb93))
+
+
+### Code Refactoring
+
+* **config:** narrow the default_factory sentinel instead of suppressing mypy ([961da50](https://github.com/sgjholt/SpecMod/commit/961da50c28aa8ba785879a2b2287c219f64ec216))
+
+
+### Documentation
+
+* **roadmap:** file the default change and the config pin as shipped in v0.6.0 ([92eff1a](https://github.com/sgjholt/SpecMod/commit/92eff1af91dceea5ee65da5a55b460c026cb75de))
+
 ## [0.6.0](https://github.com/sgjholt/SpecMod/compare/v0.5.0...v0.6.0) (2026-09-27)
 
 <!-- One Documentation line below was removed by hand, the third edit in this
