@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .datasets import Event, EventDirectory
+from .datasets import Event, EventDirectory, path_name
 
 __all__ = [
     "AcquisitionConfig",
@@ -567,7 +567,10 @@ def fetch(
     bulk = _bulk_request(inventory, config, start, end)
     stream = client.get_waveforms_bulk(bulk)
 
-    paths = EventDirectory(Path(out) / event.origin)
+    # Named by `path_name`, never by the origin string itself: its colons are
+    # not legal in a Windows name, and a source distribution carrying one is
+    # refused by uv 0.13.
+    paths = EventDirectory(Path(out) / path_name(event.origin))
     paths.waveforms.mkdir(parents=True, exist_ok=True)
     paths.stations.mkdir(parents=True, exist_ok=True)
     paths.picks.mkdir(parents=True, exist_ok=True)
@@ -576,7 +579,7 @@ def fetch(
     for trace in stream:
         # One file per channel, named as the shipped data is, so a fetched
         # event and a committed one are read by the same code.
-        name = f"{trace.id}_{trace.stats.starttime}"
+        name = f"{trace.id}_{path_name(trace.stats.starttime)}"
         target = paths.waveforms / name
         trace.write(str(target), format="MSEED")
         written[str(target.relative_to(Path(out)))] = _sha256(target)

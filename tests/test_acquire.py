@@ -28,7 +28,7 @@ from specmod.acquire import (  # noqa: E402
     read_config,
     verify,
 )
-from specmod.datasets import EventDirectory  # noqa: E402
+from specmod.datasets import EventDirectory, path_name  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -46,6 +46,9 @@ EXPLICIT = {
     "longitude": -2.970780,
     "depth_km": 2.04,
 }
+
+#: What the event's directory is called: the origin without its colons.
+EVENT_DIR = path_name(EXPLICIT["origin"])
 
 
 class FakeClient:
@@ -138,12 +141,32 @@ class TestFetch:
         """A fetched event and a committed one must be read by the same code."""
         manifest = fetch(_config(), out=tmp_path, client=FakeClient())
 
-        paths = EventDirectory(tmp_path / EXPLICIT["origin"])
+        paths = EventDirectory(tmp_path / EVENT_DIR)
         assert paths.is_present()
         assert paths.inventory.is_file()
         assert paths.picks.is_dir()
         assert len(list(paths.waveforms.iterdir())) == 2
         assert manifest["name"] == "test_event"
+
+    def test_no_name_it_writes_contains_a_colon(self, tmp_path: Path) -> None:
+        """Windows refuses one, and uv 0.13 refuses an sdist containing one."""
+        manifest = fetch(_config(), out=tmp_path, client=FakeClient())
+
+        written = [p.relative_to(tmp_path) for p in tmp_path.rglob("*")]
+        assert written
+        assert not [p for p in written if ":" in str(p)]
+        assert not [name for name in manifest["files"] if ":" in name]
+
+    def test_the_waveforms_are_named_by_channel_and_start(self, tmp_path: Path) -> None:
+        stream = FakeClient().get_waveforms_bulk([])
+        fetch(_config(), out=tmp_path, client=FakeClient())
+
+        names = sorted(
+            p.name for p in EventDirectory(tmp_path / EVENT_DIR).waveforms.iterdir()
+        )
+        assert names == sorted(
+            f"{trace.id}_{path_name(trace.stats.starttime)}" for trace in stream
+        )
 
     def test_the_window_is_taken_relative_to_the_origin(self, tmp_path: Path) -> None:
         client = FakeClient()
@@ -521,7 +544,7 @@ class TestChannelPriorities:
         )
 
         written = obspy.read_inventory(
-            str(EventDirectory(tmp_path / EXPLICIT["origin"]).inventory)
+            str(EventDirectory(tmp_path / EVENT_DIR).inventory)
         )
         on_disk = {
             (network.code, station.code, channel.location_code or "--", channel.code)
@@ -700,7 +723,7 @@ class TestVerify:
 
     def test_an_edited_file_is_reported(self, tmp_path: Path) -> None:
         fetch(_config(), out=tmp_path, client=FakeClient())
-        paths = EventDirectory(tmp_path / EXPLICIT["origin"])
+        paths = EventDirectory(tmp_path / EVENT_DIR)
         target = next(iter(paths.waveforms.iterdir()))
         target.write_bytes(target.read_bytes() + b"\0")
 
@@ -710,7 +733,7 @@ class TestVerify:
 
     def test_a_deleted_file_is_reported(self, tmp_path: Path) -> None:
         fetch(_config(), out=tmp_path, client=FakeClient())
-        EventDirectory(tmp_path / EXPLICIT["origin"]).inventory.unlink()
+        EventDirectory(tmp_path / EVENT_DIR).inventory.unlink()
 
         problems = verify(tmp_path)
         assert len(problems) == 1

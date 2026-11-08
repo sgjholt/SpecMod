@@ -225,6 +225,22 @@ indistinguishable from a regression. They now carry their own settings in
 `tests/golden/reference.toml`, and a default change leaves every one of them
 untouched.
 
+## In progress — not yet released
+
+Merged on `main`, and it will name its version when a release goes out.
+
+### Names on disk carry no colons
+
+Event directories and the files in them were named by the origin as ObsPy
+prints it, `2019-08-26T07:30:47.000000Z`. Windows does not allow the colons,
+and uv 0.13 refuses to build a source distribution containing them, which
+stopped the release. Names are now ISO 8601 basic format,
+`20190826T073047.000000Z`, from `specmod.datasets.path_name`, and
+`specmod fetch` writes them. `specmod migrate-names` renames data written
+earlier and keeps its manifest verifying; until 0.8, data that has not been
+migrated is still found, with a warning.
+[Upgrading](upgrading.md#from-06-to-07) has the steps.
+
 ## Planned
 
 ### 1.0 — the API stops moving
@@ -300,9 +316,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. **There is no such section right
-now**, because nothing is merged and unreleased; that is the state the page
-should be in between releases, not a section that went missing.
+shipped, and this page does not blur the two. Between releases there is no such
+section at all, which is a state the page should be in rather than a section
+that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was
