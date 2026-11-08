@@ -125,6 +125,38 @@ class TestTheWorkflowUsesTheseFiles:
         assert "tools/check_built_version.py" in WORKFLOW.read_text()
 
 
+#: The uv every workflow installs. Bump it here and in each workflow together,
+#: and build the sdist with it before merging: uv 0.13.0 began refusing source
+#: distributions with a colon in a member name, and CI pulling the latest uv is
+#: how that reached the release unannounced.
+UV_VERSION = "0.13.7"
+
+_SETUP_UV = re.compile(r"^(\s*)- uses: astral-sh/setup-uv@\S+\n((?:\1  .*\n)*)", re.M)
+
+
+class TestEveryWorkflowPinsUv:
+    """Without a version, ``setup-uv`` installs the latest uv on every run."""
+
+    def _steps(self) -> list[tuple[str, str]]:
+        steps = []
+        for path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            for match in _SETUP_UV.finditer(path.read_text()):
+                steps.append((path.name, match.group(2)))
+        return steps
+
+    def test_there_are_setup_uv_steps_to_check(self) -> None:
+        """A changed action reference would leave the check below matching nothing."""
+        assert self._steps()
+
+    def test_each_one_names_the_same_version(self) -> None:
+        unpinned = [
+            name
+            for name, body in self._steps()
+            if f'version: "{UV_VERSION}"' not in body
+        ]
+        assert unpinned == [], f"pin uv to {UV_VERSION} in: {unpinned}"
+
+
 class TestTheBuiltVersionCheck:
     """``tools/check_built_version.py`` runs between `uv build` and the
     upload, where a wrong answer is permanent."""

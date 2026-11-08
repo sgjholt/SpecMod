@@ -21,6 +21,7 @@ jobs:
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
           enable-cache: true
       - run: uv python install 3.11
       - run: uv venv
@@ -41,6 +42,7 @@ jobs:
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
           enable-cache: true
       - run: uv python install 3.11
       - run: uv venv
@@ -65,6 +67,7 @@ jobs:
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
           enable-cache: true
       - run: uv python install ${{ matrix.python-version }}
       - run: uv venv
@@ -93,6 +96,8 @@ jobs:
       # fails every job at "Getting action download info", before a step runs.
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
       - run: uv python install 3.11
       - run: uv venv
       # Exercise the declared minimums. CI otherwise installs the newest of
@@ -117,6 +122,7 @@ jobs:
       # Bump this deliberately; do not "tidy" it to `@v10`.
       - uses: astral-sh/setup-uv@v10.0.1
         with:
+          version: "0.13.7"  # see UV_VERSION in tests/test_release_config.py
           enable-cache: true
       - run: uv python install 3.11
       - run: uv venv
