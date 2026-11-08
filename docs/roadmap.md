@@ -225,16 +225,13 @@ indistinguishable from a regression. They now carry their own settings in
 `tests/golden/reference.toml`, and a default change leaves every one of them
 untouched.
 
-## In progress — not yet released
-
-Merged on `main`, and it will name its version when a release goes out.
+## Shipped in v0.7.0
 
 ### Names on disk carry no colons
 
 Event directories and the files in them were named by the origin as ObsPy
 prints it, `2019-08-26T07:30:47.000000Z`. Windows does not allow the colons,
-and uv 0.13 refuses to build a source distribution containing them, which
-stopped the release. Names are now ISO 8601 basic format,
+and uv 0.13 refuses to build a source distribution containing them. Names are now ISO 8601 basic format,
 `20190826T073047.000000Z`, from `specmod.datasets.path_name`, and
 `specmod fetch` writes them. `specmod migrate-names` renames data written
 earlier and keeps its manifest verifying; until 0.8, data that has not been
@@ -290,7 +287,15 @@ configuration pinned both; the change is marked breaking, and
 [Upgrading](upgrading.md#from-05-to-06) says what to pin. One signature moved
 as well: the first argument of `load_config` is positional-only, so
 `load_config(start=path)` is now read as a `[start]` configuration section and
-refused. The count stands at zero.
+refused.
+
+**v0.7.0 breaks on purpose too, and is the first to ship a way through.** Event
+directories and the files in them are renamed on disk, so code that built a
+path from an origin time no longer finds it. Unlike the three before it, this
+break comes with a migration, `specmod migrate-names`, and a fallback that
+reads the old names with a warning until 0.8 — a deprecation cycle, which the
+earlier changes had nothing to attach to. That makes it a better-behaved break,
+not the absence of one. The count stands at zero.
 
 ## After 1.0
 
@@ -316,9 +321,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. Between releases there is no such
-section at all, which is a state the page should be in rather than a section
-that went missing.
+shipped, and this page does not blur the two. **There is no such section right
+now**, because nothing is merged and unreleased; that is the state the page
+should be in between releases, not a section that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was
