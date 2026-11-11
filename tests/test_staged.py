@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import inspect
 import io
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +24,7 @@ obspy = pytest.importorskip("obspy")
 from pathlib import Path  # noqa: E402
 
 from specmod import config as cfg  # noqa: E402
+from specmod import sources  # noqa: E402
 from specmod.config import load_config  # noqa: E402
 from specmod.distance import (  # noqa: E402
     Epicentral,
@@ -398,6 +401,44 @@ class TestDistanceMeasures:
         assert resolve_distance_measure("rhyp").name == "hypocentral"
         assert resolve_distance_measure(Epicentral()).name == "epicentral"
         assert resolve_distance_measure().name == "epicentral"  # configured
+
+
+def _printing_model(seen: list[Any]) -> Any:
+    """The configured model, announcing each evaluation on stdout."""
+    base = sources.from_config().as_callable()
+
+    def model(f: Any, **parameters: float) -> Any:
+        seen.append(sys.stdout)
+        print("evaluated")
+        return base(f, **parameters)
+
+    model.__signature__ = inspect.signature(base)  # type: ignore[attr-defined]
+    return model
+
+
+class TestQuiet:
+    """``quiet`` governs stdout during the fit, and nothing else."""
+
+    def test_quiet_swallows_what_a_model_prints(
+        self, pnr_windows: Any, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        seen: list[Any] = []
+        fit_event(_spectra(pnr_windows), model=_printing_model(seen))
+        assert seen
+        assert "evaluated" not in capsys.readouterr().out
+
+    def test_not_quiet_leaves_stdout_as_it_was(
+        self, pnr_windows: Any, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """It used to be ``redirect_stdout(None)``, which does not mean "do not
+        redirect": it sets ``sys.stdout`` to ``None`` for the duration. Printing
+        to that is a silent no-op, so ``quiet=False`` was the quieter of the
+        two, and anything calling ``sys.stdout.write`` raised."""
+        seen: list[Any] = []
+        fit_event(_spectra(pnr_windows), model=_printing_model(seen), quiet=False)
+        assert seen
+        assert None not in seen
+        assert "evaluated" in capsys.readouterr().out
 
 
 class TestReporting:
