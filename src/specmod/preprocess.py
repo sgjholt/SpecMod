@@ -487,7 +487,10 @@ def signal_intensity(
     tr: Trace, pctls: Sequence[float] = (1, 99), plot: bool = False
 ) -> tuple[float, float]:
     delta = tr.stats.delta
-    data = tr.data
+    # As floats before squaring. miniSEED counts are int32, and an int32 above
+    # 46 340 squared wraps round, so the cumulative energy of a raw record is
+    # not monotonic and its percentiles land anywhere.
+    data = np.asarray(tr.data, dtype=np.float64)
 
     inte = normalise(cumulative_trapezoid(data**2)) * 100
 

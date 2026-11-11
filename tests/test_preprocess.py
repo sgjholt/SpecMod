@@ -243,6 +243,38 @@ class TestSignalIntensity:
             start, end = pre.signal_intensity(_trace(data=rng.normal(size=500)))
             assert start <= end
 
+    def test_raw_integer_counts_give_the_window_their_floats_do(self) -> None:
+        """miniSEED counts are int32, and squaring one above 46 340 wraps.
+
+        The cumulative energy then stops being monotonic, so the percentiles
+        land anywhere: on the 28 raw PNR channels, whose counts reach 8.6e6,
+        twelve windows came out with their end before their start and
+        ``s_window`` raised ``startime is larger than endtime``, and the other
+        sixteen were cut to a different length without a word.
+        """
+        rng = np.random.default_rng(0)
+        counts = np.zeros(1000, dtype=np.int32)
+        counts[300:700] = rng.normal(scale=2e6, size=400).astype(np.int32)
+        raw = _trace()
+        raw.data = counts  # `_trace` casts to float, which is the bug's cure
+        assert raw.data.dtype == np.int32
+
+        as_int = pre.signal_intensity(raw)
+        as_float = pre.signal_intensity(_trace(data=counts))
+        assert as_int == pytest.approx(as_float)
+        assert 3.0 < as_int[0] < as_int[1] < 7.0
+
+    def test_refining_a_window_of_raw_counts_matches_the_float_window(self) -> None:
+        rng = np.random.default_rng(1)
+        counts = rng.normal(scale=2e6, size=1000).astype(np.int32)
+        raw = _stream()
+        raw[0].data = counts
+
+        from_int = pre.s_window(raw, refine_window=True)[0]
+        from_float = pre.s_window(_stream(data=counts), refine_window=True)[0]
+        assert from_int.stats.wstart == from_float.stats.wstart
+        assert from_int.stats.wend == from_float.stats.wend
+
 
 class TestGetStaShift:
     def test_returns_the_shift_for_a_listed_station(self) -> None:
