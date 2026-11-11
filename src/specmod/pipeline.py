@@ -323,6 +323,11 @@ def spectrum_set_from_streams(
     a signal compared against another station's noise is not a degraded
     measurement, it is a meaningless one.
 
+    An id may appear once. A record with a gap reads as several traces sharing
+    one id, and the set is keyed by id, so the later segment would replace the
+    earlier and the set would come back short with nothing said. Merge the
+    segments (``Stream.merge``) or select one before windowing.
+
     ``event`` defaults to the origin time carried on the first trace, which is
     what the legacy container used to name the group.
     """
@@ -334,6 +339,13 @@ def spectrum_set_from_streams(
             raise ValueError(
                 f"signal {signal_trace.id} paired with noise {noise_trace.id}; "
                 f"the streams are not in the same order"
+            )
+        if signal_trace.id in pairs:
+            raise ValueError(
+                f"{signal_trace.id} appears more than once in the signal "
+                f"stream, and a spectrum set holds one pair per id. A record "
+                f"with a gap reads as several traces: merge them with "
+                f"Stream.merge(), or select the segment to keep."
             )
         signal_spectrum = spectrum_from_trace(signal_trace, **kwargs)
         noise_spectrum = spectrum_from_trace(noise_trace, **kwargs)
