@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any
 
 import matplotlib
 import matplotlib.pyplot as plt
-import numpy as np
 import obspy
 import pandas as pd
 from matplotlib.dates import num2date
@@ -149,7 +148,7 @@ def plot_traces(
     aftt: float = 60,
     sig: Stream | None = None,
     noise: Stream | None = None,
-    save: str | None = None,
+    save: str | PathLike[str] | None = None,
 ) -> None:
     # `plot_windows` reads `sig[i]` and `noise[i]`. Without both it used to
     # raise `TypeError: 'NoneType' object is not subscriptable` from inside the
@@ -223,20 +222,11 @@ def plot_traces(
             except KeyError:
                 pass
 
-        # `sample` rather than `i`: the comprehension used to reuse the name of
-        # the enclosing loop variable. Comprehensions have their own scope, so
-        # it was never a bug — but it reads like one, and would become one the
-        # moment this is turned back into a statement.
-        time = _to_datetime(
-            np.array(
-                [
-                    (
-                        tr.stats.starttime + (tr.stats.delta * (sample + 1))
-                    ).matplotlib_date
-                    for sample in range(len(tr.data))
-                ]
-            )
-        )
+        # Each sample at its own time, the first at `starttime`. This used to
+        # be `starttime + delta * (sample + 1)`, built one `UTCDateTime` per
+        # sample, which drew every waveform a sample late against the pick and
+        # window lines above.
+        time = _to_datetime(tr.times("matplotlib"))
 
         ax[i].plot(time, tr.data * conv, color="grey", label=tr.id, zorder=1)
         # A trace with no geometry set still plots; it just goes untitled.
@@ -246,10 +236,12 @@ def plot_traces(
             )
         ax[i].legend()
     ax[-1].set_xlabel("Time (UTC)")
-    fig.suptitle(str(st[0].stats.otime))
+    # Like the per-axis title above: no origin time, no title.
+    otime = st[0].stats.get("otime")
+    if otime is not None:
+        fig.suptitle(str(otime))
     fig.tight_layout()
     if save is not None:
-        assert type(save) is str
         fig.savefig(save)
         fig.clear()
         plt.close(fig)
