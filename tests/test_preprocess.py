@@ -459,6 +459,20 @@ class TestNoiseWindows:
         with pytest.raises(ValueError, match="argument 2 is shorter"):
             pre.get_noise_p(st, obspy.Stream(sig[:1]))
 
+    def test_get_noise_s_holds_its_signal_stream_to_the_same_rule(self) -> None:
+        # It indexed `sig[i]`, so a signal stream with a trace too many was
+        # accepted: here station B's noise would be cut to station A's window
+        # length, with nothing said. One too few raised a bare `IndexError`.
+        both = obspy.Stream(
+            [_trace(npts=3000, station="A"), _trace(npts=3000, station="B")]
+        )
+        sig = pre.s_window(both, tafs=1, refine_window=False)
+        only_b = obspy.Stream(both[1:])
+        with pytest.raises(ValueError, match="argument 2 is longer"):
+            pre.get_noise_s(only_b, sig=sig)
+        with pytest.raises(ValueError, match="argument 2 is shorter"):
+            pre.get_noise_s(both, sig=obspy.Stream(sig[:1]))
+
 
 _PICK_HEADER = "# Snuffler Markers File Version 0.2\n"
 _PICK_LINE = (
