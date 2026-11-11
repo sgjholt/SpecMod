@@ -84,11 +84,11 @@ def initial_guess(
 
     The two that *are* read off the spectrum:
 
-    ``llpsp``
-        ``log10`` of the largest amplitude inside the selected band — the
-        long-period plateau, which is what ``Omega`` is.
     ``fc``
-        the frequency at which that maximum falls.
+        the frequency of the largest amplitude inside the selected band.
+    ``llpsp``
+        the plateau that puts the model through that peak, with every other
+        parameter at its starting value — see :func:`_plateau_through`.
 
     Both assume a **velocity** spectrum, which is where a fit belongs anyway:
     the model carries a motion factor, so ``llpsp`` is the displacement plateau
@@ -144,6 +144,13 @@ def initial_guess(
             "fc": float(freq[peak]),
             **defaults,
         }
+        if "llpsp" in wanted:
+            available["llpsp"] = _plateau_through(
+                callable_,
+                float(freq[peak]),
+                float(np.log10(amp[peak])),
+                {k: v for k, v in available.items() if k in wanted},
+            )
         missing = wanted - set(available)
         if missing:
             raise ValueError(
@@ -155,6 +162,41 @@ def initial_guess(
         guesses[id] = {k: v for k, v in available.items() if k in wanted}
 
     return guesses
+
+
+def _plateau_through(
+    model: Any, freq: float, log10_amp: float, start: dict[str, float]
+) -> float:
+    """The ``llpsp`` at which ``model`` passes through one observed point.
+
+    ``llpsp`` is the displacement plateau, and the spectrum being fitted is
+    usually not displacement. In velocity the peak sits at
+    ``2 pi fc Omega / 2**(1/gamma)``, less whatever attenuation has taken by
+    then, so seeding ``llpsp`` with the peak amplitude itself started every
+    fit about ``log10(pi fc)`` too high: a median 1.08 dex on the 28 PNR
+    channels, a factor of twelve.
+
+    Asking the model avoids writing that formula per source, per attenuation
+    law and per motion. ``llpsp`` enters as an additive constant in
+    ``log10 A(f)``, so the model's value at ``llpsp = 0`` is exactly the
+    offset to remove.
+
+    That holds for every :class:`~specmod.sources.SpectralModel`. A bare
+    callable may use the name for something else, so it is checked rather
+    than assumed: unless raising ``llpsp`` by one raises the model by one,
+    the observed amplitude is returned unchanged, which is what the guess
+    was before.
+    """
+    others = {k: v for k, v in start.items() if k != "llpsp"}
+    at = np.array([freq], dtype=np.float64)
+    try:
+        zero = float(np.asarray(model(at, llpsp=0.0, **others))[0])
+        one = float(np.asarray(model(at, llpsp=1.0, **others))[0])
+    except Exception:
+        return log10_amp
+    if not np.isfinite(zero) or not np.isclose(one - zero, 1.0):
+        return log10_amp
+    return log10_amp - zero
 
 
 def selected_band(spectrum: Any) -> tuple[float, float] | None:

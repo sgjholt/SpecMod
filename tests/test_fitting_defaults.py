@@ -245,6 +245,50 @@ class TestInitialGuess:
             assert band[0] <= guess["fc"] <= band[1], id
             assert np.isfinite(guess["llpsp"]), id
 
+    def test_the_starting_model_passes_through_the_observed_peak(
+        self, pnr_windows: Any
+    ) -> None:
+        """``llpsp`` is the displacement plateau; the peak is a velocity.
+
+        The guess used to be the peak amplitude itself, which started every
+        fit a median 1.35 dex above where it finished on these 28 channels.
+        It is now the plateau at which the model, evaluated at the guess,
+        reproduces the peak it was read from — 0.34 dex from the fitted value.
+        """
+        from specmod import sources  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        model = sources.from_config().as_callable()
+        guesses = initial_guess(spectra)
+        assert len(guesses) == 28
+        for id, guess in guesses.items():
+            view = spectra[id].for_fitting(id)
+            inside = (view.freq >= view.band[0]) & (view.freq <= view.band[1])
+            peak = float(np.log10(view.amp[inside].max()))
+            at_peak = float(model(np.array([guess["fc"]]), **guess)[0])
+            assert at_peak == pytest.approx(peak, abs=1e-9), id
+            # Velocity peaks sit well above the displacement plateau.
+            assert guess["llpsp"] < peak - 0.5, id
+
+    def test_a_callable_using_llpsp_differently_keeps_the_raw_peak(
+        self, pnr_windows: Any
+    ) -> None:
+        """Only a model where ``llpsp`` is an additive constant can be asked.
+
+        A bare callable may give the name another meaning, so the shift is
+        checked for rather than assumed.
+        """
+
+        def doubled(f: Any, llpsp: float, fc: float) -> Any:
+            return 2.0 * llpsp - np.log10(1.0 + (f / fc) ** 2)
+
+        spectra = _spectra(pnr_windows)
+        guesses = initial_guess(spectra, doubled)
+        for id, guess in guesses.items():
+            view = spectra[id].for_fitting(id)
+            inside = (view.freq >= view.band[0]) & (view.freq <= view.band[1])
+            assert guess["llpsp"] == float(np.log10(view.amp[inside].max())), id
+
     def test_the_scalar_seeds_come_from_configuration(self, pnr_windows: Any) -> None:
         fitting = load_config().config.fitting
         guesses = initial_guess(_spectra(pnr_windows))
