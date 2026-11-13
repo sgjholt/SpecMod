@@ -28,10 +28,16 @@ class ModelResult:
     covar: NDArray[np.float64] | None
     #: Number of data points the fit actually used.
     ndata: int
+    #: The minimiser the fit ran under, by lmfit's name for it.
+    method: str
+    #: What the residual was multiplied by, or `None` for an unweighted fit.
+    weights: NDArray[np.float64] | None
     def fit_report(self, **kwargs: Any) -> str: ...
     def eval(self, params: Parameters | None = ..., **kwargs: Any) -> Any: ...
 
 class Model:
+    #: The callable the model wraps, as it was handed in.
+    func: Callable[..., Any]
     def __init__(
         self,
         func: Callable[..., Any],

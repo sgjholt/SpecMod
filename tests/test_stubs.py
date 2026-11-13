@@ -316,3 +316,35 @@ def test_a_fitted_parameter_remembers_where_it_started() -> None:
     x = np.linspace(0.0, 1.0, 20)
     result = lmfit.Model(line).fit(3.0 * x, x=x, slope=1.0)
     assert result.params["slope"].init_value == 1.0
+
+
+def test_a_result_keeps_what_the_misfit_is_recomputed_from() -> None:
+    """``FitSpectrum.loss`` rebuilds the objective away from the best fit, and
+    reads the wrapped callable, the weights and the minimiser to do it. All
+    three are instance attributes, declared in the stubs on the strength of
+    this."""
+    import lmfit  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    def line(x: Any, slope: float) -> Any:
+        return slope * x
+
+    x = np.linspace(0.0, 1.0, 20)
+    weights = np.full(x.size, 2.0)
+    model = lmfit.Model(line)
+    assert model.func is line
+
+    unweighted = model.fit(3.0 * x, x=x, slope=1.0, method="powell")
+    assert unweighted.weights is None
+    # lmfit's display name, capitalised — and accepted back as a method, which
+    # is what a profile refit relies on.
+    assert unweighted.method == "Powell"
+    again = model.fit(3.0 * x, x=x, slope=1.0, method=unweighted.method)
+    assert again.method == "Powell"
+    assert again.params["slope"].value == pytest.approx(3.0)
+
+    weighted = model.fit(3.0 * x + 0.1, x=x, slope=1.0, weights=weights)
+    np.testing.assert_array_equal(weighted.weights, weights)
+    # The objective: the sum of squared weighted residuals.
+    residual = (line(x, weighted.params["slope"].value) - (3.0 * x + 0.1)) * weights
+    assert float((residual**2).sum()) == pytest.approx(weighted.chisqr)

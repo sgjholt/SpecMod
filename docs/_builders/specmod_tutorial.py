@@ -473,9 +473,9 @@ md("""
 
 md("""
 The model comes from configuration — a Brune source with constant Q by
-default — and the initial guesses are derived from each spectrum: the plateau
-from the largest amplitude inside the band, the corner from where that
-maximum falls.
+default — and the initial guesses are derived from each spectrum: the corner
+from the frequency of the largest amplitude inside the band, the plateau from
+what the model needs to pass through that peak.
 
 `FitSpectra(spectra)` then `fit_spectra()` is the whole thing. The minimiser
 (Powell), the `t*` lower bound and whether to fit the smoothed or unsmoothed
@@ -724,6 +724,95 @@ for method, run in alternatives.items():
         f"{method:9s} {table['pass_fitting'].sum():2d}/{len(table)} passed"
         f"   uncertainties reported: {table['fc-stderr'].notna().sum()}/{len(table)}"
     )
+""")
+
+
+md("""
+### Is the value constrained? Look at the misfit
+
+A fitted value and a reduced chi-squared do not say whether the value was
+*constrained*. `plot_loss` draws the misfit around one station's fit: along
+each parameter down the diagonal, over each pair below it. The cross is the
+fitted value and the circle is where the fit started.
+
+The scale is the misfit as a multiple of the best fit's, with contours at
+1.1, 1.5 and 3 times it. They are not confidence regions, which would need a
+noise model; they are comparable between stations, which is what this needs.
+""")
+
+
+code("""
+from specmod.plotting import plot_loss, plot_loss_set
+
+plot_loss(fits.models[worst_id])
+plt.show()
+""")
+
+
+md("""
+Those panels are **slices**: the parameters not on a panel's axes are held at
+their fitted values. A slice makes every valley look narrower than it is,
+because moving one parameter without letting the others compensate is the
+most expensive way to move it.
+
+`profile=True` refits the others at every grid point instead. It costs one
+fit per point, and it is the honest picture of a trade-off.
+""")
+
+
+code("""
+plot_loss(fits.models[worst_id], parameters=["fc", "ts"], points=25, profile=True)
+plt.show()
+""")
+
+
+code("""
+# The same comparison as numbers: the corner frequencies this one spectrum
+# cannot tell apart at 1.1 times its best misfit.
+model = fits.models[worst_id]
+fitted_fc = model.fitted.params["fc"].value
+fc_axis = np.geomspace(fitted_fc / 10, fitted_fc * 10, 41)
+
+print(f"{worst_id}: fitted fc = {fitted_fc:.2f} Hz")
+for label, profile in (("slice", False), ("profile", True)):
+    relative = model.loss_scan({"fc": fc_axis}, profile=profile) / model.fitted.chisqr
+    inside = fc_axis[relative <= 1.1]
+    print(f"  {label:8s} {inside.min():6.2f} to {inside.max():6.2f} Hz")
+""")
+
+
+md("""
+A profile range that reaches both ends of the scanned axis, a factor of ten
+either side of the fitted value, means the axis set the limit and the
+spectrum set none: at that level this station does not bound its own corner
+frequency.
+
+`plot_loss_set` draws one pair of parameters for every station, on one colour
+scale — corner frequency against $t^*$ unless told otherwise. A closed contour
+around the cross is a constrained pair. A valley running off the panel is not,
+whatever the fitted value says.
+""")
+
+
+code("""
+plot_loss_set(fits, columns=4)
+plt.show()
+""")
+
+
+md("""
+A fit that finishes against a bound is the other thing to look for: the value
+reported is then the edge of the search space. `fit_spectra` logs a warning
+for each station it happens to, naming the parameter and the `set_bounds`
+call that opens the search space, and `plot_loss` shades what lies beyond the
+bound so you can see whether the misfit is still falling there.
+`near_bounds()` returns the same list. With the shipped bounds it is empty
+for this event.
+""")
+
+
+code("""
+fits.near_bounds()
 """)
 
 
