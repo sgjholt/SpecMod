@@ -301,3 +301,18 @@ def test_the_arithmetic_the_stub_overloads_behaves_as_declared() -> None:
     assert isinstance(t0 + 1.0, obspy.UTCDateTime)
     with pytest.raises(TypeError):
         _ = 1.0 + t0  # the raise is the assertion
+
+
+def test_a_fitted_parameter_remembers_where_it_started() -> None:
+    """``Parameter.init_value`` is an instance attribute, so the method checks
+    above cannot see it. ``FitSpectrum.near_bounds`` reads it to give a bound
+    at zero a scale."""
+    import lmfit  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    def line(x: Any, slope: float) -> Any:
+        return slope * x
+
+    x = np.linspace(0.0, 1.0, 20)
+    result = lmfit.Model(line).fit(3.0 * x, x=x, slope=1.0)
+    assert result.params["slope"].init_value == 1.0

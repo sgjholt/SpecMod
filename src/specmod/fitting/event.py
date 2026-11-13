@@ -13,7 +13,7 @@ from .. import config as cfg
 from ..tables import read_table, write_table
 from .base import SpectraLike, plot_columns
 from .guess import fittable_signal, initial_guess
-from .spectrum import FitSpectrum
+from .spectrum import BOUND_TOLERANCE, FitSpectrum, NearBound
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping
@@ -85,8 +85,20 @@ class FitSpectra:
         )
         return None
 
-    def fit_spectra(self, weight_method: str | None = None, **kwargs: Any) -> None:
+    def fit_spectra(
+        self,
+        weight_method: str | None = None,
+        *,
+        bound_tolerance: float | None = BOUND_TOLERANCE,
+        **kwargs: Any,
+    ) -> None:
         """Fit every station, with the configured minimiser unless told otherwise.
+
+        A station whose fit finishes against a bound is logged as a warning on
+        ``specmod.fitting.event``, naming the parameter and how to open the
+        search space; see :meth:`FitSpectrum.near_bounds` for what near means.
+        ``bound_tolerance`` sets how near, and ``None`` says nothing. The same
+        information is on :meth:`near_bounds` afterwards.
 
         ``method`` and ``weight_method`` both come from ``[fitting]`` when not
         given. Neither used to: `fit_spectra()` fell through to lmfit's default
@@ -116,9 +128,33 @@ class FitSpectra:
                 # run that skipped twenty stations would report one. Each skip
                 # is a station missing from the results and has to be visible.
                 logger.warning("skipping %s: %s", name, error)
+                continue
+            if bound_tolerance is not None:
+                # Logged for the same reason: a warning shown once is not
+                # shown again for the same text, so a refit that left the
+                # parameter where it was would look like one that fixed it.
+                for near in mod.near_bounds(bound_tolerance):
+                    logger.warning("%s: %s", name, near.describe())
 
         self.__set_fit_models_to_spectrum()
         self.__generate_group_fit_table()
+
+    def near_bounds(
+        self, tolerance: float = BOUND_TOLERANCE
+    ) -> dict[str, tuple[NearBound, ...]]:
+        """Every fitted station with a parameter against a bound, by id.
+
+        Stations with nothing to report are left out, so an empty mapping
+        means every fit finished inside its search space.
+        """
+        report: dict[str, tuple[NearBound, ...]] = {}
+        for name, mod in self.models.items():
+            if mod.result is None:
+                continue
+            near = mod.near_bounds(tolerance)
+            if near:
+                report[name] = near
+        return report
 
     def init_fitting(
         self,

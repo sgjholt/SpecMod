@@ -10,7 +10,8 @@ that estimates no covariance matrix, including the shipped default.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -28,7 +29,52 @@ if TYPE_CHECKING:  # pragma: no cover
     from matplotlib.axes import Axes
     from numpy.typing import NDArray
 
-__all__ = ["FitSpectrum"]
+__all__ = ["BOUND_TOLERANCE", "FitSpectrum", "NearBound"]
+
+#: How close to a bound counts as near it, as a fraction of the parameter's
+#: scale. See :meth:`FitSpectrum.near_bounds`.
+BOUND_TOLERANCE = 0.01
+
+
+@dataclass(frozen=True)
+class NearBound:
+    """A fitted parameter that came to rest against the edge of its search.
+
+    The value it reports is then the bound, or close to it, rather than a
+    measurement: the minimiser stopped because it was not allowed further, not
+    because the misfit stopped falling.
+    """
+
+    parameter: str
+    value: float
+    bound: float
+    side: Literal["lower", "upper"]
+
+    def describe(self) -> str:
+        """What happened and what to do about it, in one sentence each."""
+        gap = abs(self.value - self.bound)
+        where = "on" if gap == 0 else f"within {gap:.2g} of"
+        keyword = "min" if self.side == "lower" else "max"
+        return (
+            f"{self.parameter} = {self.value:.4g} is {where} its {self.side} "
+            f"bound of {self.bound:.4g}, which is the edge of the search space "
+            f"rather than a measurement. Open the search space with "
+            f"set_bounds({self.parameter!r}, {keyword}=...) and refit, or draw "
+            f"specmod.plotting.plot_loss to see whether the misfit is still "
+            f"falling there."
+        )
+
+
+def _is_near(value: float, bound: float, start: float, tolerance: float) -> bool:
+    """Whether ``value`` is within ``tolerance`` of ``bound``, on its own scale.
+
+    The scale is the largest of the value, the bound and where the fit
+    started. See :meth:`FitSpectrum.near_bounds`.
+    """
+    if not np.isfinite(bound):
+        return False
+    scale = max(abs(value), abs(bound), abs(start))
+    return bool(abs(value - bound) <= tolerance * scale)
 
 
 class FitSpectrum:
@@ -140,6 +186,40 @@ class FitSpectrum:
                 "fitted yet; call fit_mod() first"
             )
         return self.result
+
+    def near_bounds(self, tolerance: float = BOUND_TOLERANCE) -> tuple[NearBound, ...]:
+        """The varying parameters that finished against a bound, if any.
+
+        A softer question than :attr:`pass_fitting`, and one that still has an
+        answer under the shipped minimiser. ``pass_fitting`` asks whether
+        ``value +/- stderr`` reaches a bound; Powell reports no ``stderr``, so
+        there it only fires on exact equality, and a ``t*`` of 1.0000001e-4
+        against a floor of 1e-4 passes.
+
+        Near means within ``tolerance`` of the bound, as a fraction of the
+        parameter's scale: the largest of its fitted value, the bound and the
+        value the fit started from. The starting value is what gives a bound
+        at zero a scale at all — a corner frequency that began at 10 Hz and
+        finished below 0.1 Hz is near a floor of zero, where a purely relative
+        test could never say so.
+
+        Fixed parameters are skipped, and so are bounds at infinity.
+        """
+        found: list[NearBound] = []
+        for par in self.fitted.params.values():
+            if not par.vary:
+                continue
+            start = par.init_value if par.init_value is not None else par.value
+            sides: tuple[tuple[Literal["lower", "upper"], float], ...] = (
+                ("lower", par.min),
+                ("upper", par.max),
+            )
+            for side, bound in sides:
+                if _is_near(par.value, bound, start, tolerance):
+                    found.append(
+                        NearBound(par.name, float(par.value), float(bound), side)
+                    )
+        return tuple(found)
 
     def describe_model(self) -> str | None:
         """What is being fitted, or ``None`` for a bare callable."""
