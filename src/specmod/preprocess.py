@@ -594,9 +594,8 @@ def get_noise_s(
     length, as in :func:`get_noise_p`.
     """
     stc = st.copy()
-    # `strict=True`, for the reason given in `get_noise_p`. This indexed
-    # `sig[i]`, which accepted a signal stream with a trace too many and cut
-    # each noise window to another trace's length.
+    # `strict=True`, for the reason given in `get_noise_p`: a signal stream of
+    # a different length would cut each noise window to another trace's.
     signals: Iterable[Trace | None] = sig if sig is not None else [None] * len(stc)
     for tr, trs in zip(stc, signals, strict=True):
         end = tr.stats["p_time"] - bshift

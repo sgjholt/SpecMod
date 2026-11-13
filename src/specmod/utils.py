@@ -222,10 +222,8 @@ def plot_traces(
             except KeyError:
                 pass
 
-        # Each sample at its own time, the first at `starttime`. This used to
-        # be `starttime + delta * (sample + 1)`, built one `UTCDateTime` per
-        # sample, which drew every waveform a sample late against the pick and
-        # window lines above.
+        # Each sample at its own time, the first at `starttime`, so the
+        # waveform lines up with the pick and window lines drawn above.
         time = _to_datetime(tr.times("matplotlib"))
 
         ax[i].plot(time, tr.data * conv, color="grey", label=tr.id, zorder=1)

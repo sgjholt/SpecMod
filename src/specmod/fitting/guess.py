@@ -172,20 +172,18 @@ def _plateau_through(
     ``llpsp`` is the displacement plateau, and the spectrum being fitted is
     usually not displacement. In velocity the peak sits at
     ``2 pi fc Omega / 2**(1/gamma)``, less whatever attenuation has taken by
-    then, so seeding ``llpsp`` with the peak amplitude itself started every
-    fit about ``log10(pi fc)`` too high: a median 1.08 dex on the 28 PNR
-    channels, a factor of twelve.
+    then, so the peak amplitude is not the plateau: on the 28 PNR channels it
+    is a median 1.08 dex above this value.
 
-    Asking the model avoids writing that formula per source, per attenuation
-    law and per motion. ``llpsp`` enters as an additive constant in
-    ``log10 A(f)``, so the model's value at ``llpsp = 0`` is exactly the
+    The model is asked rather than that formula written per source, per
+    attenuation law and per motion. ``llpsp`` enters as an additive constant
+    in ``log10 A(f)``, so the model's value at ``llpsp = 0`` is exactly the
     offset to remove.
 
     That holds for every :class:`~specmod.sources.SpectralModel`. A bare
-    callable may use the name for something else, so it is checked rather
-    than assumed: unless raising ``llpsp`` by one raises the model by one,
-    the observed amplitude is returned unchanged, which is what the guess
-    was before.
+    callable may use the name for something else, so it is checked: unless
+    raising ``llpsp`` by one raises the model by one, the observed amplitude
+    is returned unchanged.
     """
     others = {k: v for k, v in start.items() if k != "llpsp"}
     at = np.array([freq], dtype=np.float64)

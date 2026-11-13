@@ -323,10 +323,10 @@ def spectrum_set_from_streams(
     a signal compared against another station's noise is not a degraded
     measurement, it is a meaningless one.
 
-    An id may appear once. A record with a gap reads as several traces sharing
-    one id, and the set is keyed by id, so the later segment would replace the
-    earlier and the set would come back short with nothing said. Merge the
-    segments (``Stream.merge``) or select one before windowing.
+    Each id may appear once, and a repeated one raises ``ValueError`` naming
+    it. The set holds one pair per id, and a record with a gap reads as
+    several traces sharing one: merge the segments (``Stream.merge``) or
+    select one before windowing.
 
     ``event`` defaults to the origin time carried on the first trace, which is
     what the legacy container used to name the group.
