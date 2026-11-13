@@ -25,7 +25,12 @@ obspy = pytest.importorskip("obspy")
 from specmod.core import SpectrumSet  # noqa: E402
 from specmod.io import FORMAT_VERSION, load, save  # noqa: E402
 from specmod.pipeline import spectrum_set_from_streams  # noqa: E402
-from specmod.plotting import plot_pair, plot_set  # noqa: E402
+from specmod.plotting import (  # noqa: E402
+    plot_loss,
+    plot_loss_set,
+    plot_pair,
+    plot_set,
+)
 
 
 @functools.cache
@@ -484,6 +489,248 @@ class TestPlotSet:
         empty = SpectrumSet(pairs={}, event="none")
         with pytest.raises(ValueError, match="no pair in this set"):
             plot_set(empty)
+
+
+# ----------------------------------------------------------------- loss
+
+
+@functools.cache
+def _fits(windows: Any, fc_floor: float | None = None) -> Any:
+    """Every PNR station fitted once, optionally with a corner-frequency floor
+    high enough to pin most of them."""
+    import logging  # noqa: PLC0415
+
+    from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+    fits = FitSpectra(_spectra(windows))
+    if fc_floor is not None:
+        fits.set_bounds("fc", min=fc_floor)
+    logging.disable(logging.WARNING)
+    try:
+        fits.fit_spectra()
+    finally:
+        logging.disable(logging.NOTSET)
+    return fits
+
+
+def _panels(figure: Any) -> list[Any]:
+    """The data panels of a figure: visible, and not the colour bar."""
+    return [
+        ax for ax in figure.axes if ax.get_visible() and ax.get_label() != "<colorbar>"
+    ]
+
+
+class TestLoss:
+    """The misfit a fit minimised, recomputed away from where it finished."""
+
+    def test_at_the_fitted_values_it_is_the_fit_s_own_misfit(
+        self, pnr_windows: Any
+    ) -> None:
+        for model in _fits(pnr_windows).models.values():
+            assert model.loss() == pytest.approx(model.fitted.chisqr, rel=1e-12)
+
+    def test_it_follows_the_weights_the_fit_used(self, pnr_windows: Any) -> None:
+        """Unweighted and ``1/f``-weighted fits minimise different things, and
+        a misfit recomputed without the weights would describe neither."""
+        from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+        fits = FitSpectra(_spectra(pnr_windows))
+        fits.fit_spectra(weight_method="log")
+        model = next(iter(fits.models.values()))
+        assert model.fitted.weights is not None
+        assert model.loss() == pytest.approx(model.fitted.chisqr, rel=1e-12)
+
+    def test_moving_off_the_best_fit_costs_something(self, pnr_windows: Any) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        best = model.fitted.params.valuesdict()
+        assert model.loss(fc=2 * best["fc"]) > model.loss()
+        assert model.loss(llpsp=best["llpsp"] + 0.5) > model.loss()
+
+    def test_an_unknown_parameter_is_named(self, pnr_windows: Any) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        with pytest.raises(ValueError, match="gamma is not a parameter"):
+            model.loss(gamma=2.0)
+        with pytest.raises(ValueError, match="gamma is not a parameter"):
+            model.loss_scan({"gamma": [1.0, 2.0]})
+
+    def test_a_scan_has_one_axis_per_parameter_in_the_order_given(
+        self, pnr_windows: Any
+    ) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        best = model.fitted.params.valuesdict()
+        fc = best["fc"] * np.array([0.5, 1.0, 2.0])
+        ts = best["ts"] * np.array([0.5, 1.0])
+
+        grid = model.loss_scan({"fc": fc, "ts": ts})
+        assert grid.shape == (3, 2)
+        assert grid[1, 1] == pytest.approx(model.fitted.chisqr, rel=1e-12)
+        assert grid[2, 0] == pytest.approx(model.loss(fc=fc[2], ts=ts[0]))
+        assert model.loss_scan({"ts": ts, "fc": fc}).shape == (2, 3)
+
+    def test_a_profile_is_never_above_the_slice_and_is_wider(
+        self, pnr_windows: Any
+    ) -> None:
+        """Letting the other parameters compensate can only lower the misfit.
+
+        By how much is the reason to draw it. Doubling the corner frequency
+        costs far less once the plateau and ``t*`` are refitted around it.
+        """
+        model = next(iter(_fits(pnr_windows).models.values()))
+        fc = model.fitted.params["fc"].value * np.array([0.5, 1.0, 2.0])
+
+        slice_ = model.loss_scan({"fc": fc})
+        profile = model.loss_scan({"fc": fc}, profile=True)
+        assert (profile <= slice_ * (1 + 1e-9)).all()
+        assert profile[1] == pytest.approx(model.fitted.chisqr, rel=1e-6)
+        assert profile[2] < 0.5 * slice_[2]
+
+    def test_a_scan_goes_past_a_bound_rather_than_stopping_at_it(
+        self, pnr_windows: Any
+    ) -> None:
+        """lmfit clips a value to its bounds on assignment. A profile that
+        left the bound in place would scan 8 Hz three times and report a flat
+        misfit below the floor — the opposite of what the plot is for."""
+        fits = _fits(pnr_windows, 8.0)
+        id = next(iter(fits.near_bounds()))
+        model = fits.models[id]
+        below = np.array([4.0, 6.0, 8.0])
+        for profile in (False, True):
+            scan = model.loss_scan({"fc": below}, profile=profile)
+            assert len(set(np.round(scan, 9))) == 3, profile
+
+
+class TestPlotLoss:
+    def test_it_draws_a_triangle_over_the_varied_parameters(
+        self, pnr_windows: Any
+    ) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        figure = plot_loss(model, points=7)
+        # Three parameters: three curves on the diagonal, three surfaces below.
+        assert len(_panels(figure)) == 6
+        assert sum(not ax.get_visible() for ax in figure.axes) == 3
+        assert "slice" in figure.get_suptitle()
+
+    def test_the_fitted_value_is_marked_where_the_fit_put_it(
+        self, pnr_windows: Any
+    ) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        best = model.fitted.params.valuesdict()
+        figure = plot_loss(model, parameters=["fc", "ts"], points=7)
+
+        curve, surface = _panels(figure)[0], _panels(figure)[1]
+        fitted = next(ln for ln in curve.get_lines() if ln.get_label() == "fitted")
+        assert fitted.get_xdata()[0] == pytest.approx(best["fc"])
+        cross = next(ln for ln in surface.get_lines() if ln.get_label() == "fitted")
+        assert cross.get_xdata()[0] == pytest.approx(best["fc"])
+        assert cross.get_ydata()[0] == pytest.approx(best["ts"])
+
+    def test_the_curve_is_one_at_the_fitted_value(self, pnr_windows: Any) -> None:
+        """The scale is a multiple of the best misfit, so the fit is at 1."""
+        model = next(iter(_fits(pnr_windows).models.values()))
+        fc = model.fitted.params["fc"].value
+        figure = plot_loss(
+            model, parameters=["fc"], ranges={"fc": (fc / 4, fc * 4)}, points=5
+        )
+        (curve,) = _panels(figure)
+        xs, ys = curve.get_lines()[0].get_data()
+        assert xs[2] == pytest.approx(fc)
+        assert ys[2] == pytest.approx(1.0)
+        assert ys.min() == pytest.approx(1.0)
+
+    def test_a_range_is_what_gets_drawn(self, pnr_windows: Any) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        figure = plot_loss(
+            model, parameters=["fc"], ranges={"fc": (1.0, 50.0)}, points=5
+        )
+        assert _panels(figure)[0].get_xlim() == pytest.approx((1.0, 50.0))
+        with pytest.raises(ValueError, match="must be below"):
+            plot_loss(model, parameters=["fc"], ranges={"fc": (50.0, 1.0)})
+
+    def test_a_bound_inside_the_range_is_shaded_and_named(
+        self, pnr_windows: Any
+    ) -> None:
+        fits = _fits(pnr_windows, 8.0)
+        id = next(iter(fits.near_bounds()))
+        figure = plot_loss(fits.models[id], parameters=["fc"], points=7)
+
+        (curve,) = _panels(figure)
+        assert "fc against its lower bound" in figure.get_suptitle()
+        # The floor is drawn as a line at 8 Hz, with what lies below shaded.
+        assert any(
+            ln.get_linestyle() == "--" and ln.get_xdata()[0] == pytest.approx(8.0)
+            for ln in curve.get_lines()
+        )
+        assert len(curve.patches) == 1
+
+    def test_an_unpinned_fit_draws_no_bound(self, pnr_windows: Any) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        figure = plot_loss(model, parameters=["fc"], points=7)
+        (curve,) = _panels(figure)
+        assert len(curve.patches) == 0
+        assert "bound" not in figure.get_suptitle()
+
+    def test_a_profile_says_it_is_one(self, pnr_windows: Any) -> None:
+        model = next(iter(_fits(pnr_windows).models.values()))
+        figure = plot_loss(model, parameters=["fc"], points=3, profile=True)
+        assert "profile" in figure.get_suptitle()
+
+    def test_an_unknown_parameter_and_an_unfitted_model_both_say_so(
+        self, pnr_windows: Any
+    ) -> None:
+        from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+        model = next(iter(_fits(pnr_windows).models.values()))
+        with pytest.raises(ValueError, match="gamma is not a parameter"):
+            plot_loss(model, parameters=["gamma"])
+        unfitted = next(iter(FitSpectra(_spectra(pnr_windows)).models.values()))
+        with pytest.raises(RuntimeError, match="has not been fitted"):
+            plot_loss(unfitted)
+
+
+class TestPlotLossSet:
+    def test_it_draws_one_surface_per_fitted_station(self, pnr_windows: Any) -> None:
+        fits = _fits(pnr_windows)
+        figure = plot_loss_set(fits, columns=5, points=5)  # 28 in 5 leaves 2
+        panels = _panels(figure)
+        assert len(panels) == len(fits.models) == 28
+        assert [ax.get_title() for ax in panels] == list(fits.models)
+        assert sum(not ax.get_visible() for ax in figure.axes) == 2
+
+    def test_it_defaults_to_corner_frequency_against_t_star(
+        self, pnr_windows: Any
+    ) -> None:
+        figure = plot_loss_set(_fits(pnr_windows), ids=["LV.L001..HHE"], points=5)
+        (panel,) = _panels(figure)
+        assert (panel.get_xlabel(), panel.get_ylabel()) == ("fc", "ts")
+        assert "fc and ts" in figure.get_suptitle()
+
+    def test_any_pair_can_be_asked_for(self, pnr_windows: Any) -> None:
+        figure = plot_loss_set(
+            _fits(pnr_windows), "llpsp", "fc", ids=["LV.L001..HHE"], points=5
+        )
+        (panel,) = _panels(figure)
+        assert (panel.get_xlabel(), panel.get_ylabel()) == ("llpsp", "fc")
+
+    def test_a_station_on_a_bound_says_so_in_its_title(self, pnr_windows: Any) -> None:
+        fits = _fits(pnr_windows, 8.0)
+        pinned = set(fits.near_bounds())
+        assert pinned
+        assert pinned != set(fits.models)
+
+        figure = plot_loss_set(fits, columns=4, points=5)
+        for ax, id in zip(_panels(figure), fits.models, strict=True):
+            assert ax.get_title().startswith(id)
+            assert ("on a bound" in ax.get_title()) == (id in pinned), id
+
+    def test_an_unknown_station_and_an_unfitted_event_both_say_so(
+        self, pnr_windows: Any
+    ) -> None:
+        from specmod.fitting import FitSpectra  # noqa: PLC0415
+
+        with pytest.raises(ValueError, match=r"no fit for XX\.NOPE"):
+            plot_loss_set(_fits(pnr_windows), ids=["XX.NOPE"])
+        with pytest.raises(ValueError, match="no station here has been fitted"):
+            plot_loss_set(FitSpectra(_spectra(pnr_windows)))
 
 
 # --------------------------------------------------------------- tables

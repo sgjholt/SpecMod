@@ -16,13 +16,15 @@ from .base import (
 )
 from .event import FitSpectra
 from .guess import fittable_signal, initial_guess, selected_band
-from .spectrum import FitSpectrum
+from .spectrum import BOUND_TOLERANCE, FitSpectrum, NearBound
 
 __all__ = [
+    "BOUND_TOLERANCE",
     "PLOT_COLUMNS",
     "REQUIRED_SPECTRUM_ATTRIBUTES",
     "FitSpectra",
     "FitSpectrum",
+    "NearBound",
     "SpectraLike",
     "Spectrumish",
     "fittable_signal",

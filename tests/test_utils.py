@@ -8,8 +8,9 @@ change *moves* those references rather than failing against them, and needs
 pinning separately. ``tests/test_picks.py`` covers the resolution the pipeline
 actually uses.
 
-``plot_traces`` is not covered: it draws, and a test that only asserts it does
-not raise buys nothing that a broken figure would not also pass.
+``plot_traces`` is covered for what it draws, not for whether it raises: a test
+that only asserts a figure appeared buys nothing a broken figure would not also
+pass, so ``TestPlotTraces`` reads the plotted coordinates back off the axes.
 
 Where current behaviour is wrong, the test says so and pins it anyway — see
 ``TestReadPyrocko``'s notes on weights and on repeated picks.
@@ -20,8 +21,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import matplotlib
 import numpy as np
 import pytest
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
 
 obspy = pytest.importorskip("obspy")
 
@@ -343,3 +349,77 @@ class TestTheQuakeMLConversionIsLossless:
         target = tmp_path / "picks.xml"
         Catalog(events=[event]).write(str(target), format="QUAKEML")
         assert set(ut.read_quakeml_picks(str(target))["XX.TEST.00"]) == {"P"}
+
+
+# ------------------------------------------------------------- plot_traces
+
+
+def _plottable(n: int = 2) -> Any:
+    """Example traces carrying what ``plot_traces`` reads."""
+    stream = obspy.read()[:n]
+    for index, tr in enumerate(stream):
+        tr.stats["repi"] = float(index + 1)
+        tr.stats["otime"] = tr.stats.starttime
+    return stream
+
+
+class TestPlotTraces:
+    @pytest.fixture(autouse=True)
+    def _close_figures(self) -> Any:
+        yield
+        plt.close("all")
+
+    def test_each_sample_is_drawn_at_its_own_time(self) -> None:
+        """The time axis used to start one sample late.
+
+        It was built as ``starttime + delta * (sample + 1)``, so the first
+        sample sat at ``starttime + delta`` and the last one a sample past the
+        end of the trace. Pick and window lines are drawn at their true times,
+        so every waveform was shifted one sample against its own picks.
+        """
+        stream = _plottable()
+        ut.plot_traces(stream, conv=1.0)
+
+        for ax, tr in zip(plt.gcf().axes, stream, strict=True):
+            drawn = ax.lines[0].get_xdata(orig=False)
+            half_a_sample = 0.5 * tr.stats.delta / 86400.0
+            assert len(drawn) == tr.stats.npts
+            assert drawn[0] == pytest.approx(
+                tr.stats.starttime.matplotlib_date, abs=half_a_sample
+            )
+            assert drawn[-1] == pytest.approx(
+                tr.stats.endtime.matplotlib_date, abs=half_a_sample
+            )
+
+    def test_a_pick_line_falls_on_the_sample_it_marks(self) -> None:
+        stream = _plottable(1)
+        tr = stream[0]
+        tr.data[:] = 0.0
+        tr.data[500] = 1.0
+        tr.stats["p_time"] = tr.stats.starttime + 500 * tr.stats.delta
+        tr.stats["s_time"] = tr.stats["p_time"] + 5.0
+
+        ut.plot_traces(stream, conv=1.0, plot_theoreticals=True, bft=2, aftt=10)
+
+        ax = plt.gcf().axes[0]
+        waveform = ax.lines[0]
+        spike = waveform.get_xdata(orig=False)[np.argmax(waveform.get_ydata())]
+        assert spike == pytest.approx(
+            tr.stats["p_time"].matplotlib_date, abs=0.5 * tr.stats.delta / 86400.0
+        )
+
+    def test_traces_without_an_origin_time_still_plot(self) -> None:
+        """Missing geometry leaves a trace untitled; a missing origin time used
+        to raise ``AttributeError`` from the figure title instead."""
+        stream = _plottable()
+        for tr in stream:
+            del tr.stats["otime"]
+        ut.plot_traces(stream, conv=1.0)
+        assert len(plt.gcf().axes) == len(stream)
+
+    def test_save_takes_a_path(self, tmp_path: Path) -> None:
+        """``assert type(save) is str`` turned a ``Path`` into an
+        ``AssertionError`` with no message."""
+        target = tmp_path / "traces.png"
+        ut.plot_traces(_plottable(), conv=1.0, save=target)
+        assert target.stat().st_size > 0

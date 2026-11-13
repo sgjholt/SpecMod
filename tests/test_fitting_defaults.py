@@ -245,6 +245,50 @@ class TestInitialGuess:
             assert band[0] <= guess["fc"] <= band[1], id
             assert np.isfinite(guess["llpsp"]), id
 
+    def test_the_starting_model_passes_through_the_observed_peak(
+        self, pnr_windows: Any
+    ) -> None:
+        """``llpsp`` is the displacement plateau; the peak is a velocity.
+
+        The guess used to be the peak amplitude itself, which started every
+        fit a median 1.35 dex above where it finished on these 28 channels.
+        It is now the plateau at which the model, evaluated at the guess,
+        reproduces the peak it was read from — 0.34 dex from the fitted value.
+        """
+        from specmod import sources  # noqa: PLC0415
+
+        spectra = _spectra(pnr_windows)
+        model = sources.from_config().as_callable()
+        guesses = initial_guess(spectra)
+        assert len(guesses) == 28
+        for id, guess in guesses.items():
+            view = spectra[id].for_fitting(id)
+            inside = (view.freq >= view.band[0]) & (view.freq <= view.band[1])
+            peak = float(np.log10(view.amp[inside].max()))
+            at_peak = float(model(np.array([guess["fc"]]), **guess)[0])
+            assert at_peak == pytest.approx(peak, abs=1e-9), id
+            # Velocity peaks sit well above the displacement plateau.
+            assert guess["llpsp"] < peak - 0.5, id
+
+    def test_a_callable_using_llpsp_differently_keeps_the_raw_peak(
+        self, pnr_windows: Any
+    ) -> None:
+        """Only a model where ``llpsp`` is an additive constant can be asked.
+
+        A bare callable may give the name another meaning, so the shift is
+        checked for rather than assumed.
+        """
+
+        def doubled(f: Any, llpsp: float, fc: float) -> Any:
+            return 2.0 * llpsp - np.log10(1.0 + (f / fc) ** 2)
+
+        spectra = _spectra(pnr_windows)
+        guesses = initial_guess(spectra, doubled)
+        for id, guess in guesses.items():
+            view = spectra[id].for_fitting(id)
+            inside = (view.freq >= view.band[0]) & (view.freq <= view.band[1])
+            assert guess["llpsp"] == float(np.log10(view.amp[inside].max())), id
+
     def test_the_scalar_seeds_come_from_configuration(self, pnr_windows: Any) -> None:
         fitting = load_config().config.fitting
         guesses = initial_guess(_spectra(pnr_windows))
@@ -408,3 +452,93 @@ class TestWhatTypingTheModuleFound:
         fit.reset(id.lower())
         assert model.params["fc"].min == -np.inf
         assert model.params["fc"].max == np.inf
+
+
+class TestNearBounds:
+    """A fit resting against the edge of its search space says so.
+
+    ``pass_fitting`` cannot: it compares ``value +/- stderr`` with the bound,
+    and Powell reports no ``stderr``, so only exact equality fails a fit.
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "bound", "start", "near"),
+        [
+            # On the bound, and a hair off it.
+            (8.0, 8.0, 12.0, True),
+            (8.0 + 1e-9, 8.0, 12.0, True),
+            # A t* that ran two decades to its floor is near it at 1.5x ...
+            (1.5e-4, 1e-4, 1e-2, True),
+            # ... and one that stayed where it started is not.
+            (9e-3, 1e-4, 1e-2, False),
+            # A bound at zero has no scale of its own; the start supplies one.
+            (0.05, 0.0, 10.0, True),
+            (2.0, 0.0, 10.0, False),
+            # No bound, nothing to be near.
+            (5.0, -np.inf, 10.0, False),
+            (5.0, np.inf, 10.0, False),
+        ],
+    )
+    def test_near_is_measured_on_the_parameters_own_scale(
+        self, value: float, bound: float, start: float, near: bool
+    ) -> None:
+        from specmod.fitting.spectrum import _is_near  # noqa: PLC0415
+
+        assert _is_near(value, bound, start, 0.01) is near
+
+    def test_the_shipped_bounds_pin_nothing_on_these_windows(
+        self, pnr_windows: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level("WARNING", logger="specmod.fitting"):
+            fit = _fit(_spectra(pnr_windows))
+        assert fit.near_bounds() == {}
+        assert "bound" not in caplog.text
+
+    def test_a_floor_inside_the_answer_is_reported_per_station(
+        self, pnr_windows: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A corner-frequency floor of 8 Hz, which most of these fits want to
+        go below, pins 19 of 28. ``pass_fitting`` fails fewer: it sees only
+        the ones that landed exactly on the bound."""
+        fit = FitSpectra(_spectra(pnr_windows))
+        fit.set_bounds("fc", min=8.0)
+        with caplog.at_level("WARNING", logger="specmod.fitting"):
+            fit.fit_spectra()
+
+        near = fit.near_bounds()
+        failed = set(fit.table.loc[~fit.table["pass_fitting"], "id"])
+        assert len(near) == 19
+        assert failed < set(near)
+        for id, found in near.items():
+            (only,) = found
+            assert (only.parameter, only.side, only.bound) == ("fc", "lower", 8.0)
+            assert only.value == pytest.approx(8.0, rel=0.01)
+            assert f"{id}: fc = " in caplog.text
+        # One message per pinned station, each saying what to do about it.
+        messages = [r.getMessage() for r in caplog.records if "bound" in r.message]
+        assert len(messages) == 19
+        assert all("set_bounds('fc', min=...)" in m for m in messages)
+        assert all("plot_loss" in m for m in messages)
+
+    def test_the_message_can_be_turned_off_without_losing_the_report(
+        self, pnr_windows: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        fit = FitSpectra(_spectra(pnr_windows))
+        fit.set_bounds("fc", min=8.0)
+        with caplog.at_level("WARNING", logger="specmod.fitting"):
+            fit.fit_spectra(bound_tolerance=None)
+        assert "bound" not in caplog.text
+        assert len(fit.near_bounds()) == 19
+
+    def test_a_fixed_parameter_is_not_near_anything(self, pnr_windows: Any) -> None:
+        """Stage two holds the event parameter fixed, often on a value a
+        bound would flag; a parameter that was not searched for cannot have
+        been stopped by the edge of the search."""
+        fit = FitSpectra(_spectra(pnr_windows))
+        fit.set_bounds("fc", min=8.0)
+        fit.set_const("fc", 8.0)
+        fit.fit_spectra()
+        assert fit.near_bounds() == {}
+
+    def test_an_unfitted_spectrum_has_nothing_to_report(self, pnr_windows: Any) -> None:
+        assert FitSpectra(_spectra(pnr_windows)).near_bounds() == {}

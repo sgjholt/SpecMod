@@ -487,7 +487,10 @@ def signal_intensity(
     tr: Trace, pctls: Sequence[float] = (1, 99), plot: bool = False
 ) -> tuple[float, float]:
     delta = tr.stats.delta
-    data = tr.data
+    # As floats before squaring. miniSEED counts are int32, and an int32 above
+    # 46 340 squared wraps round, so the cumulative energy of a raw record is
+    # not monotonic and its percentiles land anywhere.
+    data = np.asarray(tr.data, dtype=np.float64)
 
     inte = normalise(cumulative_trapezoid(data**2)) * 100
 
@@ -584,12 +587,21 @@ def get_noise_p(st: Stream, sig: Stream, bshift: float = 0.2) -> Stream:
 def get_noise_s(
     st: Stream, bf: float = 1, bshift: float = 0.2, sig: Stream | None = None
 ) -> Stream:
+    """A noise window per trace, ending ``bshift`` s before the P arrival.
+
+    ``bf`` seconds long, or as long as the matching trace in ``sig`` when one
+    is given. The two streams are then paired by position and must be the same
+    length, as in :func:`get_noise_p`.
+    """
     stc = st.copy()
-    for i, tr in enumerate(stc):
+    # `strict=True`, for the reason given in `get_noise_p`: a signal stream of
+    # a different length would cut each noise window to another trace's.
+    signals: Iterable[Trace | None] = sig if sig is not None else [None] * len(stc)
+    for tr, trs in zip(stc, signals, strict=True):
         end = tr.stats["p_time"] - bshift
 
-        if sig is not None:  # get the same length as the signal window
-            start = end - (sig[i].stats["wend"] - sig[i].stats["wstart"])
+        if trs is not None:  # get the same length as the signal window
+            start = end - (trs.stats["wend"] - trs.stats["wstart"])
         else:
             start = end - bf
         tr.trim(start, end)

@@ -12,6 +12,9 @@ class Parameter:
     #: of this in SpecMod has to cope with that; see `__determine_pass_or_fail`.
     stderr: float | None
     correl: dict[str, float] | None
+    #: The value the fit started from, set when a fit begins. `None` on a
+    #: parameter no fit has used.
+    init_value: float | None
     def __init__(
         self,
         name: str,

@@ -451,8 +451,11 @@ def fit_event(
     selection
         Which channels contribute. Defaults to :meth:`ChannelSelection.from_config`.
     quiet
-        Suppress the fitter's per-station chatter, which is two full passes of
-        it here. The failures are on :attr:`StagedFit.excluded` either way.
+        Discard anything written to stdout while fitting — by a model callable
+        that prints, for one — which here would be two full passes of it.
+        ``False`` leaves stdout alone. The fitter's own messages are not
+        affected either way: a skipped station is logged on
+        ``specmod.fitting.event``, and is on :attr:`StagedFit.excluded`.
     **fit_kwargs
         Passed to :meth:`~specmod.fitting.FitSpectra.fit_spectra` for both
         stages — ``method=`` most usefully.
@@ -473,7 +476,15 @@ def fit_event(
     model_ = get_weight_model(weighting) if isinstance(weighting, str) else weighting
 
     def run(constant: tuple[str, float] | None = None) -> FitSpectra:
-        with contextlib.redirect_stdout(io.StringIO() if quiet else None):
+        # `nullcontext`, not `redirect_stdout(None)`: that one sets
+        # `sys.stdout` to `None` for the duration, which silences more than
+        # `quiet=True` does.
+        silence: contextlib.AbstractContextManager[Any] = (
+            contextlib.redirect_stdout(io.StringIO())
+            if quiet
+            else contextlib.nullcontext()
+        )
+        with silence:
             fit = FitSpectra(spectra, model=model, guess=guess, fit_bins=fit_bins)
             if constant is not None:
                 fit.set_const(*constant)
