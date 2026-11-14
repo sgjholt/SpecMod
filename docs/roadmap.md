@@ -256,11 +256,12 @@ disagree most, the corner frequencies within 1.1 times the best misfit run
 from 3.4 to 4.3 Hz in the slice and across the whole scanned range, 0.4 to
 38 Hz, in the profile.
 
-`fit_spectra` logs a warning when a parameter finishes against a bound, with
-the `set_bounds` call that opens the search space, and `near_bounds()` returns
-the same list. `pass_fitting` could not say this under Powell, which reports
-no uncertainties: with a corner-frequency floor of 8 Hz, 23 of the 28 PNR
-fits finish within 1% of it and `pass_fitting` fails 7.
+A fit whose parameter finishes against a bound now fails `pass_fitting`, so
+it does not vote in the event value. `fit_spectra` logs a warning for each,
+with the `set_bounds` call that opens the search space, and `near_bounds()`
+returns the same list. The flag used to need an uncertainty to compare with
+the bound, and Powell reports none: with a corner-frequency floor of 8 Hz, 23
+of the 28 PNR fits finish within 1% of it, and it failed 7 of them.
 
 ## Planned
 

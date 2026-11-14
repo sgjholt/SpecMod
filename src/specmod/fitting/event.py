@@ -89,16 +89,18 @@ class FitSpectra:
         self,
         weight_method: str | None = None,
         *,
-        bound_tolerance: float | None = BOUND_TOLERANCE,
+        bound_tolerance: float = BOUND_TOLERANCE,
         **kwargs: Any,
     ) -> None:
         """Fit every station, with the configured minimiser unless told otherwise.
 
-        A station whose fit finishes against a bound is logged as a warning on
-        ``specmod.fitting.event``, naming the parameter and how to open the
-        search space; see :meth:`FitSpectrum.near_bounds` for what near means.
-        ``bound_tolerance`` sets how near, and ``None`` says nothing. The same
-        information is on :meth:`near_bounds` afterwards.
+        A station whose fit finishes against a bound fails: its
+        ``pass_fitting`` is ``False``, and a warning is logged on
+        ``specmod.fitting.event`` naming the parameter and how to open the
+        search space. ``bound_tolerance`` sets how near counts; see
+        :meth:`FitSpectrum.near_bounds`. The same list is on
+        :meth:`near_bounds` afterwards. To silence the messages, raise that
+        logger's level.
 
         ``method`` and ``weight_method`` both come from ``[fitting]`` when not
         given. Neither used to: `fit_spectra()` fell through to lmfit's default
@@ -119,9 +121,13 @@ class FitSpectra:
         for name, mod in self.models.items():
             try:
                 if wm == "log":
-                    mod.fit_mod(weights=1 / mod.mod_freq, **kwargs)
+                    mod.fit_mod(
+                        bound_tolerance=bound_tolerance,
+                        weights=1 / mod.mod_freq,
+                        **kwargs,
+                    )
                 else:
-                    mod.fit_mod(**kwargs)
+                    mod.fit_mod(bound_tolerance=bound_tolerance, **kwargs)
             except ValueError as error:
                 # `logging`, not `warnings`, and the difference matters here:
                 # warnings are deduplicated per code location by default, so a
@@ -129,23 +135,23 @@ class FitSpectra:
                 # is a station missing from the results and has to be visible.
                 logger.warning("skipping %s: %s", name, error)
                 continue
-            if bound_tolerance is not None:
-                # Logged for the same reason: a warning shown once is not
-                # shown again for the same text, so a refit that left the
-                # parameter where it was would look like one that fixed it.
-                for near in mod.near_bounds(bound_tolerance):
-                    logger.warning("%s: %s", name, near.describe())
+            # Logged for the same reason: a warning shown once is not shown
+            # again for the same text, so a refit that left the parameter
+            # where it was would look like one that fixed it.
+            for near in mod.near_bounds():
+                logger.warning("%s: %s", name, near.describe())
 
         self.__set_fit_models_to_spectrum()
         self.__generate_group_fit_table()
 
     def near_bounds(
-        self, tolerance: float = BOUND_TOLERANCE
+        self, tolerance: float | None = None
     ) -> dict[str, tuple[NearBound, ...]]:
         """Every fitted station with a parameter against a bound, by id.
 
         Stations with nothing to report are left out, so an empty mapping
-        means every fit finished inside its search space.
+        means every fit finished inside its search space. ``tolerance``
+        defaults to the one each fit was judged with.
         """
         report: dict[str, tuple[NearBound, ...]] = {}
         for name, mod in self.models.items():

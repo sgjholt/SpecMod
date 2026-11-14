@@ -1,11 +1,49 @@
 # Upgrading
 
-Six moves are documented here. Most readers porting code want `0.2` to `0.3`,
-which renamed ten functions in `specmod.preprocess` and changed what they do
-with the stream they are given. Three of the moves above it rename nothing:
-they change what a setting does, or which one is the default, so the break is
-in the numbers rather than in the call. `0.6` to `0.7` renames files on disk,
-and comes with a command that does it for you.
+Seven moves are documented here. Most readers porting code want `0.2` to
+`0.3`, which renamed ten functions in `specmod.preprocess` and changed what
+they do with the stream they are given. Four of the moves above it rename
+nothing: they change what a setting does, which one is the default, or which
+fits pass, so the break is in the numbers rather than in the call. `0.6` to
+`0.7` renames files on disk, and comes with a command that does it for you.
+
+## From 0.7 to 0.8
+
+**A fit that finishes against a bound now fails `pass_fitting`.** A parameter
+within 1% of a bound, measured against the largest of its fitted value, the
+bound and its starting value, fails the fit. Before, the flag compared
+`value ± stderr` with the bound, and under Powell, which reports no `stderr`,
+only a value exactly on the bound failed.
+
+What changes for you depends on your bounds:
+
+- **With the shipped bounds**, nothing changes on the PNR event: no fit
+  finishes near one, under Powell or `leastsq`.
+- **With bounds of your own**, fits pinned just short of one now fail. By
+  default a failed fit does not vote in `fit_event`, so the event value can
+  move. On PNR, a corner-frequency floor of 8 Hz pins 23 of 28 fits; 7 failed
+  before and all 23 fail now.
+
+`fit_spectra` logs a warning for each such station, naming the parameter and
+the `set_bounds` call that opens the search space. The fix is usually that
+call. To keep the stations voting regardless, pass
+`selection=ChannelSelection(require_pass=False)` to `fit_event`. To change how
+near counts, pass `bound_tolerance` to `fit_spectra` or `fit_event`.
+
+**A stream with a repeated trace id is refused.** `spectrum_set_from_streams`
+raises `ValueError` naming the id. A record with a gap reads as several traces
+sharing one id, and before only the last was kept, silently. Merge the
+segments first:
+
+```python
+stream.merge(method=1)   # or select the segment to keep
+```
+
+**New: `plot_loss` and `plot_loss_set`** in `specmod.plotting` draw the misfit
+around a fit. The tutorial's *Is the value constrained?* shows both.
+
+**Reading pre-0.7 directory names is kept until 1.0**, not removed in 0.8 as
+the 0.7.0 notes said.
 
 ## From 0.6 to 0.7
 

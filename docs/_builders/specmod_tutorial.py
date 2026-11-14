@@ -711,9 +711,10 @@ a run says what it did rather than relying on anyone's memory.
 
 `pass_fitting` marks a fit whose parameter is pinned against one of its
 bounds — the minimiser saying "further, if you would let me", with the bound
-reported instead of a measurement. Without uncertainties the test is weaker,
-because it can only ask whether the value *is* the bound rather than whether
-it reaches one.
+reported instead of a measurement. A fit fails when a value finishes within
+1% of a bound, or when its uncertainty reaches one. Only `leastsq` has
+uncertainties to apply the second test to, which is why it fails stations
+here that Powell passes.
 """)
 
 
@@ -801,18 +802,100 @@ plt.show()
 
 
 md("""
+### When the search space is too small
+
 A fit that finishes against a bound is the other thing to look for: the value
-reported is then the edge of the search space. `fit_spectra` logs a warning
-for each station it happens to, naming the parameter and the `set_bounds`
-call that opens the search space, and `plot_loss` shades what lies beyond the
-bound so you can see whether the misfit is still falling there.
-`near_bounds()` returns the same list. With the shipped bounds it is empty
-for this event.
+reported is then the edge of the search space, not a measurement. With the
+shipped bounds no fit here does.
 """)
 
 
 code("""
 fits.near_bounds()
+""")
+
+
+md("""
+To see what it looks like, give the corner frequency a floor of 3 Hz, which
+is above where several of these fits settle. `fit_spectra` logs a warning for
+each station that ends up against it, naming the parameter and the
+`set_bounds` call that opens the search space.
+""")
+
+
+code("""
+bounded = FitSpectra(spectra)
+bounded.set_bounds("fc", min=3.0)
+bounded.fit_spectra()
+""")
+
+
+md("""
+Those stations fail `pass_fitting`, so by default they do not vote in the
+event value below. `near_bounds()` returns the same list as the warnings.
+""")
+
+
+code("""
+against = bounded.near_bounds()
+failed = bounded.table.loc[~bounded.table["pass_fitting"], "id"]
+print(f"{len(against)} of {len(bounded.models)} fits finished against a bound")
+print(f"{len(failed)} failed pass_fitting: {sorted(failed) == sorted(against)}")
+pd.DataFrame(
+    [
+        {"id": id, "parameter": n.parameter, "value": n.value, "bound": n.bound}
+        for id, found in against.items()
+        for n in found
+    ]
+)
+""")
+
+
+md("""
+Whether a better fit lies outside the search space is the question, and it
+takes the **profile** to answer it. A slice moves the corner frequency alone,
+with the plateau and $t^*$ held where the bounded fit left them, which is not
+how the minimiser would have moved it. Below 1 means a better fit than the one
+reported.
+""")
+
+
+code("""
+# The station that finished closest to the floor.
+pinned_id = min(against, key=lambda id: abs(against[id][0].value - against[id][0].bound))
+model = bounded.models[pinned_id]
+below = np.linspace(2.0, 3.0, 21)
+
+print(f"{pinned_id}: misfit below the 3 Hz floor, as a multiple of the fit's")
+for label, profile in (("slice", False), ("profile", True)):
+    relative = model.loss_scan({"fc": below}, profile=profile) / model.fitted.chisqr
+    print(f"  {label:8s} lowest {relative.min():.4f}, at {below[relative.argmin()]:.2f} Hz")
+""")
+
+
+md("""
+`plot_loss` shades what lies beyond the bound, so the same thing can be seen:
+drawn as a profile, the valley runs on into the shading.
+""")
+
+
+code("""
+plot_loss(model, parameters=["fc", "ts"], points=25, profile=True)
+plt.show()
+""")
+
+
+md("""
+Opening it and refitting is the fix. The warnings stop and every fit passes
+again.
+""")
+
+
+code("""
+bounded.set_bounds("fc", min=0.0)
+bounded.fit_spectra()
+print(f"against a bound: {len(bounded.near_bounds())}")
+print(f"passed: {bounded.table['pass_fitting'].sum()} of {len(bounded.table)}")
 """)
 
 

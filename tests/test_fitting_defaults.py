@@ -455,10 +455,10 @@ class TestWhatTypingTheModuleFound:
 
 
 class TestNearBounds:
-    """A fit resting against the edge of its search space says so.
+    """A fit resting against the edge of its search space says so, and fails.
 
-    ``pass_fitting`` cannot: it compares ``value +/- stderr`` with the bound,
-    and Powell reports no ``stderr``, so only exact equality fails a fit.
+    Comparing ``value +/- stderr`` with the bound is not enough on its own:
+    Powell reports no ``stderr``, so by that test only exact equality fails.
     """
 
     @pytest.mark.parametrize(
@@ -498,8 +498,7 @@ class TestNearBounds:
         self, pnr_windows: Any, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A corner-frequency floor of 8 Hz, which most of these fits want to
-        go below, pins 19 of 28. ``pass_fitting`` fails fewer: it sees only
-        the ones that landed exactly on the bound."""
+        go below, pins 19 of 28, and ``pass_fitting`` fails exactly those."""
         fit = FitSpectra(_spectra(pnr_windows))
         fit.set_bounds("fc", min=8.0)
         with caplog.at_level("WARNING", logger="specmod.fitting"):
@@ -508,7 +507,11 @@ class TestNearBounds:
         near = fit.near_bounds()
         failed = set(fit.table.loc[~fit.table["pass_fitting"], "id"])
         assert len(near) == 19
-        assert failed < set(near)
+        assert failed == set(near)
+        # Fewer than half of them landed exactly on the bound; the rest are
+        # within a hair of it, which an equality test would have passed.
+        exact = {id for id, (only,) in near.items() if only.value == only.bound}
+        assert 0 < len(exact) < len(near)
         for id, found in near.items():
             (only,) = found
             assert (only.parameter, only.side, only.bound) == ("fc", "lower", 8.0)
@@ -520,15 +523,44 @@ class TestNearBounds:
         assert all("set_bounds('fc', min=...)" in m for m in messages)
         assert all("plot_loss" in m for m in messages)
 
-    def test_the_message_can_be_turned_off_without_losing_the_report(
+    def test_the_tolerance_decides_both_the_flag_and_the_report(
+        self, pnr_windows: Any
+    ) -> None:
+        """One number, used for both, so they cannot disagree."""
+        fit = FitSpectra(_spectra(pnr_windows))
+        fit.set_bounds("fc", min=8.0)
+        fit.fit_spectra(bound_tolerance=1e-9)
+
+        strict = fit.near_bounds()
+        assert 0 < len(strict) < 19
+        assert set(fit.table.loc[~fit.table["pass_fitting"], "id"]) == set(strict)
+        # Asking again more loosely needs no refit, and does not move the flag.
+        assert len(fit.near_bounds(0.01)) == 19
+        assert set(strict) < set(fit.near_bounds(0.01))
+
+    def test_the_messages_follow_the_logger_s_level(
         self, pnr_windows: Any, caplog: pytest.LogCaptureFixture
     ) -> None:
         fit = FitSpectra(_spectra(pnr_windows))
         fit.set_bounds("fc", min=8.0)
-        with caplog.at_level("WARNING", logger="specmod.fitting"):
-            fit.fit_spectra(bound_tolerance=None)
+        with caplog.at_level("ERROR", logger="specmod.fitting"):
+            fit.fit_spectra()
         assert "bound" not in caplog.text
         assert len(fit.near_bounds()) == 19
+
+    def test_moving_the_bound_and_refitting_passes_the_fit(
+        self, pnr_windows: Any
+    ) -> None:
+        """What the message tells the modeller to do, done."""
+        fit = FitSpectra(_spectra(pnr_windows))
+        fit.set_bounds("fc", min=8.0)
+        fit.fit_spectra()
+        assert not fit.table["pass_fitting"].all()
+
+        fit.set_bounds("fc", min=0.0)
+        fit.fit_spectra()
+        assert fit.near_bounds() == {}
+        assert fit.table["pass_fitting"].all()
 
     def test_a_fixed_parameter_is_not_near_anything(self, pnr_windows: Any) -> None:
         """Stage two holds the event parameter fixed, often on a value a

@@ -16,7 +16,8 @@ unconstrained one needs.
 Three things are marked on every panel: the fitted value, the value the fit
 started from, and any bound inside the range, with the region beyond it
 shaded. A fitted value sitting on the shading, with the misfit still falling
-into it, is a search space that needs opening.
+into it, is a search space that needs opening — and that usually shows only
+in a profile, for the reason below.
 
 **Slice or profile.** By default the parameters not on a panel's axes stay at
 their fitted values, which is a slice through the best fit. It is exact and

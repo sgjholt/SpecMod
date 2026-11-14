@@ -249,12 +249,13 @@ class ChannelSelection:
     #: Drop a station whose stage-1 fit ended with a parameter against a bound.
     #:
     #: **This interacts with the minimiser, and not symmetrically.**
-    #: ``pass_fitting`` asks whether ``value +/- stderr`` reaches a bound.
-    #: Powell — the shipped default — estimates no covariance matrix, so
-    #: ``stderr`` is ``None``, the spread is zero, and the test degenerates to
-    #: "is the value exactly on the bound", which essentially never fires. On
-    #: these 28 windows it drops **0** stations under Powell and **6** under
-    #: ``leastsq``.
+    #: ``pass_fitting`` fails a fit whose parameter finishes within a
+    #: tolerance of a bound, or whose uncertainty, ``value +/- stderr``,
+    #: reaches one. Powell — the shipped default — estimates no covariance
+    #: matrix, so under it only the first test exists. On these 28 windows no
+    #: value finishes near a bound, so Powell drops **0** stations;
+    #: ``leastsq`` reports uncertainties, six of which reach a bound, and
+    #: drops **6**.
     #:
     #: So changing the minimiser changes *which stations vote*, not just how
     #: each one is fitted. Comparing two minimisers under the default

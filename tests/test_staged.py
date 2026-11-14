@@ -191,10 +191,11 @@ class TestSelection:
     ) -> None:
         """The trap, pinned so it cannot drift into being a surprise.
 
-        `pass_fitting` asks whether ``value +/- stderr`` reaches a bound.
-        Powell estimates no covariance matrix, so the spread is zero and the
-        test degenerates to "is the value exactly on the bound" — which
-        essentially never fires. `leastsq` reports uncertainties and fails six.
+        `pass_fitting` fails a fit whose value finishes near a bound, or
+        whose uncertainty ``value +/- stderr`` reaches one. Powell estimates
+        no covariance matrix, so only the first test applies, and with the
+        shipped bounds no value here is near one. `leastsq` reports
+        uncertainties, and six of them reach a bound.
 
         The consequence is that changing the minimiser changes *which stations
         vote*, not just how each is fitted, and a naive comparison of two
