@@ -9,6 +9,36 @@ release could have this problem — every later one has a real predecessor tag �
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.8.0](https://github.com/sgjholt/SpecMod/compare/v0.7.0...v0.8.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **fitting:** `pass_fitting` is False for a fit whose parameter finishes within 1% of a bound, not only for one exactly on it or whose `stderr` reaches it. With the shipped bounds nothing changes on PNR. With narrower bounds, pinned fits that used to pass now fail and are excluded from `fit_event` unless `ChannelSelection(require_pass=False)` is passed. `fit_spectra(bound_tolerance=None)` is no longer accepted. See docs/upgrading.md, From 0.7 to 0.8.
+
+### Features
+
+* **fitting:** fail a fit that finishes against a bound ([11a2889](https://github.com/sgjholt/SpecMod/commit/11a2889d2f6785b581bbcc5ef916277c83e21dfa))
+* **fitting:** warn when a fit comes to rest against a bound ([31dea5b](https://github.com/sgjholt/SpecMod/commit/31dea5bb33a7cf980e1b8479d5aaa57ff7aaf771))
+* **plotting:** draw the misfit around a fit, as a slice or a profile ([f9ea169](https://github.com/sgjholt/SpecMod/commit/f9ea169feee7164a1867422740b43c71defc9a34))
+
+
+### Bug Fixes
+
+* **fitting:** start llpsp at the plateau the model implies, not at the peak ([4639b7d](https://github.com/sgjholt/SpecMod/commit/4639b7d2e9fae59a2b1c6439fa7b6d05b7a8556a))
+* **pipeline:** refuse two traces with one id instead of dropping one ([2c7c9fa](https://github.com/sgjholt/SpecMod/commit/2c7c9faa55d3c4afdb2e85a2c74b59695ef01126))
+* **preprocess:** pair get_noise_s with its signal stream strictly ([5eefba0](https://github.com/sgjholt/SpecMod/commit/5eefba02fb0a898452bc06c0647ebed852f3d287))
+* **preprocess:** refine a window of raw counts without overflowing ([c0ee5d4](https://github.com/sgjholt/SpecMod/commit/c0ee5d4f47f9fa85d873d260352305f027556e9b))
+* **utils:** draw each waveform sample at its own time in plot_traces ([d4cd5b3](https://github.com/sgjholt/SpecMod/commit/d4cd5b397b0d935fec0a786fa829abbe0dfaf9a6))
+
+
+### Documentation
+
+* **datasets:** keep reading pre-0.7 directory names until 1.0, not 0.8 ([4101f4b](https://github.com/sgjholt/SpecMod/commit/4101f4bf51415f43ae3a709c140ccd1f7a9ecd46))
+* **pipeline:** describe what the code does, not what it used to do ([d16eecd](https://github.com/sgjholt/SpecMod/commit/d16eecd3ac09803201e9228cddfa5bbda2167d2d))
+* **roadmap:** file the colon-free names as shipped in v0.7.0 ([d44bebb](https://github.com/sgjholt/SpecMod/commit/d44bebb884e3c7dee32553328d23c328025d8b3f))
+* **roadmap:** file the colon-free names as shipped in v0.7.0 ([e364939](https://github.com/sgjholt/SpecMod/commit/e3649393ea013fc2208cd8634a8c02a035f09f66))
+
 ## [0.7.0](https://github.com/sgjholt/SpecMod/compare/v0.6.0...v0.7.0) (2026-11-08)
 
 
