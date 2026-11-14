@@ -27,7 +27,7 @@ basic format — ``20190826T073047.000000Z`` rather than
 Windows file name, and uv 0.13 refuses to build a source distribution that
 contains one. Directories written before 0.7 used the extended form;
 :func:`migrate_names` renames them, and :meth:`Event.directory` still finds an
-unmigrated one until 0.8.
+unmigrated one until 1.0.
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ class Event:
         The directory is named by :func:`path_name`. One written before 0.7,
         named by the origin itself, is still found when the new name is
         absent, with a :class:`DeprecationWarning`; that fallback is removed
-        in 0.8. ``specmod migrate-names`` renames it.
+        in 1.0. ``specmod migrate-names`` renames it.
         """
         events = Path(project_root) / EVENTS
         current = events / path_name(self.origin)
@@ -191,7 +191,7 @@ class Event:
             warnings.warn(
                 f"{legacy} is named in the pre-0.7 layout, whose colons are "
                 f"not legal on Windows; it is read for now, and will not be "
-                f"found from 0.8. Run `specmod migrate-names {events}` to "
+                f"found from 1.0. Run `specmod migrate-names {events}` to "
                 f"rename it to {current.name}.",
                 DeprecationWarning,
                 stacklevel=2,

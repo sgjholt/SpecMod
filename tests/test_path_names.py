@@ -102,9 +102,11 @@ class TestTheLegacyFallback:
         (tmp_path / EVENTS / LEGACY / "waveforms").mkdir(parents=True)
         event = Event(origin=LEGACY, latitude=0.0, longitude=0.0, depth_km=1.0)
 
-        with pytest.warns(DeprecationWarning, match="specmod migrate-names"):
+        with pytest.warns(DeprecationWarning, match="specmod migrate-names") as caught:
             paths = event.directory(tmp_path)
         assert paths.root.name == LEGACY
+        # The fallback is kept through 0.x and removed in 1.0, and says so.
+        assert "will not be found from 1.0" in str(caught[0].message)
 
     def test_the_new_name_wins_and_says_nothing(self, tmp_path: Path) -> None:
         (tmp_path / EVENTS / LEGACY).mkdir(parents=True)

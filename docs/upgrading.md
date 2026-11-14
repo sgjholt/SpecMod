@@ -47,10 +47,10 @@ nothing to do. It refuses, before renaming anything, when a new name is
 already taken, which happens when one event exists in both layouts. Which copy
 to keep is yours to decide.
 
-**Unmigrated data is still read, until 0.8.** `Event.directory()` looks for the
+**Unmigrated data is still read, until 1.0.** `Event.directory()` looks for the
 new name first and falls back to the old one with a `DeprecationWarning` naming
-the command to run. The fallback goes in 0.8, under the usual one-minor
-deprecation.
+the command to run. The fallback is kept through every `0.x` release and goes
+in 1.0. The 0.7.0 release notes said 0.8; that was moved back.
 
 **Code that built a path from the origin string** has to call `path_name`
 instead:

@@ -234,7 +234,7 @@ prints it, `2019-08-26T07:30:47.000000Z`. Windows does not allow the colons,
 and uv 0.13 refuses to build a source distribution containing them. Names are now ISO 8601 basic format,
 `20190826T073047.000000Z`, from `specmod.datasets.path_name`, and
 `specmod fetch` writes them. `specmod migrate-names` renames data written
-earlier and keeps its manifest verifying; until 0.8, data that has not been
+earlier and keeps its manifest verifying; until 1.0, data that has not been
 migrated is still found, with a warning.
 [Upgrading](upgrading.md#from-06-to-07) has the steps.
 
@@ -270,6 +270,9 @@ fits finish within 1% of it and `pass_fitting` fails 7.
 the decomposition above with the signature changes it implied. What remains is
 the release itself, which says that names and signatures stop moving without a
 deprecation cycle.
+
+1.0 is also where the one deprecation still open closes: reading event
+directories named in the pre-0.7 layout, which has warned since 0.7.0, stops.
 
 That promise is the whole content of the number, which is why it has to be a
 decision rather than something a breaking commit does on its way past. Until it
@@ -317,7 +320,7 @@ refused.
 directories and the files in them are renamed on disk, so code that built a
 path from an origin time no longer finds it. Unlike the three before it, this
 break comes with a migration, `specmod migrate-names`, and a fallback that
-reads the old names with a warning until 0.8 — a deprecation cycle, which the
+reads the old names with a warning until 1.0 — a deprecation cycle, which the
 earlier changes had nothing to attach to. That makes it a better-behaved break,
 not the absence of one. The count stands at zero.
 
