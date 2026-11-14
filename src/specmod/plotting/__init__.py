@@ -18,14 +18,16 @@ them, or save without a window ever opening — which is also what makes them
 usable from a script and from a notebook without behaving differently.
 
 The package splits by what is being drawn: :mod:`~specmod.plotting.pair` draws
-one pair, :mod:`~specmod.plotting.grid` arranges many, and
-:mod:`~specmod.plotting.style` holds the presentation both share, so an axis
+one pair, :mod:`~specmod.plotting.grid` arranges many,
+:mod:`~specmod.plotting.loss` draws the misfit around a fit, and
+:mod:`~specmod.plotting.style` holds the presentation they share, so an axis
 decision is made once rather than twice.
 """
 
 from __future__ import annotations
 
 from .grid import plot_set
+from .loss import plot_loss, plot_loss_set
 from .pair import plot_pair
 
-__all__ = ["plot_pair", "plot_set"]
+__all__ = ["plot_loss", "plot_loss_set", "plot_pair", "plot_set"]

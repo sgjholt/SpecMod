@@ -249,12 +249,13 @@ class ChannelSelection:
     #: Drop a station whose stage-1 fit ended with a parameter against a bound.
     #:
     #: **This interacts with the minimiser, and not symmetrically.**
-    #: ``pass_fitting`` asks whether ``value +/- stderr`` reaches a bound.
-    #: Powell — the shipped default — estimates no covariance matrix, so
-    #: ``stderr`` is ``None``, the spread is zero, and the test degenerates to
-    #: "is the value exactly on the bound", which essentially never fires. On
-    #: these 28 windows it drops **0** stations under Powell and **6** under
-    #: ``leastsq``.
+    #: ``pass_fitting`` fails a fit whose parameter finishes within a
+    #: tolerance of a bound, or whose uncertainty, ``value +/- stderr``,
+    #: reaches one. Powell — the shipped default — estimates no covariance
+    #: matrix, so under it only the first test exists. On these 28 windows no
+    #: value finishes near a bound, so Powell drops **0** stations;
+    #: ``leastsq`` reports uncertainties, six of which reach a bound, and
+    #: drops **6**.
     #:
     #: So changing the minimiser changes *which stations vote*, not just how
     #: each one is fitted. Comparing two minimisers under the default
@@ -451,8 +452,11 @@ def fit_event(
     selection
         Which channels contribute. Defaults to :meth:`ChannelSelection.from_config`.
     quiet
-        Suppress the fitter's per-station chatter, which is two full passes of
-        it here. The failures are on :attr:`StagedFit.excluded` either way.
+        Discard anything written to stdout while fitting — by a model callable
+        that prints, for one — which here would be two full passes of it.
+        ``False`` leaves stdout alone. The fitter's own messages are not
+        affected either way: a skipped station is logged on
+        ``specmod.fitting.event``, and is on :attr:`StagedFit.excluded`.
     **fit_kwargs
         Passed to :meth:`~specmod.fitting.FitSpectra.fit_spectra` for both
         stages — ``method=`` most usefully.
@@ -473,7 +477,15 @@ def fit_event(
     model_ = get_weight_model(weighting) if isinstance(weighting, str) else weighting
 
     def run(constant: tuple[str, float] | None = None) -> FitSpectra:
-        with contextlib.redirect_stdout(io.StringIO() if quiet else None):
+        # `nullcontext`, not `redirect_stdout(None)`: that one sets
+        # `sys.stdout` to `None` for the duration, which silences more than
+        # `quiet=True` does.
+        silence: contextlib.AbstractContextManager[Any] = (
+            contextlib.redirect_stdout(io.StringIO())
+            if quiet
+            else contextlib.nullcontext()
+        )
+        with silence:
             fit = FitSpectra(spectra, model=model, guess=guess, fit_bins=fit_bins)
             if constant is not None:
                 fit.set_const(*constant)

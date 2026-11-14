@@ -218,6 +218,20 @@ def test_it_refuses_streams_of_different_lengths(pnr_windows: Any) -> None:
         spectrum_set_from_streams(signal, obspy.Stream(noise[:-1]))
 
 
+def test_it_refuses_two_traces_with_one_id(pnr_windows: Any) -> None:
+    """A record with a gap reads as two traces carrying the same id.
+
+    The pairs are keyed by id, so the second used to replace the first and the
+    set came back one short with nothing said: three traces in, two spectra
+    out, and which segment survived depended on the order of the stream.
+    """
+    signal, noise = pnr_windows()
+    gappy_signal = obspy.Stream([signal[0], signal[1], signal[0].copy()])
+    gappy_noise = obspy.Stream([noise[0], noise[1], noise[0].copy()])
+    with pytest.raises(ValueError, match=f"{signal[0].id} appears more than once"):
+        spectrum_set_from_streams(gappy_signal, gappy_noise)
+
+
 def test_the_event_defaults_to_the_origin_time(pnr_windows: Any) -> None:
     signal, noise = pnr_windows()
     got = spectrum_set_from_streams(signal[:2], obspy.Stream(noise[:2]))

@@ -10,7 +10,8 @@ that estimates no covariance matrix, including the shipped default.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 import lmfit as lm
 import matplotlib.pyplot as plt
@@ -26,9 +27,54 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Mapping
 
     from matplotlib.axes import Axes
-    from numpy.typing import NDArray
+    from numpy.typing import ArrayLike, NDArray
 
-__all__ = ["FitSpectrum"]
+__all__ = ["BOUND_TOLERANCE", "FitSpectrum", "NearBound"]
+
+#: How close to a bound counts as near it, as a fraction of the parameter's
+#: scale. See :meth:`FitSpectrum.near_bounds`.
+BOUND_TOLERANCE = 0.01
+
+
+@dataclass(frozen=True)
+class NearBound:
+    """A fitted parameter that came to rest against the edge of its search.
+
+    The value it reports is then the bound, or close to it, rather than a
+    measurement: the minimiser stopped because it was not allowed further, not
+    because the misfit stopped falling. A fit with one of these does not pass.
+    """
+
+    parameter: str
+    value: float
+    bound: float
+    side: Literal["lower", "upper"]
+
+    def describe(self) -> str:
+        """What happened and what to do about it, in one sentence each."""
+        gap = abs(self.value - self.bound)
+        where = "on" if gap == 0 else f"within {gap:.2g} of"
+        keyword = "min" if self.side == "lower" else "max"
+        return (
+            f"{self.parameter} = {self.value:.4g} is {where} its {self.side} "
+            f"bound of {self.bound:.4g}, which is the edge of the search space "
+            f"rather than a measurement. Open the search space with "
+            f"set_bounds({self.parameter!r}, {keyword}=...) and refit, or draw "
+            f"specmod.plotting.plot_loss with profile=True to see whether the "
+            f"misfit is still falling there."
+        )
+
+
+def _is_near(value: float, bound: float, start: float, tolerance: float) -> bool:
+    """Whether ``value`` is within ``tolerance`` of ``bound``, on its own scale.
+
+    The scale is the largest of the value, the bound and where the fit
+    started. See :meth:`FitSpectrum.near_bounds`.
+    """
+    if not np.isfinite(bound):
+        return False
+    scale = max(abs(value), abs(bound), abs(start))
+    return bool(abs(value - bound) <= tolerance * scale)
 
 
 class FitSpectrum:
@@ -54,6 +100,8 @@ class FitSpectrum:
     mod_freq: NDArray[np.float64]
     mod_amp: NDArray[np.float64]
     pass_fitting: bool
+    #: How near a bound fails a fit; see :meth:`near_bounds`.
+    bound_tolerance: float
     fit_bins: bool
     meta: dict[str, Any]
     #: The :class:`specmod.sources.SpectralModel` behind the fit, when there is
@@ -69,6 +117,7 @@ class FitSpectrum:
     ) -> None:
         self.result = None
         self.pass_fitting = True
+        self.bound_tolerance = BOUND_TOLERANCE
         self.meta = {}
         self.spectral_model = None
         self.mod_freq = np.array([])
@@ -77,8 +126,12 @@ class FitSpectrum:
         self.set_signal(signal)
         self.set_model(model, **params)
 
-    def fit_mod(self, **kwargs: Any) -> None:
+    def fit_mod(self, *, bound_tolerance: float | None = None, **kwargs: Any) -> None:
         """Fit, judge the result, then record it — in that order.
+
+        ``bound_tolerance`` sets how near a bound fails the fit, and is kept
+        on the object for :meth:`near_bounds` to report against. Everything
+        else goes to lmfit.
 
         The judgement used to be made *after* the recording, so the
         ``pass_fitting`` column of every flat file held the value from before
@@ -86,6 +139,8 @@ class FitSpectrum:
         The attribute and the table disagreed, and the table is what gets
         written out and regressed on.
         """
+        if bound_tolerance is not None:
+            self.bound_tolerance = bound_tolerance
         self.result = self.mod.fit(self.mod_amp, self.params, f=self.mod_freq, **kwargs)
         self.__determine_pass_or_fail()
         self.__set_results_to_meta()
@@ -140,6 +195,137 @@ class FitSpectrum:
                 "fitted yet; call fit_mod() first"
             )
         return self.result
+
+    def near_bounds(self, tolerance: float | None = None) -> tuple[NearBound, ...]:
+        """The varying parameters that finished against a bound, if any.
+
+        Any of these fails the fit: :attr:`pass_fitting` is ``False`` when
+        this is not empty. ``tolerance`` defaults to the one the fit was
+        judged with, :attr:`bound_tolerance`, so the two agree; pass another
+        to ask the question more or less strictly without refitting.
+
+        Near means within ``tolerance`` of the bound, as a fraction of the
+        parameter's scale: the largest of its fitted value, the bound and the
+        value the fit started from. The starting value is what gives a bound
+        at zero a scale at all — a corner frequency that began at 10 Hz and
+        finished below 0.1 Hz is near a floor of zero, where a purely relative
+        test could never say so.
+
+        Fixed parameters are skipped, and so are bounds at infinity.
+        """
+        if tolerance is None:
+            tolerance = self.bound_tolerance
+        found: list[NearBound] = []
+        for par in self.fitted.params.values():
+            if not par.vary:
+                continue
+            start = par.init_value if par.init_value is not None else par.value
+            sides: tuple[tuple[Literal["lower", "upper"], float], ...] = (
+                ("lower", par.min),
+                ("upper", par.max),
+            )
+            for side, bound in sides:
+                if _is_near(par.value, bound, start, tolerance):
+                    found.append(
+                        NearBound(par.name, float(par.value), float(bound), side)
+                    )
+        return tuple(found)
+
+    def loss(self, **values: float) -> float:
+        """The misfit at ``values``, every other parameter at its fitted value.
+
+        The quantity the minimiser reduced: the sum of squared residuals in
+        ``log10`` amplitude over the fitted band, weighted as the fit was. With
+        no arguments it is ``result.chisqr``.
+
+        Nothing stops a value being outside its bound, which is the point: it
+        is how to see whether the misfit goes on falling past the edge of the
+        search space.
+        """
+        result = self.fitted
+        parameters = result.params.valuesdict()
+        unknown = sorted(set(values) - set(parameters))
+        if unknown:
+            raise ValueError(
+                f"{', '.join(unknown)} is not a parameter of this model, "
+                f"which takes {', '.join(parameters)}"
+            )
+        parameters.update(values)
+        residual = np.asarray(self.mod.func(self.mod_freq, **parameters)) - self.mod_amp
+        if result.weights is not None:
+            residual = residual * result.weights
+        return float(np.sum(residual**2))
+
+    def loss_scan(
+        self, grids: Mapping[str, ArrayLike], *, profile: bool = False
+    ) -> NDArray[np.float64]:
+        """The misfit over a grid of one or more parameters.
+
+        ``grids`` maps a parameter name to the values to try. The result has
+        one axis per parameter, in the order given, so
+        ``loss_scan({"fc": a, "ts": b})[i, j]`` is the misfit at ``fc = a[i]``
+        and ``ts = b[j]``.
+
+        What happens to the parameters *not* scanned is the choice that
+        matters:
+
+        ``profile=False``
+            They stay at their fitted values. This is a **slice** through the
+            best fit: exact, cheap, and narrower than the truth wherever
+            parameters trade off, because moving one without letting the others
+            compensate is the most expensive way to move it.
+        ``profile=True``
+            They are refitted at every grid point, within their bounds, by the
+            minimiser the fit used. This is the **profile**: the lowest misfit
+            reachable at each scanned value, which is what a trade-off between
+            corner frequency and ``t*`` actually looks like. It costs one fit
+            per grid point.
+
+        Scanned values are not held to their bounds in either mode.
+        """
+        result = self.fitted
+        names = list(grids)
+        axes = [
+            np.atleast_1d(np.asarray(grids[name], dtype=np.float64)) for name in names
+        ]
+        unknown = sorted(set(names) - set(result.params.valuesdict()))
+        if unknown:
+            raise ValueError(
+                f"{', '.join(unknown)} is not a parameter of this model, "
+                f"which takes {', '.join(result.params.valuesdict())}"
+            )
+
+        free = [
+            name
+            for name, par in result.params.items()
+            if par.vary and name not in names
+        ]
+        out = np.empty([axis.size for axis in axes], dtype=np.float64)
+        for index in np.ndindex(*out.shape):
+            point = {
+                name: float(axis[i])
+                for name, axis, i in zip(names, axes, index, strict=True)
+            }
+            if not (profile and free):
+                out[index] = self.loss(**point)
+                continue
+            params = result.params.copy()
+            for name, value in point.items():
+                # Unbound before it is set: lmfit clips a value to its bounds
+                # on assignment, which would quietly scan the bound instead.
+                params[name].min = -np.inf
+                params[name].max = np.inf
+                params[name].vary = False
+                params[name].value = value
+            refit = self.mod.fit(
+                self.mod_amp,
+                params,
+                f=self.mod_freq,
+                weights=result.weights,
+                method=result.method,
+            )
+            out[index] = refit.chisqr
+        return out
 
     def describe_model(self) -> str | None:
         """What is being fitted, or ``None`` for a bare callable."""
@@ -304,28 +490,27 @@ class FitSpectrum:
         self.meta.update(self.__get_test_results())
 
     def __determine_pass_or_fail(self) -> None:
-        """A fit fails when a parameter is pinned against one of its bounds.
+        """A fit fails when a parameter finishes against one of its bounds.
 
-        Which is the useful question: a corner frequency resting on its floor
-        is the minimiser saying "lower, if you would let me", and the value it
-        reports is the bound rather than a measurement.
+        A corner frequency resting on its floor is the minimiser saying
+        "lower, if you would let me", and the value it reports is the bound
+        rather than a measurement.
 
-        Reset first. ``pass_fitting`` starts as a class attribute and was only
-        ever set *False*, so a `FitSpectrum` that failed once could never pass
-        again however many times it was refitted.
+        Two tests, and either fails the fit. The parameter is within
+        :attr:`bound_tolerance` of a bound — see :meth:`near_bounds` — or its
+        uncertainty reaches one, ``value +/- stderr``. The second needs a
+        minimiser that reports ``stderr``; Powell, the shipped default, does
+        not, so under it the first is the whole test. A missing ``stderr`` is
+        a property of the minimiser and does not fail a fit on its own.
 
-        **Where there is no uncertainty, the value itself is compared.** The
-        old version treated a missing ``stderr`` as a failure, which would mark
-        every fit failed under the shipped configuration: Powell does not
-        estimate a covariance matrix, so lmfit has no uncertainties to report.
-        That is a property of the minimiser, not a fault in the fit. Asking
-        whether the value sits on the bound is the same question with the
-        error bar removed.
+        ``pass_fitting`` is reset on every call, so a fit that failed can pass
+        once refitted with the bound moved.
         """
-        self.pass_fitting = True
-        for _par, vals in self.fitted.params.items():
-            if not vals.vary:
+        self.pass_fitting = not self.near_bounds()
+        for vals in self.fitted.params.values():
+            if not vals.vary or vals.stderr is None:
                 continue
-            spread = vals.stderr if vals.stderr is not None else 0.0
-            if (vals.value - spread <= vals.min) or (vals.value + spread >= vals.max):
+            if (vals.value - vals.stderr <= vals.min) or (
+                vals.value + vals.stderr >= vals.max
+            ):
                 self.pass_fitting = False

@@ -234,9 +234,34 @@ prints it, `2019-08-26T07:30:47.000000Z`. Windows does not allow the colons,
 and uv 0.13 refuses to build a source distribution containing them. Names are now ISO 8601 basic format,
 `20190826T073047.000000Z`, from `specmod.datasets.path_name`, and
 `specmod fetch` writes them. `specmod migrate-names` renames data written
-earlier and keeps its manifest verifying; until 0.8, data that has not been
+earlier and keeps its manifest verifying; until 1.0, data that has not been
 migrated is still found, with a warning.
 [Upgrading](upgrading.md#from-06-to-07) has the steps.
+
+## In progress — not yet released
+
+Merged on `main`, and it will name its version when a release goes out.
+
+### A fit says how well it was constrained
+
+A fitted value and a goodness of fit do not say whether the value was
+constrained, and two things now do.
+
+`specmod.plotting.plot_loss` draws the misfit around one station's fit, along
+each parameter and over each pair, and `plot_loss_set` draws one pair for
+every station on a shared scale. By default the other parameters are held at
+their fitted values; `profile=True` refits them at every point, which is the
+honest picture of a trade-off. On the PNR station where two minimisers
+disagree most, the corner frequencies within 1.1 times the best misfit run
+from 3.4 to 4.3 Hz in the slice and across the whole scanned range, 0.4 to
+38 Hz, in the profile.
+
+A fit whose parameter finishes against a bound now fails `pass_fitting`, so
+it does not vote in the event value. `fit_spectra` logs a warning for each,
+with the `set_bounds` call that opens the search space, and `near_bounds()`
+returns the same list. The flag used to need an uncertainty to compare with
+the bound, and Powell reports none: with a corner-frequency floor of 8 Hz, 23
+of the 28 PNR fits finish within 1% of it, and it failed 7 of them.
 
 ## Planned
 
@@ -246,6 +271,9 @@ migrated is still found, with a warning.
 the decomposition above with the signature changes it implied. What remains is
 the release itself, which says that names and signatures stop moving without a
 deprecation cycle.
+
+1.0 is also where the one deprecation still open closes: reading event
+directories named in the pre-0.7 layout, which has warned since 0.7.0, stops.
 
 That promise is the whole content of the number, which is why it has to be a
 decision rather than something a breaking commit does on its way past. Until it
@@ -293,7 +321,7 @@ refused.
 directories and the files in them are renamed on disk, so code that built a
 path from an origin time no longer finds it. Unlike the three before it, this
 break comes with a migration, `specmod migrate-names`, and a fallback that
-reads the old names with a warning until 0.8 — a deprecation cycle, which the
+reads the old names with a warning until 1.0 — a deprecation cycle, which the
 earlier changes had nothing to attach to. That makes it a better-behaved break,
 not the absence of one. The count stands at zero.
 
@@ -321,9 +349,9 @@ guess written from documentation cannot substitute for:
 Each shipped entry names the version that carries it, so a reader can install
 that version and check the claim. Work that is merged but unreleased sits under
 *In progress* and gets its version when a release goes out — merged is not
-shipped, and this page does not blur the two. **There is no such section right
-now**, because nothing is merged and unreleased; that is the state the page
-should be in between releases, not a section that went missing.
+shipped, and this page does not blur the two. Between releases there is no such
+section at all, which is a state the page should be in rather than a section
+that went missing.
 
 The move at release time is the step this page got wrong once. The v0.3.0 work
 sat under *In progress — not yet released* for a week after v0.3.0 was
