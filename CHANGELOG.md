@@ -11,6 +11,14 @@ file, so this edit survives. -->
 
 ## [0.8.0](https://github.com/sgjholt/SpecMod/compare/v0.7.0...v0.8.0) (2026-11-14)
 
+<!-- Two Bug Fixes and Documentation lines below are corrected by hand.
+release-please dropped b211e2c, the `fit_event(quiet=False)` fix: a code span
+in its message body held nested parentheses, and the parser rejected the
+whole commit ("unexpected token '(' at 4:40"). Its line is added. The roadmap
+entry was listed twice, once for e364939 and again for d44bebb, the merge
+commit of #54; the entry kept points at the commit. The GitHub Release for
+v0.8.0 carries the generated text. release-please only prepends to this file,
+so the edit survives. -->
 
 ### ⚠ BREAKING CHANGES
 
@@ -29,6 +37,7 @@ file, so this edit survives. -->
 * **pipeline:** refuse two traces with one id instead of dropping one ([2c7c9fa](https://github.com/sgjholt/SpecMod/commit/2c7c9faa55d3c4afdb2e85a2c74b59695ef01126))
 * **preprocess:** pair get_noise_s with its signal stream strictly ([5eefba0](https://github.com/sgjholt/SpecMod/commit/5eefba02fb0a898452bc06c0647ebed852f3d287))
 * **preprocess:** refine a window of raw counts without overflowing ([c0ee5d4](https://github.com/sgjholt/SpecMod/commit/c0ee5d4f47f9fa85d873d260352305f027556e9b))
+* **staged:** leave stdout alone when fit_event is not quiet ([b211e2c](https://github.com/sgjholt/SpecMod/commit/b211e2cdf3281ec1364d21b373eae13b9fc8c57d))
 * **utils:** draw each waveform sample at its own time in plot_traces ([d4cd5b3](https://github.com/sgjholt/SpecMod/commit/d4cd5b397b0d935fec0a786fa829abbe0dfaf9a6))
 
 
@@ -36,7 +45,6 @@ file, so this edit survives. -->
 
 * **datasets:** keep reading pre-0.7 directory names until 1.0, not 0.8 ([4101f4b](https://github.com/sgjholt/SpecMod/commit/4101f4bf51415f43ae3a709c140ccd1f7a9ecd46))
 * **pipeline:** describe what the code does, not what it used to do ([d16eecd](https://github.com/sgjholt/SpecMod/commit/d16eecd3ac09803201e9228cddfa5bbda2167d2d))
-* **roadmap:** file the colon-free names as shipped in v0.7.0 ([d44bebb](https://github.com/sgjholt/SpecMod/commit/d44bebb884e3c7dee32553328d23c328025d8b3f))
 * **roadmap:** file the colon-free names as shipped in v0.7.0 ([e364939](https://github.com/sgjholt/SpecMod/commit/e3649393ea013fc2208cd8634a8c02a035f09f66))
 
 ## [0.7.0](https://github.com/sgjholt/SpecMod/compare/v0.6.0...v0.7.0) (2026-11-08)

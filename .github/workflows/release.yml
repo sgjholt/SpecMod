@@ -25,7 +25,10 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      # v5 runs on Node 24; v4 targeted Node 20, which GitHub deprecated and
+      # forces onto Node 24 with a warning. Inputs are unchanged, and
+      # `release_created` and `tag_name` are still set for the root package.
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           # A pull request opened with the default GITHUB_TOKEN starts no
