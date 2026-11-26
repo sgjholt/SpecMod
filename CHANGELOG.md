@@ -9,6 +9,13 @@ release could have this problem â€” every later one has a real predecessor tag â
 so leave subsequent headings as generated. release-please only prepends to this
 file, so this edit survives. -->
 
+## [0.8.1](https://github.com/sgjholt/SpecMod/compare/v0.8.0...v0.8.1) (2026-11-26)
+
+
+### Documentation
+
+* **roadmap:** file the fit-constraint work as shipped in v0.8.0 ([b56f30f](https://github.com/sgjholt/SpecMod/commit/b56f30f4f4ba729bdc21f370ee2670c74ee8bf2c))
+
 ## [0.8.0](https://github.com/sgjholt/SpecMod/compare/v0.7.0...v0.8.0) (2026-11-14)
 
 <!-- Two Bug Fixes and Documentation lines below are corrected by hand.
